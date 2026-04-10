@@ -1,14 +1,13 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="bunit" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="MSTest" />
   </ItemGroup>
@@ -18,7 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\PcsRemote.Web\PcsRemote.Web.csproj" />
+    <ProjectReference Include="..\..\src\PcsRemote.Automation.Mock\PcsRemote.Automation.Mock.csproj" />
   </ItemGroup>
 
 </Project>
