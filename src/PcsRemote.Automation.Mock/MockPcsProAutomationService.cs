@@ -8,6 +8,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
 {
     private readonly MockPcsProOptions _options;
     private readonly ILogger<MockPcsProAutomationService> _logger;
+    private readonly SemaphoreSlim _semaphore = new(1, 1);
     private PcsProState _currentState = PcsProState.NotRunning;
 
     public MockPcsProAutomationService(
@@ -27,24 +28,113 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     protected virtual void OnStateChanged(PcsProState state) =>
         StateChanged?.Invoke(this, state);
 
-    public Task LaunchAndLoginAsync(CancellationToken ct = default)
-        => throw new NotImplementedException();
+    public async Task LaunchAndLoginAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("LaunchAndLoginAsync starting");
+
+        if (!_semaphore.Wait(0))
+            throw new InvalidOperationException("A lifecycle operation is already in progress.");
+
+        try
+        {
+            if (_currentState != PcsProState.NotRunning)
+                throw new InvalidOperationException(
+                    $"LaunchAndLoginAsync requires NotRunning state; current state is {_currentState}.");
+
+            await Task.Delay(_options.LaunchDelay, ct);
+            Transition(PcsProState.Launching);
+            _logger.LogDebug("Reached {State}", PcsProState.Launching);
+
+            await Task.Delay(_options.LoginDetectedDelay, ct);
+            Transition(PcsProState.LoginScreen);
+            _logger.LogDebug("Reached {State}", PcsProState.LoginScreen);
+
+            await Task.Delay(_options.CredentialsEnteredDelay, ct);
+            Transition(PcsProState.MatchSelection);
+            _logger.LogInformation("LaunchAndLoginAsync complete — reached {State}", PcsProState.MatchSelection);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    public async Task LoadMatchAsync(MatchInfo match, CancellationToken ct = default)
+    {
+        _logger.LogInformation("LoadMatchAsync starting for match {MatchId}", match?.MatchId);
+
+        if (!_semaphore.Wait(0))
+            throw new InvalidOperationException("A lifecycle operation is already in progress.");
+
+        try
+        {
+            if (_currentState != PcsProState.MatchSelection && _currentState != PcsProState.MatchLoaded)
+                throw new InvalidOperationException(
+                    $"LoadMatchAsync requires MatchSelection or MatchLoaded state; current state is {_currentState}.");
+
+            if (_currentState == PcsProState.MatchLoaded)
+            {
+                await Task.Delay(_options.ChangeMatchDelay, ct);
+                Transition(PcsProState.MatchSelection);
+                _logger.LogDebug("ChangeMatch — reached {State}", PcsProState.MatchSelection);
+            }
+
+            await Task.Delay(_options.SearchTriggeredDelay, ct);
+            Transition(PcsProState.MatchSelectionSearching);
+            _logger.LogDebug("Reached {State}", PcsProState.MatchSelectionSearching);
+
+            await Task.Delay(_options.SpinnerGoneDelay, ct);
+            Transition(PcsProState.MatchSelectionReady);
+            _logger.LogDebug("Reached {State}", PcsProState.MatchSelectionReady);
+
+            await Task.Delay(_options.MatchOpenedDelay, ct);
+            Transition(PcsProState.MatchLoaded);
+            _logger.LogInformation("LoadMatchAsync complete — reached {State}", PcsProState.MatchLoaded);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    public async Task StopAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("StopAsync starting from {State}", _currentState);
+
+        if (!_semaphore.Wait(0))
+            throw new InvalidOperationException("A lifecycle operation is already in progress.");
+
+        try
+        {
+            if (_currentState == PcsProState.NotRunning)
+                return;
+
+            await Task.Delay(_options.StopDelay, ct);
+            Transition(PcsProState.NotRunning);
+            _logger.LogInformation("StopAsync complete — reached {State}", PcsProState.NotRunning);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
 
     public Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default)
         => throw new NotImplementedException();
 
-    public Task LoadMatchAsync(MatchInfo match, CancellationToken ct = default)
-        => throw new NotImplementedException();
-
     public Task<MatchTeams> GetTeamNamesAsync(CancellationToken ct = default)
-        => throw new NotImplementedException();
+        => Task.FromResult(new MatchTeams("Home XI", "Away XI"));
 
     public Task RefreshScoreboardAsync(CancellationToken ct = default)
-        => throw new NotImplementedException();
+        => Task.CompletedTask;
 
     public Task<byte[]> CaptureScoreboardImageAsync(CancellationToken ct = default)
         => throw new NotImplementedException();
 
-    public Task StopAsync(CancellationToken ct = default)
-        => throw new NotImplementedException();
+    private void Transition(PcsProState newState)
+    {
+        _currentState = newState;
+        OnStateChanged(newState);
+    }
 }
+
