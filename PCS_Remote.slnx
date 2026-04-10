@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PcsRemote.Automation.Mock/PcsRemote.Automation.Mock.csproj" />
+    <Project Path="src/PcsRemote.Automation/PcsRemote.Automation.csproj" />
+    <Project Path="src/PcsRemote.Core/PcsRemote.Core.csproj" />
+    <Project Path="src/PcsRemote.TrayHost/PcsRemote.TrayHost.csproj" />
+    <Project Path="src/PcsRemote.Web/PcsRemote.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PcsRemote.Core.Tests/PcsRemote.Core.Tests.csproj" />
+    <Project Path="tests/PcsRemote.E2E.Tests/PcsRemote.E2E.Tests.csproj" />
+    <Project Path="tests/PcsRemote.Web.Tests/PcsRemote.Web.Tests.csproj" />
+  </Folder>
+</Solution>
