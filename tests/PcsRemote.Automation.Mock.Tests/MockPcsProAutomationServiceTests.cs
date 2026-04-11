@@ -713,6 +713,95 @@ public sealed class MockPcsProAutomationServiceTests
 
         matches.Should().HaveCount(3);
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // S-006 Scoreboard Image Tests
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ──────────────────────────────────────────────────────────────────────
+    // AC-1: JPEG validity — SOI bytes (FF D8 FF) + EOI bytes (FF D9)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task CaptureScoreboardImageAsync_ReturnsValidJpegBytes()
+    {
+        var sut = CreateSut(o => { o.RngSeed = 42; o.ErrorProbability = 0.0; });
+
+        var bytes = await sut.CaptureScoreboardImageAsync();
+
+        bytes.Should().NotBeNull();
+        bytes.Length.Should().BeGreaterThan(4);
+        bytes[0].Should().Be(0xFF, "JPEG SOI byte 1");
+        bytes[1].Should().Be(0xD8, "JPEG SOI byte 2");
+        bytes[2].Should().Be(0xFF, "JPEG marker prefix");
+        bytes[^2].Should().Be(0xFF, "JPEG EOI byte 1");
+        bytes[^1].Should().Be(0xD9, "JPEG EOI byte 2");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // AC-2: Probability 1.0 — three consecutive calls all pairwise non-identical
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task CaptureScoreboardImageAsync_Probability1_AlwaysDifferentBytes()
+    {
+        var sut = CreateSut(o =>
+        {
+            o.RngSeed = 42;
+            o.ErrorProbability = 0.0;
+            o.ImageVariationProbability = 1.0;
+        });
+
+        var b1 = await sut.CaptureScoreboardImageAsync();
+        var b2 = await sut.CaptureScoreboardImageAsync();
+        var b3 = await sut.CaptureScoreboardImageAsync();
+
+        b1.SequenceEqual(b2).Should().BeFalse("call 1 and call 2 must differ at P=1.0");
+        b1.SequenceEqual(b3).Should().BeFalse("call 1 and call 3 must differ at P=1.0");
+        b2.SequenceEqual(b3).Should().BeFalse("call 2 and call 3 must differ at P=1.0");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // AC-3: Probability 0.0 — three consecutive calls all byte-identical
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task CaptureScoreboardImageAsync_Probability0_AlwaysIdenticalBytes()
+    {
+        var sut = CreateSut(o =>
+        {
+            o.RngSeed = 42;
+            o.ErrorProbability = 0.0;
+            o.ImageVariationProbability = 0.0;
+        });
+
+        var b1 = await sut.CaptureScoreboardImageAsync();
+        var b2 = await sut.CaptureScoreboardImageAsync();
+        var b3 = await sut.CaptureScoreboardImageAsync();
+
+        b1.SequenceEqual(b2).Should().BeTrue("call 1 and call 2 must be identical at P=0.0");
+        b1.SequenceEqual(b3).Should().BeTrue("call 1 and call 3 must be identical at P=0.0");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // AC-4: Cache-miss path — first call with default IVP (0.2) returns valid JPEG
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task CaptureScoreboardImageAsync_FirstCallDefaultOptions_ExercisesCacheMissPath()
+    {
+        // Default ImageVariationProbability = 0.2; first call always generates (cache is empty)
+        var sut = CreateSut(o => { o.RngSeed = 42; o.ErrorProbability = 0.0; });
+
+        var bytes = await sut.CaptureScoreboardImageAsync();
+
+        bytes.Should().NotBeEmpty("cache-miss path must produce a result");
+        bytes[0].Should().Be(0xFF);
+        bytes[1].Should().Be(0xD8);
+        bytes[2].Should().Be(0xFF);
+        bytes[^2].Should().Be(0xFF);
+        bytes[^1].Should().Be(0xD9);
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────

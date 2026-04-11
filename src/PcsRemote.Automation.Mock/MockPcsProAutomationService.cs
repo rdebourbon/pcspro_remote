@@ -1,3 +1,5 @@
+using System.Drawing;
+using System.Drawing.Imaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PcsRemote.Core;
@@ -11,6 +13,8 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly Random _rng;
     private PcsProState _currentState = PcsProState.NotRunning;
+    private byte[]? _lastImageBytes;
+    private int _imageGenCounter;
 
     public MockPcsProAutomationService(
         IOptions<MockPcsProOptions> options,
@@ -191,7 +195,32 @@ public class MockPcsProAutomationService : IPcsProAutomationService
         => Task.CompletedTask;
 
     public Task<byte[]> CaptureScoreboardImageAsync(CancellationToken ct = default)
-        => throw new NotImplementedException();
+    {
+        var variationTriggered = _rng.NextDouble() < _options.ImageVariationProbability;
+
+        if (!variationTriggered && _lastImageBytes != null)
+            return Task.FromResult(_lastImageBytes);
+
+        _imageGenCounter++;
+        _lastImageBytes = GenerateScoreboardJpeg(_imageGenCounter);
+        return Task.FromResult(_lastImageBytes);
+    }
+
+    private static byte[] GenerateScoreboardJpeg(int counter)
+    {
+        using var bitmap = new Bitmap(320, 120);
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.Clear(Color.FromArgb(30, 60, 30 + (counter * 17 % 180)));
+        using var font = new Font("Arial", 12f, FontStyle.Bold);
+        graphics.DrawString(
+            $"PCS Remote \u2014 Mock Scoreboard #{counter}",
+            font,
+            Brushes.White,
+            new PointF(10f, 10f));
+        using var ms = new System.IO.MemoryStream();
+        bitmap.Save(ms, ImageFormat.Jpeg);
+        return ms.ToArray();
+    }
 
     private void TransitionToError(string reason)
     {
