@@ -1,6 +1,122 @@
 @page "/"
+@using PcsRemote.Core
+@implements IDisposable
+@inject IPcsProAutomationService AutomationService
 
 <PageTitle>PCS Remote</PageTitle>
 
-<h1>PCS Remote</h1>
-<p>Welcome to PCS Remote — the PlayCricket Scorer Pro control panel.</p>
+@if (_fetchInProgress || _currentState == PcsProState.MatchSelectionSearching)
+{
+    <div class="match-loading">Loading matches&hellip;</div>
+}
+else if (_currentState == PcsProState.MatchSelectionReady)
+{
+    @if (_matches is { Count: 0 })
+    {
+        <div class="match-empty-state">No matches available today</div>
+    }
+    else if (_matches is not null)
+    {
+        @foreach (var match in _matches)
+        {
+            <MatchCard Match="@match" IsInteractive="true" OnSelected="SelectMatchAsync" />
+        }
+    }
+}
+
+@code {
+    private PcsProState _currentState;
+    private IReadOnlyList<MatchInfo>? _matches;
+    private bool _fetchInProgress;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // R-3: Subscribe before reading CurrentState to close the race window
+        // between snapshot capture and handler attachment.
+        AutomationService.StateChanged += OnStateChanged;
+        _currentState = AutomationService.CurrentState;
+
+        if (_currentState == PcsProState.MatchSelection || _currentState == PcsProState.MatchSelectionReady)
+            await FetchMatchesAsync();
+    }
+
+    private async void OnStateChanged(object? sender, PcsProState newState)
+    {
+        // Dispatch ALL field access to the Blazor sync context to prevent
+        // TOCTOU races between the background event thread and the renderer.
+        await InvokeAsync(async () =>
+        {
+            _currentState = newState;
+
+            if (newState == PcsProState.MatchSelection)
+            {
+                // R-4: fetch triggers only on MatchSelection entry (not MatchSelectionReady)
+                if (!_fetchInProgress)
+                {
+                    try { await FetchMatchesAsync(); }
+                    catch { /* Fetch errors are non-fatal; UI remains in last stable state. */ }
+                }
+                else
+                    StateHasChanged();
+            }
+            else if (newState == PcsProState.MatchSelectionReady)
+            {
+                // R-8(a): auto-select when state reaches ready and fetch already completed
+                if (_matches?.Count == 1)
+                {
+                    var match = _matches[0];
+                    _matches = null; // Guard: prevent re-trigger on intermediate MatchSelectionReady
+                    try { await AutomationService.LoadMatchAsync(match); }
+                    catch { StateHasChanged(); }
+                }
+                else
+                {
+                    StateHasChanged();
+                }
+            }
+            else
+            {
+                StateHasChanged();
+            }
+        });
+    }
+
+    private async Task FetchMatchesAsync()
+    {
+        _fetchInProgress = true;
+        _matches = null;
+        StateHasChanged();
+
+        try
+        {
+            var results = await AutomationService.GetTodaysMatchesAsync();
+            _matches = results;
+
+            // R-8(b): auto-select when fetch completes and state is already MatchSelectionReady
+            if (_currentState == PcsProState.MatchSelectionReady && _matches?.Count == 1)
+            {
+                var match = _matches[0];
+                _matches = null; // Guard: prevent re-trigger on intermediate MatchSelectionReady
+                await AutomationService.LoadMatchAsync(match);
+            }
+        }
+        finally
+        {
+            _fetchInProgress = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SelectMatchAsync(MatchInfo match)
+    {
+        // R-9: clear _matches before LoadMatchAsync so the intermediate
+        // MatchSelectionReady event cannot flash stale cards.
+        _matches = null;
+        await AutomationService.LoadMatchAsync(match);
+    }
+
+    public void Dispose()
+    {
+        AutomationService.StateChanged -= OnStateChanged;
+    }
+}
