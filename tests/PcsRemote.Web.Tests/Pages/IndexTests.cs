@@ -316,6 +316,152 @@ public class IndexTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // AC-1 (S-007): MatchLoaded state with _loadedMatch set → renders team names;
+    //               GetTeamNamesAsync never called (R-2)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void MatchLoaded_WithLoadedMatch_RendersTeamNames()
+    {
+        var match = new MatchInfo("1", "Home XI", "Away XI", "League", new DateOnly(2026, 6, 20));
+        var mock = BuildMock(PcsProState.MatchSelectionReady);
+        mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match });
+
+        using var ctx = new BunitContext();
+        ctx.Services.AddSingleton(mock.Object);
+
+        var cut = ctx.Render<IndexPage>();
+
+        // Path-b auto-select fires (mount in MatchSelectionReady + 1 match)
+        cut.WaitForAssertion(() =>
+            mock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
+
+        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchLoaded);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".match-loaded__home").TextContent.Should().Be("Home XI");
+            cut.Find(".match-loaded__away").TextContent.Should().Be("Away XI");
+        });
+        mock.Verify(s => s.GetTeamNamesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // AC-2 (S-007): Non-MatchLoaded state → no .match-loaded element in DOM
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void NonMatchLoadedState_DoesNotRenderMatchLoaded()
+    {
+        var mock = BuildMock(PcsProState.NotRunning);
+
+        using var ctx = new BunitContext();
+        ctx.Services.AddSingleton(mock.Object);
+
+        var cut = ctx.Render<IndexPage>();
+
+        cut.FindAll(".match-loaded").Should().BeEmpty();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // AC-3 (S-007): Card click → _loadedMatch stored → MatchLoaded → team names
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void CardClick_ThenMatchLoaded_RendersTeamNames()
+    {
+        var match1 = new MatchInfo("1", "Alpha CC", "Beta CC", "League", new DateOnly(2026, 6, 20));
+        var match2 = TestMatch(2);
+        var mock = BuildMock(PcsProState.NotRunning);
+        mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match1, match2 });
+
+        using var ctx = new BunitContext();
+        ctx.Services.AddSingleton(mock.Object);
+
+        var cut = ctx.Render<IndexPage>();
+        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
+        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelectionReady);
+
+        cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
+        cut.FindAll(".match-card")[0].Click();
+        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchLoaded);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".match-loaded__home").TextContent.Should().Be("Alpha CC");
+            cut.Find(".match-loaded__away").TextContent.Should().Be("Beta CC");
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // AC-4 (S-007): Auto-select path (a) — state arrives after fetch
+    //               → _loadedMatch stored → MatchLoaded → team names
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void AutoSelectPathA_ThenMatchLoaded_RendersTeamNames()
+    {
+        var match = new MatchInfo("1", "Auto Home", "Auto Away", "League", new DateOnly(2026, 6, 20));
+        var mock = BuildMock(PcsProState.NotRunning);
+        mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match });
+
+        using var ctx = new BunitContext();
+        ctx.Services.AddSingleton(mock.Object);
+
+        var cut = ctx.Render<IndexPage>();
+        // Drive fetch first, then arrive at MatchSelectionReady (path-a)
+        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
+        cut.WaitForAssertion(() =>
+            mock.Verify(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()), Times.Once));
+
+        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelectionReady);
+        cut.WaitForAssertion(() =>
+            mock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
+
+        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchLoaded);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".match-loaded__home").TextContent.Should().Be("Auto Home");
+            cut.Find(".match-loaded__away").TextContent.Should().Be("Auto Away");
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // AC-5 (S-007): Auto-select path (b) — fetch completes while state is already
+    //               MatchSelectionReady → _loadedMatch stored → MatchLoaded → team names
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void AutoSelectPathB_ThenMatchLoaded_RendersTeamNames()
+    {
+        var match = new MatchInfo("1", "FetchPath Home", "FetchPath Away", "League", new DateOnly(2026, 6, 20));
+        var mock = BuildMock(PcsProState.MatchSelectionReady);
+        mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match });
+
+        using var ctx = new BunitContext();
+        ctx.Services.AddSingleton(mock.Object);
+
+        // On mount: OnInitializedAsync reads MatchSelectionReady → calls FetchMatchesAsync
+        // FetchMatchesAsync completes with 1 match while _currentState == MatchSelectionReady → path-b fires
+        var cut = ctx.Render<IndexPage>();
+        cut.WaitForAssertion(() =>
+            mock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
+
+        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchLoaded);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".match-loaded__home").TextContent.Should().Be("FetchPath Home");
+            cut.Find(".match-loaded__away").TextContent.Should().Be("FetchPath Away");
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
 

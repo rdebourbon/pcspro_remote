@@ -24,9 +24,18 @@ else if (_currentState == PcsProState.MatchSelectionReady)
     }
 }
 
+else if (_currentState == PcsProState.MatchLoaded && _loadedMatch is not null)
+{
+    <div class="match-loaded">
+        <span class="match-loaded__home">@_loadedMatch.HomeTeam</span>
+        <span class="match-loaded__away">@_loadedMatch.AwayTeam</span>
+    </div>
+}
+
 @code {
     private PcsProState _currentState;
     private IReadOnlyList<MatchInfo>? _matches;
+    private MatchInfo? _loadedMatch;
     private bool _fetchInProgress;
 
     protected override async Task OnInitializedAsync()
@@ -65,6 +74,7 @@ else if (_currentState == PcsProState.MatchSelectionReady)
                 if (_matches?.Count == 1)
                 {
                     var match = _matches[0];
+                    _loadedMatch = match;
                     _matches = null; // Guard: prevent re-trigger on intermediate MatchSelectionReady
                     try { await AutomationService.LoadMatchAsync(match); }
                     catch { StateHasChanged(); }
@@ -96,6 +106,7 @@ else if (_currentState == PcsProState.MatchSelectionReady)
             if (_currentState == PcsProState.MatchSelectionReady && _matches?.Count == 1)
             {
                 var match = _matches[0];
+                _loadedMatch = match;
                 _matches = null; // Guard: prevent re-trigger on intermediate MatchSelectionReady
                 await AutomationService.LoadMatchAsync(match);
             }
@@ -111,6 +122,7 @@ else if (_currentState == PcsProState.MatchSelectionReady)
     {
         // R-9: clear _matches before LoadMatchAsync so the intermediate
         // MatchSelectionReady event cannot flash stale cards.
+        _loadedMatch = match;
         _matches = null;
         await AutomationService.LoadMatchAsync(match);
     }
