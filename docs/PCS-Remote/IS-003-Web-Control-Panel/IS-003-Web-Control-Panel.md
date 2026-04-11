@@ -46,7 +46,7 @@ Steps are identified with stable IDs (S-001 through S-009). IDs are never renumb
 
 ---
 
-### S-003 — PcsProHub: SignalR hub with connection tracking and state broadcast
+### S-003 — PcsProHub: SignalR hub with connection tracking and state broadcast ✅ DELIVERED (commit `299b087`)
 
 **What changes:** A dedicated SignalR hub (`PcsProHub`) is introduced in `PcsRemote.Web`. The hub tracks active connections using a thread-safe counter. When a client connects, the hub immediately pushes the current PCS Pro state to that client (late-joiner support). When a client disconnects, the counter is decremented. A singleton service manages the connection count and exposes a notification mechanism so Blazor components can react to count changes. The hub subscribes to the `IPcsProAutomationService` state-change event and broadcasts each transition to all connected clients. The hub endpoint is registered in the middleware pipeline.
 
