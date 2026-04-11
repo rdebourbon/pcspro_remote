@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | SPEC-S-009-PlaywrightE2E.md |
 | **Status** | IN REVIEW |
-| **Version** | 0.7 |
+| **Version** | 0.8 |
 | **Date** | 2026-04-13 |
 | **Step ID** | S-009 |
 | **Governing IS** | IS-003-Web-Control-Panel.md v0.3 (APPROVED) |
@@ -95,8 +95,13 @@ The current `PcsProHub.OnConnectedAsync` calls `IConnectionTracker.Increment()`,
 
 1. **Adding `PcsProCircuitHandler`** — a `CircuitHandler` subclass that calls `IConnectionTracker.Increment()` in `OnCircuitOpenedAsync` and `IConnectionTracker.Decrement()` in `OnCircuitClosedAsync`. This fires once per browser tab/session, making each Playwright `IBrowserContext` page navigation count as one connected user.
 2. **Registering the handler** — `builder.Services.AddCircuitHandler<PcsProCircuitHandler>()` in `Program.cs`.
-3. **Removing counting from `PcsProHub`** — `IConnectionTracker` is removed from `PcsProHub`'s constructor and calls. `PcsProHub` retains its `IPcsProAutomationService` injection and the `OnConnectedAsync` late-joiner state push (for future JavaScript clients).
-4. **Updating `PcsProHubTests`** — the four test methods that verify `Increment`/`Decrement` calls on `PcsProHub` must be deleted; a new `PcsProCircuitHandlerTests.cs` adds equivalent coverage for the handler.
+3. **Removing counting from `PcsProHub`** — `IConnectionTracker` is removed from `PcsProHub`'s constructor and calls. `PcsProHub` retains its `IPcsProAutomationService` injection and the `OnConnectedAsync` late-joiner state push (for future JavaScript clients). After removing `IConnectionTracker.Decrement()` from `OnDisconnectedAsync`, the override becomes a stub that only calls `base.OnDisconnectedAsync(exception)` — this empty override MUST be deleted entirely.
+4. **Updating `PcsProHubTests`** — the four test methods that verify `Increment`/`Decrement` calls on `PcsProHub` must be deleted; a new `PcsProCircuitHandlerTests.cs` adds equivalent coverage for the handler. Because `IConnectionTracker` is removed from `PcsProHub`'s constructor, the surrounding class infrastructure in `PcsProHubTests.cs` must also be updated:
+   - Delete the `private Mock<IConnectionTracker> _trackerMock = null!;` field declaration.
+   - Delete the `_trackerMock = new Mock<IConnectionTracker>();` line from `[TestInitialize]`.
+   - Change `CreateHub()` to construct `PcsProHub` with a single argument: `new PcsProHub(_automationServiceMock.Object)`.
+   
+   After these changes, five test methods become one (`OnConnectedAsync_SendsCurrentStateToCaller`). The class compiles cleanly — the unused `_trackerMock` field is gone and the constructor call matches the updated signature.
 
 > **Unit test implementation note — `Circuit` constructor:** `Microsoft.AspNetCore.Components.Server.Circuit` is a `sealed` class with an `internal` constructor. It cannot be instantiated from an external test assembly via `new Circuit(...)` or mocked via Moq/NSubstitute. Since `PcsProCircuitHandler` does not access the `Circuit` parameter in either `OnCircuitOpenedAsync` or `OnCircuitClosedAsync` (it only calls `IConnectionTracker.Increment()`/`Decrement()`), tests MUST pass `null!` for the `circuit` argument — e.g. `await handler.OnCircuitOpenedAsync(null!, CancellationToken.None)`. A comment in the test file should document this as an intentional consequence of Blazor's internal API surface.
 
@@ -192,9 +197,9 @@ Test class setup:
 - Create and start the factory once per class (`[ClassInitialize]`): instantiate the factory, call `factory.CreateClient()` to trigger startup, then `await factory.ServerAddressTask.WaitAsync(TimeSpan.FromSeconds(30))` to obtain the bound address (the bounded wait surfaces host startup failures as a `TimeoutException` rather than an infinite hang).
 - Create `_playwright` via `await Playwright.CreateAsync()`, then launch one Playwright `IBrowser` (headless Chromium) once per class.
 - In `[ClassCleanup]`: dispose `IBrowser` first (await `DisposeAsync`), then call `_playwright.Dispose()`, then dispose the factory. This order prevents Playwright from emitting connection-reset exceptions when the Kestrel server stops.
-- Decorate the test class with `[DoNotParallelize]` to prevent this class from running in parallel with other test classes in the assembly. Note: this attribute does not control parallelism between test *methods* within the class — methods execute serially by default under MSTest's current configuration (no `[assembly: Parallelize]` attribute). This prevents connection-count pollution from tests in other classes running concurrently.
+- Decorate the test class with `[DoNotParallelize]` to guarantee serial execution of the three test methods within the class. `tests/PcsRemote.E2E.Tests/MSTestSettings.cs` already configures `[assembly: Parallelize(Scope = ExecutionScope.MethodLevel)]` — without `[DoNotParallelize]`, the three E2E test methods would run concurrently, corrupting the shared connection count and causing non-deterministic failures in AC-2 and AC-3. `[DoNotParallelize]` on a class under `ExecutionScope.MethodLevel` places the entire class in the non-parallelisable queue, ensuring its methods execute serially.
 
-Each test method creates fresh `IBrowserContext` and `IPage` instances. Context and page disposal MUST occur in a `[TestCleanup]` method (not inline in the test body) to guarantee disposal even when the test throws — an undisposed context keeps a live Blazor circuit open against the shared host, inflating the connection count seen by subsequent tests.
+Each test method creates fresh `IBrowserContext` and `IPage` instances. Context and page disposal MUST occur in a `[TestCleanup]` method (not inline in the test body) to guarantee disposal even when the test throws — an undisposed context keeps a live Blazor circuit open against the shared host, inflating the connection count seen by subsequent tests. The `[TestCleanup]` method MUST null-check each field before disposal — e.g. `if (_page2 is not null) await _page2.DisposeAsync();` — because AC-1 creates only one context/page and leaves `_page2`/`_context2` as `null`; a `NullReferenceException` in cleanup causes the test to report as **Failed** even when the test body passed.
 
 ---
 
@@ -205,7 +210,7 @@ Each test method creates fresh `IBrowserContext` and `IPage` instances. Context 
 | `src/PcsRemote.Web/Hubs/PcsProCircuitHandler.cs` | **NEW**: `CircuitHandler` subclass — increments `IConnectionTracker` in `OnCircuitOpenedAsync`, decrements in `OnCircuitClosedAsync` |
 | `src/PcsRemote.Web/Hubs/PcsProHub.cs` | Remove `IConnectionTracker` constructor parameter and `Increment`/`Decrement` calls; retain `IPcsProAutomationService` and late-joiner state push |
 | `src/PcsRemote.Web/Program.cs` | Add `builder.Services.AddCircuitHandler<PcsProCircuitHandler>()` |
-| `tests/PcsRemote.Web.Tests/Hubs/PcsProHubTests.cs` | Remove the four Increment/Decrement verification tests (behaviour moved to CircuitHandler) |
+| `tests/PcsRemote.Web.Tests/Hubs/PcsProHubTests.cs` | Delete the four Increment/Decrement verification tests; remove `_trackerMock` field and its `[TestInitialize]` assignment; update `CreateHub()` to single-arg `new PcsProHub(_automationServiceMock.Object)`; retain `OnConnectedAsync_SendsCurrentStateToCaller` unchanged |
 | `tests/PcsRemote.Web.Tests/Hubs/PcsProCircuitHandlerTests.cs` | **NEW**: unit tests for `PcsProCircuitHandler` (OnCircuitOpenedAsync increments, OnCircuitClosedAsync decrements) |
 | `tests/PcsRemote.E2E.Tests/PcsRemote.E2E.Tests.csproj` | Change `TargetFramework` to `net8.0-windows`; add `Microsoft.Playwright` and `Microsoft.AspNetCore.Mvc.Testing` package refs; add project refs to `PcsRemote.Web` and `PcsRemote.Automation.Mock`; add `InstallPlaywrightBrowsers` MSBuild target (§3.2) |
 | `Directory.Packages.props` | Add `<PackageVersion Include="Microsoft.Playwright" Version="1.49.0" />` (`Microsoft.AspNetCore.Mvc.Testing` is already present — do not add a duplicate) |
