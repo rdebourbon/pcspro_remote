@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | **Document** | SPEC-S-008-AutoLaunchService.md |
-| **Status** | IN REVIEW |
-| **Version** | 0.4 |
+| **Status** | APPROVED |
+| **Version** | 0.5 |
 | **Date** | 2026-04-12 |
 | **Step ID** | S-008 |
 | **Governing IS** | IS-003-Web-Control-Panel.md v0.3 (APPROVED) |
@@ -98,7 +98,7 @@ Token verification (R-5): call `service.StopAsync(CancellationToken.None)` and a
 ### AC-2 — AutoLaunch=false suppresses launch
 
 Given: `AutoLaunchService` is started with `AutoLaunch=false`.  
-When: `await service.StartAsync(CancellationToken.None)` returns (`BackgroundService.StartAsync` does not use its `cancellationToken` parameter in .NET 8; the `AutoLaunch=false` path contains no `await`, so `ExecuteAsync` completes synchronously before `StartAsync` returns; alternatively use `await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5))` for runtime-version robustness).  
+When: `await service.StartAsync(CancellationToken.None)` returns (`CancellationToken.None` is the correct argument — it is never cancelled, so linking it into `_stoppingCts` has no effect on test behaviour; the `AutoLaunch=false` path contains no `await`, so `ExecuteAsync` completes synchronously before `StartAsync` returns; alternatively use `await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5))` for runtime-version robustness). **Do not pass a pre-cancelled token to `StartAsync` — that would immediately cancel the `stoppingToken` delivered to `ExecuteAsync`.**  
 Then: `LaunchAndLoginAsync` is NOT called.
 
 ### AC-3 — Non-cancellation exception is logged and swallowed
@@ -156,7 +156,7 @@ Using `It.IsAny<object>()` for the `TState` position does **not** match in Moq �
   .Returns(Task.CompletedTask);
   ```
   The `.Returns(Task.CompletedTask)` is **mandatory** — without it Moq returns `null`, causing `await LaunchAndLoginAsync(...)` to throw `NullReferenceException`. It also ensures `ExecuteAsync` returns promptly so `StopAsync(CancellationToken.None)` does not hang waiting for a non-completing task. Use `TrySetResult` to guard against double-calls. Construct all TCS sentinels as `new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously)` to prevent inline continuation execution on the triggering thread. Await via `await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5))`.
-- **AC-2:** `await service.StartAsync(CancellationToken.None)` is the synchronization barrier (`BackgroundService.StartAsync` ignores its `cancellationToken` parameter in .NET 8; `CancellationToken.None` is the correct argument). For runtime-version robustness, prefer `await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5))`.
+- **AC-2:** `await service.StartAsync(CancellationToken.None)` is the synchronization barrier (`CancellationToken.None` is the correct argument — it is never cancelled, so linking it into `_stoppingCts` has no observable effect on test behaviour; do not pass a pre-cancelled token as that would immediately cancel the `stoppingToken` delivered to `ExecuteAsync`). For runtime-version robustness, prefer `await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5))`.
 - **AC-3, AC-4:** `await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5))` guarantees `ExecuteAsync` has fully returned (including the catch block) before any assertions run. Do NOT use the TCS pattern here — the exception paths have no call site for `tcs.SetResult`.
 
 **Test list (6 tests):**
