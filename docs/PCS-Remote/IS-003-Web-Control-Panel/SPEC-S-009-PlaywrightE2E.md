@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | SPEC-S-009-PlaywrightE2E.md |
 | **Status** | IN REVIEW |
-| **Version** | 0.2 |
+| **Version** | 0.3 |
 | **Date** | 2026-04-12 |
 | **Step ID** | S-009 |
 | **Governing IS** | IS-003-Web-Control-Panel.md v0.3 (APPROVED) |
@@ -42,20 +42,25 @@ Because `MockPcsProAutomationService` uses configurable delays and error probabi
 
 ### 3.1 Test host strategy
 
-Use `WebApplicationFactory<Program>` (from `Microsoft.AspNetCore.Mvc.Testing`) configured to start a **real Kestrel HTTP listener** on a random available port (not the default in-memory `TestServer`, which has no TCP socket and cannot be reached by Playwright). To achieve this, override `CreateHost` to build a real host alongside the test infrastructure host:
+Use `WebApplicationFactory<Program>` (from `Microsoft.AspNetCore.Mvc.Testing`) configured to start a **real Kestrel HTTP listener** on a random available port (not the default in-memory `TestServer`, which has no TCP socket and cannot be reached by Playwright).
 
-- Call `builder.ConfigureWebHost(wb => wb.UseKestrel().UseUrls("http://127.0.0.1:0"))` inside the `CreateHost` override.
-- Start the real host separately and store it alongside the factory.
-- After start, read the bound address from `host.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First()`.
-- Expose the address as `ServerAddress` on the factory subclass so test methods can pass it to `IPage.GotoAsync`.
+**Single-host pattern** (one DI container, shared by Playwright and service resolution):
+
+Override `CreateHost(IHostBuilder builder)` in the `PcsProWebApplicationFactory` subclass:
+1. Call `builder.ConfigureWebHost(wb => wb.UseKestrel().UseUrls("http://127.0.0.1:0"))` — configures Kestrel on the single host.
+2. Register an `IHostApplicationLifetime.ApplicationStarted` callback that reads `host.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First()` into a `TaskCompletionSource<string>` stored on the factory subclass.
+3. Call `base.CreateHost(builder)` and return the result — WAF owns the host lifecycle; do NOT call `host.Start()` here.
+
+In `[ClassInitialize]`, after instantiating the factory, trigger host startup by accessing `factory.Services` (forces `EnsureServer()`). Then `await` the `TaskCompletionSource<string>` to obtain `ServerAddress`. Because there is only one host and one DI container, `factory.Services` and the live Kestrel app share the same singleton instances.
 
 The app does not use `app.UseHttpsRedirection()`, so all test navigation is plain HTTP with no redirect concerns.
 
-**Configuration overrides** applied to every test host instance:
+**Configuration overrides** applied to every test host instance via `WithWebHostBuilder`:
 - `PcsPro:UseMock = true` — use the mock automation service
 - `PcsPro:AutoLaunch = false` — suppress auto-launch so tests control when state changes occur
 - `PcsPro:Mock:LaunchDelay = 0`, `PcsPro:Mock:LoginDetectedDelay = 0`, `PcsPro:Mock:CredentialsEnteredDelay = 0` — zero delays so state transitions are instantaneous in tests
 - `PcsPro:Mock:ErrorProbability = 0` — no random errors
+- `CircuitOptions.DisconnectedCircuitRetentionPeriod = TimeSpan.FromSeconds(1)` — ensures `OnCircuitClosedAsync` fires within ~1 second of connection loss (default is 3 minutes), making the W-SC-3 disconnect assertion reliably complete within the 10-second wait timeout
 
 ### 3.2 Playwright setup
 
@@ -63,11 +68,11 @@ Playwright browsers must be installed before tests can run. The `.csproj` must i
 
 ```xml
 <Target Name="InstallPlaywrightBrowsers" AfterTargets="Build">
-  <Exec Command="pwsh $(OutputPath)playwright.ps1 install chromium" />
+  <Exec Command="powershell &quot;$(OutputPath)playwright.ps1&quot; install chromium" />
 </Target>
 ```
 
-This ensures `dotnet build` (and therefore `dotnet test`) installs Chromium automatically on a clean machine. Tests use **headless Chromium** by default.
+Uses `powershell` (Windows PowerShell 5.1, guaranteed on all Windows machines) rather than `pwsh` (PowerShell 7, optional install). The path is quoted to handle directories containing spaces. Playwright's install command is idempotent — it skips the download if the browser is already installed. Tests use **headless Chromium** by default.
 
 Each test method creates its own `IBrowserContext` (and `IPage` within that context) and disposes them after the test. The `IBrowser` instance is shared across the test class.
 
@@ -75,7 +80,7 @@ Each test method creates its own `IBrowserContext` (and `IPage` within that cont
 
 Because `WebApplicationFactory` provides access to the DI container, the W-SC-9 test can resolve `IPcsProAutomationService` from `factory.Services` and, since `UseMock=true`, cast it to `MockPcsProAutomationService` (by referencing the `PcsRemote.Automation.Mock` project). `MockPcsProAutomationService` is registered as `AddSingleton`, so resolving from the root `factory.Services` scope reaches the same instance that Blazor components subscribe to. After both pages have connected, the test calls `LaunchAndLoginAsync(CancellationToken.None)` on the resolved service to trigger state transitions, then asserts that both pages reflect the final state.
 
-With zero-delay mock configuration, `LaunchAndLoginAsync` fires all three state transitions synchronously before returning (`Launching → LoginScreen → MatchSelection`). The final state rendered by `PcsProStatusIndicator` is therefore `"Loading matches…"` (the `MatchSelection` label). AC-3 asserts this specific text, not an intermediate state.
+With zero-delay mock configuration, `LaunchAndLoginAsync` fires all three state transitions synchronously before returning (`Launching → LoginScreen → MatchSelection`). Each transition fires `StateChanged`, which `PcsProStatusIndicator` handles via `async void OnStateChanged` → `InvokeAsync(StateHasChanged)`. The `InvokeAsync` dispatch is asynchronous — the DOM update is queued on the Blazor circuit dispatcher and has NOT completed by the time `LaunchAndLoginAsync` returns. AC-3 must therefore use `WaitForFunctionAsync` to await the final text, not a direct text assertion.
 
 ### 3.4 Circuit-based connection counting
 
@@ -101,7 +106,7 @@ The `PcsRemote.E2E.Tests` project must:
 | ID | Requirement |
 |---|---|
 | **R-2** | The smoke test MUST verify HTTP 200 at the root URL AND the presence of the `.pcs-status-indicator` CSS class in the rendered DOM. |
-| **R-3** | The W-SC-3 test MUST use two separate Playwright browser contexts connecting to the same server. The `.connected-user-count` element in Context 1 must update to reflect 2 users when Context 2 opens, and back to 1 user when Context 2 closes. Each Playwright `IBrowserContext` navigating to the root URL constitutes one connected user (via `PcsProCircuitHandler`). |
+| **R-3** | The W-SC-3 test MUST use two separate Playwright browser contexts connecting to the same server. The `.connected-user-count` element in Context 1 must update to reflect 2 users when Context 2 opens, and back to 1 user when Context 2 closes. Each Playwright page navigating to the root URL (and establishing a Blazor circuit) constitutes one connected user (via `PcsProCircuitHandler`). |
 | **R-4** | The W-SC-9 test MUST verify that a state change triggered after both contexts are connected is reflected in BOTH contexts' `.pcs-status-indicator` elements showing `"Loading matches…"`. |
 | **R-5** | All Playwright waits MUST use `WaitForSelectorAsync`, `WaitForFunctionAsync`, or `Locator.WaitForAsync` — NOT `Task.Delay` fixed sleeps. |
 | **R-6** | The Playwright browser must be launched in headless mode. |
@@ -149,10 +154,10 @@ When:
 1. Context 1's page navigates to the root URL.
 2. Context 2's page navigates to the root URL.
 3. Both pages wait until `.pcs-status-indicator` is visible and contains `"PCS Pro not running"` (confirms circuit connected and component rendered).
-4. The test resolves `IPcsProAutomationService` from `factory.Services`, casts to `MockPcsProAutomationService`, and calls `LaunchAndLoginAsync(CancellationToken.None)`.
+4. The test resolves `IPcsProAutomationService` from `factory.Services`, casts to `MockPcsProAutomationService`, and **awaits** `LaunchAndLoginAsync(CancellationToken.None)`.
 
 Then:
-- Both Context 1 and Context 2's `.pcs-status-indicator` elements update to `"Loading matches…"` (the `MatchSelection` label — the final state after zero-delay `LaunchAndLoginAsync` completes).
+- Both Context 1 and Context 2's `.pcs-status-indicator` elements eventually show `"Loading matches…"` (the `MatchSelection` label — the final state after zero-delay `LaunchAndLoginAsync` completes). Both assertions use `WaitForFunctionAsync` or `Locator.WaitForAsync` with a **10-second timeout** — not a direct text query. The synchronous mock transitions do not imply synchronous DOM rendering (state events dispatch `InvokeAsync(StateHasChanged)` asynchronously on the circuit).
 - Both contexts show the same text.
 
 ---
