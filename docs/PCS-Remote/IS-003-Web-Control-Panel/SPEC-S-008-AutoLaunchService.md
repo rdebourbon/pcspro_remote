@@ -68,7 +68,7 @@ Add to `Program.cs` after existing `AddHostedService<PcsProStateBroadcaster>()`:
 builder.Services.AddHostedService<AutoLaunchService>();
 ```
 
-> **Ordering rationale:** `AutoLaunchService` must be registered **after** `PcsProStateBroadcaster` to ensure the hub subscription is active before the launch flow produces its first state transition (`NotRunning` → `Launching`). This guarantee holds provided `PcsProStateBroadcaster.ExecuteAsync` subscribes to `StateChanged` synchronously before its first `await` — which is the expected pattern for event-subscription hosted services. Reversing the order risks those early transitions being missed by the broadcaster.
+> **Ordering rationale:** `AutoLaunchService` must be registered **after** `PcsProStateBroadcaster` to ensure the hub subscription is active before the launch flow produces its first state transition (`NotRunning` → `Launching`). `PcsProStateBroadcaster` implements `IHostedService` directly (not `BackgroundService`) and subscribes to `StateChanged` synchronously in `StartAsync`, returning `Task.CompletedTask` immediately — the subscription is guaranteed to be active before the host proceeds to start the next service. Reversing the order risks those early transitions being missed by the broadcaster.
 
 No other Program.cs changes, except adding `public partial class Program { }` at the end of the file to expose the implicit Program class for `WebApplicationFactory` in the integration test (Test-6).
 
