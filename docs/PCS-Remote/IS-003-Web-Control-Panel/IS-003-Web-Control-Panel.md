@@ -106,7 +106,7 @@ Steps are identified with stable IDs (S-001 through S-009). IDs are never renumb
 
 ---
 
-### S-008 — Auto-launch IHostedService
+### S-008 — Auto-launch IHostedService ✅ DELIVERED (commit `4c49657`)
 
 **What changes:** An `AutoLaunchService` implementing `IHostedService` is added to `PcsRemote.Web`. On `StartAsync`, if the `PcsPro:AutoLaunch` configuration flag is enabled (default: `true`), the service calls the automation service to initiate the launch-and-login flow. If the flow reaches `Error` state, the existing status indicator (S-004) already shows 🔴 — no additional UI work is required here. The service is registered in the DI pipeline. An integration test using the mock service verifies that the hosted service triggers the launch flow on startup and that state transitions are observable.
 
