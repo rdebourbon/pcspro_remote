@@ -4,8 +4,8 @@
 |---|---|
 | **Document** | SPEC-S-009-PlaywrightE2E.md |
 | **Status** | IN REVIEW |
-| **Version** | 0.3 |
-| **Date** | 2026-04-12 |
+| **Version** | 0.4 |
+| **Date** | 2026-04-13 |
 | **Step ID** | S-009 |
 | **Governing IS** | IS-003-Web-Control-Panel.md v0.3 (APPROVED) |
 | **Governing HLPS** | HLPS-003-Web-Control-Panel.md v0.2 (APPROVED) |
@@ -48,19 +48,26 @@ Use `WebApplicationFactory<Program>` (from `Microsoft.AspNetCore.Mvc.Testing`) c
 
 Override `CreateHost(IHostBuilder builder)` in the `PcsProWebApplicationFactory` subclass:
 1. Call `builder.ConfigureWebHost(wb => wb.UseKestrel().UseUrls("http://127.0.0.1:0"))` — configures Kestrel on the single host.
-2. Register an `IHostApplicationLifetime.ApplicationStarted` callback that reads `host.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First()` into a `TaskCompletionSource<string>` stored on the factory subclass.
-3. Call `base.CreateHost(builder)` and return the result — WAF owns the host lifecycle; do NOT call `host.Start()` here.
+2. Call `var host = base.CreateHost(builder)` — builds the host and returns it; WAF owns the lifecycle; do NOT call `host.Start()` here.
+3. Register `host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStarted` callback that reads `host.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First()` and calls `_serverAddressTcs.SetResult(addr)` on a `TaskCompletionSource<string>` stored on the factory subclass.
+4. Return `host`.
 
-In `[ClassInitialize]`, after instantiating the factory, trigger host startup by accessing `factory.Services` (forces `EnsureServer()`). Then `await` the `TaskCompletionSource<string>` to obtain `ServerAddress`. Because there is only one host and one DI container, `factory.Services` and the live Kestrel app share the same singleton instances.
+> **Why this order matters:** `IHostApplicationLifetime` is a DI service that only exists in `host.Services` after `base.CreateHost(builder)` has built the container. Registering the callback in step 3 (after step 2) gives the implementer a valid `host` reference to resolve services from. The callback fires later — when WAF starts the host.
+
+In `[ClassInitialize]`, after instantiating the factory, trigger host startup by calling `factory.CreateClient()` (which forces WAF to call `EnsureServer()` and start the host). Then `await` the `TaskCompletionSource<string>` to obtain `ServerAddress`. The `HttpClient` returned by `CreateClient()` may be discarded. Because there is only one host and one DI container, `factory.Services` and the live Kestrel app share the same singleton instances.
 
 The app does not use `app.UseHttpsRedirection()`, so all test navigation is plain HTTP with no redirect concerns.
 
 **Configuration overrides** applied to every test host instance via `WithWebHostBuilder`:
+
+IConfiguration key-value overrides (via `UseSetting`):
 - `PcsPro:UseMock = true` — use the mock automation service
 - `PcsPro:AutoLaunch = false` — suppress auto-launch so tests control when state changes occur
 - `PcsPro:Mock:LaunchDelay = 0`, `PcsPro:Mock:LoginDetectedDelay = 0`, `PcsPro:Mock:CredentialsEnteredDelay = 0` — zero delays so state transitions are instantaneous in tests
 - `PcsPro:Mock:ErrorProbability = 0` — no random errors
-- `CircuitOptions.DisconnectedCircuitRetentionPeriod = TimeSpan.FromSeconds(1)` — ensures `OnCircuitClosedAsync` fires within ~1 second of connection loss (default is 3 minutes), making the W-SC-3 disconnect assertion reliably complete within the 10-second wait timeout
+
+DI options override (via `ConfigureServices`):
+- `services.Configure<CircuitOptions>(o => o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromSeconds(1))` — ensures `OnCircuitClosedAsync` fires within ~1 second of connection loss (default is 3 minutes; `CircuitOptions` is not IConfiguration-bindable and must be set through the DI options pipeline), making the W-SC-3 disconnect assertion reliably complete within the 10-second wait timeout
 
 ### 3.2 Playwright setup
 
@@ -68,11 +75,11 @@ Playwright browsers must be installed before tests can run. The `.csproj` must i
 
 ```xml
 <Target Name="InstallPlaywrightBrowsers" AfterTargets="Build">
-  <Exec Command="powershell &quot;$(OutputPath)playwright.ps1&quot; install chromium" />
+  <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(TargetDir)playwright.ps1&quot; install chromium" />
 </Target>
 ```
 
-Uses `powershell` (Windows PowerShell 5.1, guaranteed on all Windows machines) rather than `pwsh` (PowerShell 7, optional install). The path is quoted to handle directories containing spaces. Playwright's install command is idempotent — it skips the download if the browser is already installed. Tests use **headless Chromium** by default.
+Uses `powershell` (Windows PowerShell 5.1, guaranteed on all Windows machines) rather than `pwsh` (PowerShell 7, optional install). The `-NoProfile` and `-ExecutionPolicy Bypass` flags ensure the script runs correctly regardless of the machine's configured execution policy (which is `Restricted` by default on Windows client SKUs). The `-File` flag is the canonical way to invoke a `.ps1` file with parameters. `$(TargetDir)` is used rather than `$(OutputPath)` to avoid relative-path ambiguity. The path is quoted to handle directories containing spaces. Playwright's install command is idempotent — it skips the download if the browser is already installed. Tests use **headless Chromium** by default.
 
 Each test method creates its own `IBrowserContext` (and `IPage` within that context) and disposes them after the test. The `IBrowser` instance is shared across the test class.
 
@@ -141,7 +148,7 @@ When:
 Then: Context 1's `.connected-user-count` eventually shows `"2 users online"`.
 
 When:
-5. Context 2's page is closed.
+5. `await page2.CloseAsync()` is called (closes the tab; triggers the circuit disconnect timer — do NOT close `context2` here as it must remain open for orderly disposal in test cleanup).
 
 Then: Context 1's `.connected-user-count` eventually shows `"1 user online"`.
 
@@ -174,9 +181,9 @@ New test file: `tests/PcsRemote.E2E.Tests/PcsProE2ETests.cs`
 
 Test class setup:
 - Implement a `PcsProWebApplicationFactory : WebApplicationFactory<Program>` subclass with a `ServerAddress` property (set from `IServerAddressesFeature` after Kestrel binds) — see §3.1.
-- Create and start the factory once per class (`[ClassInitialize]`).
-- Launch one Playwright `IBrowser` (headless Chromium) once per class.
-- In `[ClassCleanup]`: dispose `IBrowser` first (await `DisposeAsync`), then dispose the factory. This order prevents Playwright from emitting connection-reset exceptions when the Kestrel server stops.
+- Create and start the factory once per class (`[ClassInitialize]`): instantiate the factory, call `factory.CreateClient()` to trigger startup, then `await` the factory's `ServerAddressTask` to obtain the bound address.
+- Create `_playwright` via `await Playwright.CreateAsync()`, then launch one Playwright `IBrowser` (headless Chromium) once per class.
+- In `[ClassCleanup]`: dispose `IBrowser` first (await `DisposeAsync`), then call `_playwright.Dispose()`, then dispose the factory. This order prevents Playwright from emitting connection-reset exceptions when the Kestrel server stops.
 - Decorate the test class with `[DoNotParallelize]` to guarantee serial execution within the class and prevent connection-count pollution from concurrently running tests.
 
 Each test method creates fresh `IBrowserContext` and `IPage` instances and disposes them after the test.
