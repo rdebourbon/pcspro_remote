@@ -160,7 +160,29 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     }
 
     public Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default)
-        => throw new NotImplementedException();
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var matches = Enumerable.Range(1, _options.FakeMatchCount)
+            .Select(i => new MatchInfo(
+                MatchId: $"match-{i}",
+                HomeTeam: FakeTeams[(i * 2 - 2) % FakeTeams.Length],
+                AwayTeam: FakeTeams[(i * 2 - 1) % FakeTeams.Length],
+                MatchType: FakeMatchTypes[(i - 1) % FakeMatchTypes.Length],
+                MatchDate: today))
+            .ToList();
+        return Task.FromResult<IReadOnlyList<MatchInfo>>(matches);
+    }
+
+    private static readonly string[] FakeTeams =
+    [
+        "Riverside CC", "Oakwood XI", "Hillcrest CC", "Valley Hawks",
+        "Northgate CC", "Southfield XI", "Westbrook CC", "Eastside XI"
+    ];
+
+    private static readonly string[] FakeMatchTypes =
+    [
+        "Club T20", "20 overs", "Club Limited", "Friendly", "League"
+    ];
 
     public Task<MatchTeams> GetTeamNamesAsync(CancellationToken ct = default)
         => Task.FromResult(new MatchTeams("Home XI", "Away XI"));

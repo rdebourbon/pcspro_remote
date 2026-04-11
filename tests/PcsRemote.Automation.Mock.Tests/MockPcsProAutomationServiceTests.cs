@@ -576,6 +576,143 @@ public sealed class MockPcsProAutomationServiceTests
         sut.LastErrorReason.Should().Be("Error before Launching transition",
             "second error reason must overwrite the first");
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // S-005 Match Data Tests
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ──────────────────────────────────────────────────────────────────────
+    // AC-1: Correct count
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_FakeMatchCountFive_ReturnsExactlyFiveRecords()
+    {
+        var sut = CreateSut(o => o.FakeMatchCount = 5);
+
+        var matches = await sut.GetTodaysMatchesAsync();
+
+        matches.Should().HaveCount(5);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // AC-2: Today's date on all records (pre-captured to avoid midnight race)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_AllRecordsHaveTodaysDate()
+    {
+        var sut = CreateSut(o => o.FakeMatchCount = 3);
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        var matches = await sut.GetTodaysMatchesAsync();
+
+        matches.Should().AllSatisfy(m => m.MatchDate.Should().Be(today));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // AC-3: Zero count returns empty list
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_FakeMatchCountZero_ReturnsEmptyNonNullList()
+    {
+        var sut = CreateSut(o => o.FakeMatchCount = 0);
+
+        var matches = await sut.GetTodaysMatchesAsync();
+
+        matches.Should().NotBeNull();
+        matches.Should().BeEmpty();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // AC-4: Non-empty team names and match type on all records
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_AllRecordsHaveNonEmptyTeamNamesAndMatchType()
+    {
+        var sut = CreateSut(o => o.FakeMatchCount = 5);
+
+        var matches = await sut.GetTodaysMatchesAsync();
+
+        matches.Should().AllSatisfy(m =>
+        {
+            m.HomeTeam.Should().NotBeNullOrEmpty();
+            m.AwayTeam.Should().NotBeNullOrEmpty();
+            m.MatchType.Should().NotBeNullOrEmpty();
+        });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // AC-5: Backward-compatibility defaults on MatchInfo
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void MatchInfo_DefaultConstruction_CarriesExpectedSentinelValues()
+    {
+        var info = new MatchInfo("m1");
+
+        info.MatchId.Should().Be("m1");
+        info.HomeTeam.Should().Be("Home XI");
+        info.AwayTeam.Should().Be("Away XI");
+        info.MatchType.Should().Be("Friendly");
+        info.MatchDate.Should().Be(default(DateOnly));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // AC-6: No semaphore interaction — call completes while lifecycle op in-flight
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_WhileSemaphoreHeld_CompletesWithin200ms()
+    {
+        var sut = CreateSut(o => o.LaunchDelay = TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource();
+
+        var launchTask = Task.Run(() => sut.LaunchAndLoginAsync(cts.Token));
+        await Task.Delay(100); // ensure semaphore is acquired before proceeding
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var matches = await sut.GetTodaysMatchesAsync();
+        sw.Stop();
+
+        sw.ElapsedMilliseconds.Should().BeLessThan(200,
+            "GetTodaysMatchesAsync must not wait for the semaphore");
+        matches.Should().NotBeNull();
+
+        cts.Cancel();
+        await launchTask.IgnoringCancellationException();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // AC-7: Distinct MatchIds within a single response
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_FakeMatchCountFive_AllMatchIdsAreDistinct()
+    {
+        var sut = CreateSut(o => o.FakeMatchCount = 5);
+
+        var matches = await sut.GetTodaysMatchesAsync();
+
+        matches.Select(m => m.MatchId).Should().OnlyHaveUniqueItems();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // AC-8: Pre-cancelled CancellationToken returns full list without exception
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_PreCancelledToken_ReturnsFullListWithoutException()
+    {
+        var sut = CreateSut(o => o.FakeMatchCount = 3);
+        var cancelledToken = new CancellationToken(canceled: true);
+
+        var matches = await sut.GetTodaysMatchesAsync(cancelledToken);
+
+        matches.Should().HaveCount(3);
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
