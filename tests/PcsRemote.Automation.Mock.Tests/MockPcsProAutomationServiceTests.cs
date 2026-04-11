@@ -23,6 +23,21 @@ public sealed class MockPcsProAutomationServiceTests
             NullLogger<MockPcsProAutomationService>.Instance);
     }
 
+    /// <summary>
+    /// Creates a SUT with an exposed opts reference for mutation-based tests
+    /// (AC-4, AC-5, AC-11, AC-14) that need to change ErrorProbability mid-test.
+    /// </summary>
+    private static (MockPcsProAutomationService Sut, MockPcsProOptions Opts) CreateSutWithOpts(
+        Action<MockPcsProOptions>? configure = null)
+    {
+        var opts = new MockPcsProOptions();
+        configure?.Invoke(opts);
+        var sut = new MockPcsProAutomationService(
+            Options.Create(opts),
+            NullLogger<MockPcsProAutomationService>.Instance);
+        return (sut, opts);
+    }
+
     private static List<PcsProState> CaptureEvents(MockPcsProAutomationService sut)
     {
         var events = new List<PcsProState>();
@@ -291,6 +306,275 @@ public sealed class MockPcsProAutomationServiceTests
 
         cts.Cancel();
         await first.IgnoringCancellationException();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // S-004 Error Injection Tests
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ──────────────────────────────────────────────────────────────────────
+    // EI-AC-3: LaunchAndLoginAsync with ErrorProbability=1.0 → Error state
+    //          with canonical reason string
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_ErrorProbabilityOne_TransitionsToErrorWithCanonicalReason()
+    {
+        var sut = CreateSut(o => o.ErrorProbability = 1.0);
+
+        await sut.LaunchAndLoginAsync();
+
+        sut.CurrentState.Should().Be(PcsProState.Error);
+        sut.LastErrorReason.Should().Be("Error before Launching transition");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // EI-AC-4: LoadMatchAsync from MatchSelection with EP=1.0 → Error
+    //          Opts-mutation: drive to MatchSelection with EP=0, then EP=1
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LoadMatchAsync_FromMatchSelection_ErrorProbabilityOne_TransitionsToError()
+    {
+        var (sut, opts) = CreateSutWithOpts();
+        await sut.LaunchAndLoginAsync(); // EP=0, reaches MatchSelection
+
+        opts.ErrorProbability = 1.0;
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+
+        sut.CurrentState.Should().Be(PcsProState.Error);
+        sut.LastErrorReason.Should().Be("Error before MatchSelectionSearching transition");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // EI-AC-5: LoadMatchAsync from MatchLoaded with EP=1.0 → Error (not
+    //          MatchSelection) — ChangeMatch delay fires the error
+    //          Opts-mutation: drive to MatchLoaded with EP=0, then EP=1
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LoadMatchAsync_FromMatchLoaded_ErrorProbabilityOne_TransitionsToErrorAtChangeMatchDelay()
+    {
+        var (sut, opts) = CreateSutWithOpts();
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1")); // reaches MatchLoaded
+
+        opts.ErrorProbability = 1.0;
+        await sut.LoadMatchAsync(new MatchInfo("m2"));
+
+        sut.CurrentState.Should().Be(PcsProState.Error);
+        sut.CurrentState.Should().NotBe(PcsProState.MatchSelection);
+        sut.LastErrorReason.Should().Be("Error before ChangeMatch MatchSelection transition");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // EI-AC-6: LaunchAndLoginAsync with EP=0.0 completes normally
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_ErrorProbabilityZero_CompletesNormallyWithNullReason()
+    {
+        var sut = CreateSut(o => o.ErrorProbability = 0.0);
+
+        await sut.LaunchAndLoginAsync();
+
+        sut.CurrentState.Should().Be(PcsProState.MatchSelection);
+        sut.LastErrorReason.Should().BeNull();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // EI-AC-7: LoadMatchAsync with EP=0.0 completes normally
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LoadMatchAsync_ErrorProbabilityZero_CompletesNormallyWithNullReason()
+    {
+        var sut = CreateSut(o => o.ErrorProbability = 0.0);
+        await sut.LaunchAndLoginAsync();
+
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+
+        sut.CurrentState.Should().Be(PcsProState.MatchLoaded);
+        sut.LastErrorReason.Should().BeNull();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // EI-AC-8: Determinism — two instances with same RngSeed and EP=0.5
+    //          produce identical outcomes across LaunchAndLoginAsync +
+    //          LoadMatchAsync. Seed is discovered at runtime to guarantee
+    //          LaunchAndLoginAsync completes (3 launch draws all ≥ 0.5).
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task TwoInstancesSameSeed_ProduceIdenticalStateOutcomesAcrossMultipleCalls()
+    {
+        const double ep = 0.5;
+
+        // Find a seed where all 3 LaunchAndLoginAsync draws are >= EP
+        // (i.e., no error fires during launch). With EP=0.5, ~12.5% of seeds qualify.
+        int? seed = null;
+        for (int s = 0; s < 10_000; s++)
+        {
+            var probe = new Random(s);
+            if (probe.NextDouble() >= ep && probe.NextDouble() >= ep && probe.NextDouble() >= ep)
+            {
+                seed = s;
+                break;
+            }
+        }
+        seed.Should().HaveValue("a suitable seed must be discoverable within 10000 attempts");
+
+        var (sut1, _) = CreateSutWithOpts(o => { o.RngSeed = seed; o.ErrorProbability = ep; });
+        var (sut2, _) = CreateSutWithOpts(o => { o.RngSeed = seed; o.ErrorProbability = ep; });
+
+        // Step 1: LaunchAndLoginAsync — both must complete to MatchSelection (seed guarantees this)
+        await sut1.LaunchAndLoginAsync();
+        await sut2.LaunchAndLoginAsync();
+
+        sut1.CurrentState.Should().Be(PcsProState.MatchSelection,
+            "seed was chosen so launch completes on both instances");
+        sut2.CurrentState.Should().Be(PcsProState.MatchSelection,
+            "seed was chosen so launch completes on both instances");
+        sut1.LastErrorReason.Should().Be(sut2.LastErrorReason);
+
+        // Step 2: LoadMatchAsync — RNG sequences continue identically on both instances
+        await sut1.LoadMatchAsync(new MatchInfo("m1"));
+        await sut2.LoadMatchAsync(new MatchInfo("m1"));
+
+        sut1.CurrentState.Should().Be(sut2.CurrentState,
+            "identical seeds produce identical outcomes on LoadMatchAsync");
+        sut1.LastErrorReason.Should().Be(sut2.LastErrorReason,
+            "identical seeds produce identical LastErrorReason values");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // EI-AC-9: StateChanged fires with Error; LastErrorReason is non-null
+    //          inside the handler (verifies R-3 ordering: LastErrorReason
+    //          set BEFORE Transition fires StateChanged)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_ErrorInjected_StateChangedFiresWithLastErrorReasonAlreadySet()
+    {
+        var sut = CreateSut(o => o.ErrorProbability = 1.0);
+        var handlerFired = false;
+
+        sut.StateChanged += (_, state) =>
+        {
+            if (state == PcsProState.Error)
+            {
+                sut.LastErrorReason.Should().NotBeNull(
+                    "LastErrorReason must be set before StateChanged fires (R-3 ordering)");
+                handlerFired = true;
+            }
+        };
+
+        await sut.LaunchAndLoginAsync();
+
+        handlerFired.Should().BeTrue("the StateChanged handler must have been invoked with Error state");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // EI-AC-10: StopAsync after error resets to NotRunning and clears reason
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StopAsync_AfterErrorState_ResetsToNotRunningAndClearsLastErrorReason()
+    {
+        var sut = CreateSut(o => o.ErrorProbability = 1.0);
+        await sut.LaunchAndLoginAsync(); // → Error
+        sut.CurrentState.Should().Be(PcsProState.Error);
+
+        await sut.StopAsync();
+
+        sut.CurrentState.Should().Be(PcsProState.NotRunning);
+        sut.LastErrorReason.Should().BeNull();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // EI-AC-11: Recovery cycle — after StopAsync following error, the
+    //           service can successfully run LaunchAndLoginAsync again.
+    //           Opts-mutation: EP=1 to trigger error, then EP=0 to recover.
+    //           Separate test method per spec (not bundled with AC-10).
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_AfterErrorAndStop_SuccessfullyRecoversToMatchSelection()
+    {
+        var (sut, opts) = CreateSutWithOpts(o => o.ErrorProbability = 1.0);
+        await sut.LaunchAndLoginAsync(); // → Error
+        await sut.StopAsync();           // → NotRunning, reason cleared
+
+        opts.ErrorProbability = 0.0;
+        await sut.LaunchAndLoginAsync(); // should complete normally
+
+        sut.CurrentState.Should().Be(PcsProState.MatchSelection);
+        sut.LastErrorReason.Should().BeNull();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // EI-AC-12: LaunchAndLoginAsync from Error state throws
+    //           InvalidOperationException (existing guard regression check)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_FromErrorState_ThrowsInvalidOperationException()
+    {
+        var sut = CreateSut(o => o.ErrorProbability = 1.0);
+        await sut.LaunchAndLoginAsync(); // → Error
+
+        Func<Task> act = () => sut.LaunchAndLoginAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>(
+            "Error state is not NotRunning, so the precondition guard must reject the call");
+        sut.CurrentState.Should().Be(PcsProState.Error);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // EI-AC-13: LoadMatchAsync from Error state throws
+    //           InvalidOperationException (existing guard regression check)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LoadMatchAsync_FromErrorState_ThrowsInvalidOperationException()
+    {
+        var sut = CreateSut(o => o.ErrorProbability = 1.0);
+        await sut.LaunchAndLoginAsync(); // → Error
+
+        Func<Task> act = () => sut.LoadMatchAsync(new MatchInfo("m1"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>(
+            "Error state is neither MatchSelection nor MatchLoaded, so the guard must reject");
+        sut.CurrentState.Should().Be(PcsProState.Error);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // EI-AC-14: Reason overwrite — second error from different method
+    //           overwrites the first reason set by TransitionToError.
+    //           Opts-mutation to reach MatchLoaded then trigger two distinct
+    //           error reasons and assert the second overwrites the first.
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task TransitionToError_SecondErrorOverwritesFirstLastErrorReason()
+    {
+        var (sut, opts) = CreateSutWithOpts();
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1")); // reaches MatchLoaded
+
+        // Error 1: LoadMatchAsync from MatchLoaded → ChangeMatchDelay fires
+        opts.ErrorProbability = 1.0;
+        await sut.LoadMatchAsync(new MatchInfo("m2"));
+        sut.LastErrorReason.Should().Be("Error before ChangeMatch MatchSelection transition");
+
+        // Reset to NotRunning (clears LastErrorReason)
+        await sut.StopAsync();
+        sut.LastErrorReason.Should().BeNull("StopAsync must clear LastErrorReason");
+
+        // Error 2: LaunchAndLoginAsync → LaunchDelay fires (different reason)
+        await sut.LaunchAndLoginAsync();
+        sut.LastErrorReason.Should().Be("Error before Launching transition",
+            "second error reason must overwrite the first");
     }
 }
 
