@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Document** | IS-003-Web-Control-Panel.md |
-| **Status** | IN REVIEW |
+| **Status** | APPROVED |
 | **Version** | 0.3 |
 | **Date** | 2026-04-11 |
 | **Governing HLPS** | HLPS-003-Web-Control-Panel.md v0.2 (APPROVED) |
@@ -176,3 +176,4 @@ S-001 + S-002 + S-003 + S-004 + S-005  →  S-009 (Playwright E2E + smoke test)
 |---|---|---|---|
 | R1 | 2026-04-11 | Sonnet 4.6, Opus 4.6, GPT-4.1 | NEEDS REVIEW — 2 HIGH, 6 MEDIUM accepted; 4 deferred/rejected; v0.2 fixes applied |
 | R2 | 2026-04-11 | Sonnet 4.6, Opus 4.6, GPT-4.1 | NEEDS REVIEW — Sonnet+Opus APPROVED; GPT 2 MEDIUM (S-009 missing S-002 dep, "respectively" inversion) + 2 LOW accepted; v0.3 fixes applied |
+| R3 | 2026-04-11 | Sonnet 4.6, GPT-4.1 | APPROVED — unanimous, 0 blocking, 0 non-blocking; all R2 fixes verified, 0 regressions |
