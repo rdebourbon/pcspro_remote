@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PcsRemote.Automation.Mock;
@@ -802,6 +803,130 @@ public sealed class MockPcsProAutomationServiceTests
         bytes[^2].Should().Be(0xFF);
         bytes[^1].Should().Be(0xD9);
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-007 AC-1: LaunchAndLoginAsync — log levels and counts
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_HappyPath_EmitsCorrectLogLevelsAndCounts()
+    {
+        var (sut, logger) = CreateSutWithLogger(o => o.ErrorProbability = 0.0);
+
+        await sut.LaunchAndLoginAsync();
+
+        var info  = logger.Captured.Count(e => e.Level == LogLevel.Information);
+        var debug = logger.Captured.Count(e => e.Level == LogLevel.Debug);
+
+        info.Should().Be(2,  "entry + MatchSelection completion are Info");
+        debug.Should().Be(2, "Launching + LoginScreen transitions are Debug");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-007 AC-2: LaunchAndLoginAsync — rendered message substrings
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_HappyPath_EmitsExpectedMessageSubstrings()
+    {
+        var (sut, logger) = CreateSutWithLogger(o => o.ErrorProbability = 0.0);
+
+        await sut.LaunchAndLoginAsync();
+
+        var messages = logger.Captured.Select(e => e.Message).ToList();
+
+        messages.Should().ContainMatch("*LaunchAndLoginAsync starting*");
+        messages.Should().ContainMatch("*Launching*");
+        messages.Should().ContainMatch("*LoginScreen*");
+        messages.Should().ContainMatch("*LaunchAndLoginAsync complete*");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-007 AC-3: StopAsync — log levels and counts
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StopAsync_FromMatchLoaded_EmitsOneInfoEntry_OneInfoCompletion()
+    {
+        var (sut, logger) = CreateSutWithLogger(o => o.ErrorProbability = 0.0);
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("test-match"));
+        logger.Captured.Clear();
+
+        await sut.StopAsync();
+
+        var info = logger.Captured.Count(e => e.Level == LogLevel.Information);
+        info.Should().Be(2, "StopAsync entry (starting from state) + completion are both Info");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-007 AC-4: ErrorProbability=1.0 — warning log emitted with reason string
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_ErrorProbabilityOne_EmitsWarningWithReason()
+    {
+        var (sut, logger) = CreateSutWithLogger(o => o.ErrorProbability = 1.0);
+
+        await sut.LaunchAndLoginAsync();
+
+        var warning = logger.Captured.Single(e => e.Level == LogLevel.Warning);
+        warning.Message.Should().Contain("Error before Launching transition");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-007 AC-5: LoadMatchAsync happy path — log levels and counts
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LoadMatchAsync_FirstLoad_EmitsCorrectLogLevelsAndCounts()
+    {
+        var (sut, logger) = CreateSutWithLogger(o => o.ErrorProbability = 0.0);
+        await sut.LaunchAndLoginAsync();
+        logger.Captured.Clear();
+
+        await sut.LoadMatchAsync(new MatchInfo("test-match"));
+
+        var info  = logger.Captured.Count(e => e.Level == LogLevel.Information);
+        var debug = logger.Captured.Count(e => e.Level == LogLevel.Debug);
+
+        info.Should().Be(2,  "LoadMatchAsync entry + completion are Info");
+        debug.Should().Be(2, "MatchSelectionSearching + MatchSelectionReady transitions are Debug");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-007 AC-6: LoadMatchAsync change-match path — extra Debug log
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task LoadMatchAsync_ChangeMatchPath_EmitsExtraDebugLog()
+    {
+        var (sut, logger) = CreateSutWithLogger(o => o.ErrorProbability = 0.0);
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("first-match"));
+        logger.Captured.Clear();
+
+        await sut.LoadMatchAsync(new MatchInfo("second-match"));
+
+        var debug = logger.Captured.Count(e => e.Level == LogLevel.Debug);
+
+        // ChangeMatch path adds one extra Debug: "ChangeMatch — reached MatchSelection"
+        debug.Should().Be(3, "ChangeMatch (MatchSelection) + MatchSelectionSearching + MatchSelectionReady");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-007 logging helper
+    // ──────────────────────────────────────────────────────────────────────
+
+    private static (MockPcsProAutomationService Sut, CapturingLogger<MockPcsProAutomationService> Logger)
+        CreateSutWithLogger(Action<MockPcsProOptions>? configure = null)
+    {
+        var opts = new MockPcsProOptions();
+        configure?.Invoke(opts);
+        var logger = new CapturingLogger<MockPcsProAutomationService>();
+        var sut = new MockPcsProAutomationService(Options.Create(opts), logger);
+        return (sut, logger);
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -814,5 +939,30 @@ internal static class TaskExtensions
     {
         try { await task; }
         catch (OperationCanceledException) { }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Capturing logger for S-007 logging tests
+// ──────────────────────────────────────────────────────────────────────────
+
+internal sealed class CapturingLogger<T> : ILogger<T>
+{
+    public record LogEntry(LogLevel Level, string Message);
+
+    public List<LogEntry> Captured { get; } = new();
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter)
+    {
+        Captured.Add(new LogEntry(logLevel, formatter(state, exception)));
     }
 }

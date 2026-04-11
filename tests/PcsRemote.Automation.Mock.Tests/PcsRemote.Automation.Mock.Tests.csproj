@@ -9,6 +9,8 @@
 
   <ItemGroup>
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="MSTest" />
   </ItemGroup>
 

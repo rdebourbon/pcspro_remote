@@ -1,4 +1,5 @@
 using Serilog;
+using PcsRemote.Automation.Mock;
 
 // Stage 1: transient bootstrap logger — captures host construction errors before full config is ready.
 Log.Logger = new LoggerConfiguration()
@@ -17,6 +18,8 @@ try
                 path: "logs/pcs-remote-.log",
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 7));
+
+    builder.Services.AddPcsProAutomationService(builder.Configuration);
 
     var app = builder.Build();
 
