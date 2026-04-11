@@ -89,7 +89,7 @@ This IS breaks HLPS-002 into seven atomic steps. Each step is independently buil
 
 **Dependencies:** S-004 (full chain S-001 → S-004; options model prerequisite is S-002).
 
-**Verification intent:** Unit tests verify: returned bytes begin with JPEG magic bytes (`FF D8 FF`); with probability=1.0 no two consecutive calls return identical bytes; with probability=0.0 all calls return identical bytes.
+**Verification intent:** Unit tests verify: returned bytes begin with JPEG magic bytes (`FF D8 FF`) and end with JPEG EOI marker (`FF D9`); with probability=1.0 no two consecutive calls return identical bytes; with probability=0.0 all calls return identical bytes.
 
 > **Risk note:** `System.Drawing.Common` requires GDI+ (Windows-only, per C-1). If CI runners become Linux-hosted, this step must be revisited (per HLPS-002 §2).
 
