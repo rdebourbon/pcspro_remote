@@ -40,7 +40,9 @@
 
     private static (string, string) HandleUnknownState(PcsProState state)
     {
-        Debug.Assert(false, $"Unhandled PcsProState value: {state}");
+        // Trace.TraceError (not Debug.Assert) — emits diagnostic output without throwing
+        // in test hosts that redirect Debug.Fail to exceptions (e.g. MSTest).
+        Trace.TraceError($"Unhandled PcsProState value: {state}");
         return ("status-red", "Error");
     }
 
