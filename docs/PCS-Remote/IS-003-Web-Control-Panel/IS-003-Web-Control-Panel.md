@@ -22,7 +22,7 @@ Steps are identified with stable IDs (S-001 through S-009). IDs are never renumb
 
 ## Steps
 
-### S-001 — Blazor Server + Radzen middleware pipeline
+### S-001 — Blazor Server + Radzen middleware pipeline ✅ DELIVERED (commit `3e390b9`)
 
 **What changes:** `PcsRemote.Web` is upgraded from a bare ASP.NET Core host to a functional Blazor Server application. This means adding the Radzen Blazor and SignalR packages, registering all required Blazor, Radzen, and SignalR services in `Program.cs`, wiring the middleware pipeline (Blazor hub endpoint, fallback page routing), and configuring Kestrel to bind on all interfaces so the app is reachable from any machine on the local network.
 
