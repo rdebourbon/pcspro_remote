@@ -1,0 +1,51 @@
+@using PcsRemote.Core
+@using System.Diagnostics
+@implements IDisposable
+@inject IPcsProAutomationService AutomationService
+
+<span class="pcs-status-indicator @_colourClass">@_label</span>
+
+@code {
+    private string _colourClass = "status-grey";
+    private string _label = "PCS Pro not running";
+
+    protected override Task OnInitializedAsync()
+    {
+        // R-3: Subscribe before reading CurrentState to eliminate the race window where
+        // a state transition could fire between snapshot capture and handler attachment.
+        AutomationService.StateChanged += OnStateChanged;
+        (_colourClass, _label) = MapState(AutomationService.CurrentState);
+        return Task.CompletedTask;
+    }
+
+    private async void OnStateChanged(object? sender, PcsProState newState)
+    {
+        (_colourClass, _label) = MapState(newState);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static (string colourClass, string label) MapState(PcsProState state) =>
+        state switch
+        {
+            PcsProState.NotRunning              => ("status-grey",   "PCS Pro not running"),
+            PcsProState.Launching               => ("status-yellow", "PCS Pro starting\u2026"),
+            PcsProState.LoginScreen             => ("status-yellow", "Logging in\u2026"),
+            PcsProState.MatchSelection          => ("status-yellow", "Loading matches\u2026"),
+            PcsProState.MatchSelectionSearching => ("status-yellow", "Searching\u2026"),
+            PcsProState.MatchSelectionReady     => ("status-yellow", "Select a match"),
+            PcsProState.MatchLoaded             => ("status-green",  "Match loaded"),
+            PcsProState.Error                   => ("status-red",    "Error"),
+            _                                   => HandleUnknownState(state)
+        };
+
+    private static (string, string) HandleUnknownState(PcsProState state)
+    {
+        Debug.Assert(false, $"Unhandled PcsProState value: {state}");
+        return ("status-red", "Error");
+    }
+
+    public void Dispose()
+    {
+        AutomationService.StateChanged -= OnStateChanged;
+    }
+}
