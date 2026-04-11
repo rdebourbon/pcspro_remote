@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | IS-003-Web-Control-Panel.md |
 | **Status** | IN REVIEW |
-| **Version** | 0.2 |
+| **Version** | 0.3 |
 | **Date** | 2026-04-11 |
 | **Governing HLPS** | HLPS-003-Web-Control-Panel.md v0.2 (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.0 |
@@ -52,7 +52,7 @@ Steps are identified with stable IDs (S-001 through S-009). IDs are never renumb
 
 **Why:** Directly addresses W-SC-3 (live connected-user count), W-SC-9 (state pushed to all browsers simultaneously), and the state-on-reconnect requirement from HLPS-003. All multi-browser scenarios require this hub to be in place before component integration steps.
 
-**Dependencies:** S-001 (hub registration belongs in the middleware pipeline established there). Note: S-005 will depend on S-003 for the connection count UI, but the hub itself has no technical dependency on the application shell.
+**Dependencies:** S-001 (hub registration belongs in the middleware pipeline established there). Note: S-003 is strictly backend — the hub and connection tracker have no dependency on any Razor components or application shell; S-005 is the downstream consumer that wires the count into the UI.
 
 **Verification intent:** Unit/integration tests verify: new client immediately receives the current state on connect; state-change events from the service are broadcast to all connected clients; connection count increments and decrements correctly. Build and all existing tests pass.
 
@@ -124,9 +124,9 @@ Steps are identified with stable IDs (S-001 through S-009). IDs are never renumb
 
 **Why:** Satisfies W-SC-10 (Playwright E2E project with at least one passing smoke test). The multi-context tests added here deliver final verified coverage for W-SC-3 (live connected-user count across browsers) and W-SC-9 (simultaneous state broadcast to all browsers). Earlier steps (S-003, S-005) established the mechanisms and bUnit coverage; this step provides the end-to-end browser-level proof.
 
-**Note:** W-SC-3 and W-SC-9 unit/integration test coverage is established in S-003 and S-005 respectively. The Playwright multi-context tests in this step are the definitive browser-level verification. S-005 and S-008 verify their respective concerns via bUnit/integration tests; the Playwright smoke test and multi-context tests are consolidated here.
+**Note:** W-SC-9 unit/integration test coverage (state broadcast to all connected clients) is established in S-003. W-SC-3 unit/integration test coverage (counter mechanism and UI display) is established in S-003 and S-005 respectively. The Playwright multi-context tests in this step are the definitive browser-level verification for both.
 
-**Dependencies:** S-001 (app runs and serves HTTP); S-003 (hub and connection tracking complete); S-004 (status indicator element exists in DOM); S-005 (connected user count component complete — needed for W-SC-3 multi-context test).
+**Dependencies:** S-001 (app runs and serves HTTP); S-002 (application shell present — Playwright needs the layout to render); S-003 (hub and connection tracking complete); S-004 (status indicator element exists in DOM); S-005 (connected user count component complete — needed for W-SC-3 multi-context test).
 
 **Verification intent:** `dotnet test` on the E2E project produces at least one passing test. Multi-context Playwright tests for W-SC-3 and W-SC-9 pass. Build and all solution tests pass.
 
@@ -138,7 +138,7 @@ Steps are identified with stable IDs (S-001 through S-009). IDs are never renumb
 |---|---|
 | W-SC-1: App accessible from local network browser | S-001, S-002 |
 | W-SC-2: Status indicator updates in real-time | S-004 |
-| W-SC-3: Connected user count updates | S-005, S-009 |
+| W-SC-3: Connected user count updates | S-005 (mechanism + bUnit), S-009 (Playwright verification) |
 | W-SC-4: Match cards display correct data | S-006 |
 | W-SC-5: Single match auto-selected | S-006 |
 | W-SC-6: Match selection triggers visible state transitions | S-006 |
@@ -165,7 +165,7 @@ S-003 + S-004  →  S-008 (auto-launch service)
 
 S-006          →  S-007 (team name display)
 
-S-001 + S-003 + S-004 + S-005  →  S-009 (Playwright E2E + smoke test)
+S-001 + S-002 + S-003 + S-004 + S-005  →  S-009 (Playwright E2E + smoke test)
 ```
 
 ---
@@ -175,3 +175,4 @@ S-001 + S-003 + S-004 + S-005  →  S-009 (Playwright E2E + smoke test)
 | Round | Date | Reviewers | Result |
 |---|---|---|---|
 | R1 | 2026-04-11 | Sonnet 4.6, Opus 4.6, GPT-4.1 | NEEDS REVIEW — 2 HIGH, 6 MEDIUM accepted; 4 deferred/rejected; v0.2 fixes applied |
+| R2 | 2026-04-11 | Sonnet 4.6, Opus 4.6, GPT-4.1 | NEEDS REVIEW — Sonnet+Opus APPROVED; GPT 2 MEDIUM (S-009 missing S-002 dep, "respectively" inversion) + 2 LOW accepted; v0.3 fixes applied |
