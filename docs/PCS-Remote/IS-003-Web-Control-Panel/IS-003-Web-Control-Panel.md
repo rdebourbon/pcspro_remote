@@ -58,7 +58,7 @@ Steps are identified with stable IDs (S-001 through S-009). IDs are never renumb
 
 ---
 
-### S-004 — PCS Pro status indicator component
+### S-004 — PCS Pro status indicator component ✅ DELIVERED (commit `06942d4`)
 
 **What changes:** A `PcsProStatusIndicator` Blazor component is created. It maps the eight `PcsProState` values to the correct colour indicator (⚪🟡🟢🔴 per PRD §12). The component subscribes to state-change notifications and triggers a UI re-render when state changes, so the indicator updates in real-time without a page refresh. It is wired into the application layout so it is visible on every page. bUnit tests cover every state-to-colour mapping and verify that a state-change event causes the expected visual update.
 
