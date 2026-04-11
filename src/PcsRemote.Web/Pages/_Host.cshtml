@@ -9,9 +9,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <title>PCS Remote</title>
+    <link rel="stylesheet" href="_content/Radzen.Blazor/css/default.css" />
 </head>
 <body>
-    <!-- Placeholder: S-002 will replace this with the full Blazor Server application shell. -->
-    <p>PCS Remote — Blazor Server pipeline active.</p>
+    <component type="typeof(App)" render-mode="ServerPrerendered" />
+    <script src="_framework/blazor.server.js"></script>
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
 </body>
 </html>
