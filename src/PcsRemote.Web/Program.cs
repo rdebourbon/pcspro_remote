@@ -1,5 +1,6 @@
 using Serilog;
 using PcsRemote.Automation.Mock;
+using PcsRemote.Web;
 using PcsRemote.Web.Hubs;
 using Radzen;
 
@@ -25,6 +26,7 @@ try
     builder.Services.AddSignalR();
     builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
     builder.Services.AddHostedService<PcsProStateBroadcaster>();
+    builder.Services.AddHostedService<AutoLaunchService>();
     builder.Services.AddRazorPages();
     builder.Services.AddServerSideBlazor();
     builder.Services.AddRadzenComponents();
@@ -49,3 +51,6 @@ finally
 {
     Log.CloseAndFlush();
 }
+
+// Expose the implicit Program class for WebApplicationFactory in integration tests.
+public partial class Program { }
