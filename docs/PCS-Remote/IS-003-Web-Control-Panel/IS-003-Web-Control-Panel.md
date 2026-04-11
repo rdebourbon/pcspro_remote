@@ -34,7 +34,7 @@ Steps are identified with stable IDs (S-001 through S-009). IDs are never renumb
 
 ---
 
-### S-002 — Application shell: Blazor host page, routing, and Radzen layout
+### S-002 — Application shell: Blazor host page, routing, and Radzen layout ✅ DELIVERED (commit `ede407c`)
 
 **What changes:** The Blazor host page (entry point for the browser), application router, global Razor imports, `MainLayout`, and navigation structure are created. The Radzen theme is applied consistently throughout the shell. The layout includes a header area (placeholder for connected-user count and status indicator, to be wired in later steps) and a content body for page components. A minimal `Home` page component is added as the default route.
 
