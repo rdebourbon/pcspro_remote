@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | SPEC-S-008-AutoLaunchService.md |
 | **Status** | IN REVIEW |
-| **Version** | 0.3 |
+| **Version** | 0.4 |
 | **Date** | 2026-04-12 |
 | **Step ID** | S-008 |
 | **Governing IS** | IS-003-Web-Control-Panel.md v0.3 (APPROVED) |
@@ -22,11 +22,9 @@ On application start, automatically trigger `LaunchAndLoginAsync` on `IPcsProAut
 
 ## 2. Background
 
-The .NET Generic Host's `BackgroundService` base class is the idiomatic way to implement long-running background work. In .NET 8, `BackgroundService.StartAsync` calls `ExecuteAsync` **inline** (no `Task.Run` wrapper). For paths containing a real `await` (e.g., `AutoLaunch=true` awaiting `LaunchAndLoginAsync`), execution suspends at the first suspension point, `StartAsync` returns `Task.CompletedTask`, and the `ExecuteAsync` continuation runs on the thread-pool — it does not block the host startup pipeline. For paths with no `await` (e.g., `AutoLaunch=false`), `ExecuteAsync` completes synchronously before `StartAsync` returns. In both cases `BackgroundService.ExecuteTask` (public in .NET 8) holds the backing `Task` and is the correct synchronization handle for tests.
+The .NET Generic Host's `BackgroundService` base class is the idiomatic way to implement long-running background work. In .NET 8, `BackgroundService.StartAsync` calls `ExecuteAsync` **inline** (no `Task.Run` wrapper). For paths containing a real `await` (e.g., `AutoLaunch=true` awaiting `LaunchAndLoginAsync`), execution suspends at the first suspension point, `StartAsync` returns `Task.CompletedTask`, and the `ExecuteAsync` continuation resumes asynchronously (on the thread pool in the Generic Host's default context) — it does not block the host startup pipeline. For paths with no `await` (e.g., `AutoLaunch=false`), `ExecuteAsync` completes synchronously before `StartAsync` returns. In both cases `BackgroundService.ExecuteTask` (public in .NET 8) holds the backing `Task` and is the correct synchronization handle for tests.
 
-`IPcsProAutomationService.LaunchAndLoginAsync` is a long-running async operation that drives the state machine from `NotRunning` through `Launching`, `Running`, `LoggingIn`, and into `MatchSelection`. Any exception thrown by this call corresponds to an `Error` state in the service, which is already visually handled by the `PcsProStatusIndicator` component (S-004). The hosted service must therefore swallow non-cancellation exceptions after logging them — it must not let them propagate to the host and crash the process.
-
-The `PcsPro:AutoLaunch` flag does not require a dedicated options class. The service may read it directly from `IConfiguration` using a default of `true` when the key is absent.
+Any exception thrown by `LaunchAndLoginAsync` corresponds to an `Error` state in the service, which is already visually handled by the `PcsProStatusIndicator` component (S-004). The hosted service must therefore catch and log exceptions from `LaunchAndLoginAsync` — it must not let them propagate to the host and crash the process. Configuration reading in `ExecuteAsync` (Step 1) is a plain dictionary lookup and is not subject to this swallowing rule.
 
 ---
 
@@ -70,7 +68,7 @@ Add to `Program.cs` after existing `AddHostedService<PcsProStateBroadcaster>()`:
 builder.Services.AddHostedService<AutoLaunchService>();
 ```
 
-> **Ordering rationale:** `AutoLaunchService` must be registered **after** `PcsProStateBroadcaster` to ensure the hub subscription is active before the launch flow produces its first state transition (`NotRunning` → `Launching`). Reversing the order risks those early transitions being missed by the broadcaster.
+> **Ordering rationale:** `AutoLaunchService` must be registered **after** `PcsProStateBroadcaster` to ensure the hub subscription is active before the launch flow produces its first state transition (`NotRunning` → `Launching`). This guarantee holds provided `PcsProStateBroadcaster.ExecuteAsync` subscribes to `StateChanged` synchronously before its first `await` — which is the expected pattern for event-subscription hosted services. Reversing the order risks those early transitions being missed by the broadcaster.
 
 No other Program.cs changes, except adding `public partial class Program { }` at the end of the file to expose the implicit Program class for `WebApplicationFactory` in the integration test (Test-6).
 
@@ -100,7 +98,7 @@ Token verification (R-5): call `service.StopAsync(CancellationToken.None)` and a
 ### AC-2 — AutoLaunch=false suppresses launch
 
 Given: `AutoLaunchService` is started with `AutoLaunch=false`.  
-When: `await service.StartAsync(cts.Token)` returns (the `AutoLaunch=false` path contains no `await`, so `ExecuteAsync` completes synchronously before `StartAsync` returns; alternatively use `await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5))` for runtime-version robustness).  
+When: `await service.StartAsync(CancellationToken.None)` returns (`BackgroundService.StartAsync` does not use its `cancellationToken` parameter in .NET 8; the `AutoLaunch=false` path contains no `await`, so `ExecuteAsync` completes synchronously before `StartAsync` returns; alternatively use `await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5))` for runtime-version robustness).  
 Then: `LaunchAndLoginAsync` is NOT called.
 
 ### AC-3 — Non-cancellation exception is logged and swallowed
@@ -127,7 +125,20 @@ Then: `LaunchAndLoginAsync` has been called exactly once (the absent key is trea
 
 New test file: `tests/PcsRemote.Web.Tests/AutoLaunchServiceTests.cs`
 
-**Unit tests (Test-1 through Test-5):** Use `Moq` for `IPcsProAutomationService`. For AC-3, use a `Mock<ILogger<AutoLaunchService>>` and verify via `.Verify(x => x.Log(LogLevel.Error, ..., It.Is<Exception>(e => e is InvalidOperationException), ...), Times.Once)`. For all others use `NullLogger<AutoLaunchService>`. Configuration is provided via `new ConfigurationBuilder().AddInMemoryCollection(...)`.
+**Unit tests (Test-1 through Test-5):** Use `Moq` for `IPcsProAutomationService`. For AC-3, use a `Mock<ILogger<AutoLaunchService>>` and verify with the exact Moq 4.16+ pattern (requires `It.IsAnyType` for the open-generic `TState` parameter):
+
+```csharp
+loggerMock.Verify(
+    x => x.Log(
+        LogLevel.Error,
+        It.IsAny<EventId>(),
+        It.IsAny<It.IsAnyType>(),
+        It.Is<Exception>(e => e is InvalidOperationException),
+        It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+    Times.Once);
+```
+
+Using `It.IsAny<object>()` for the `TState` position does **not** match in Moq — the verify fires zero times and `Times.Once` passes vacuously. For all other tests use `NullLogger<AutoLaunchService>`. Configuration is provided via `new ConfigurationBuilder().AddInMemoryCollection(...)`.
 
 **Test-6 (integration):** Use `WebApplicationFactory<Program>` with:
 - Configuration overrides: `PcsPro:UseMock=true`, `PcsPro:AutoLaunch=true`
@@ -139,8 +150,13 @@ New test file: `tests/PcsRemote.Web.Tests/AutoLaunchServiceTests.cs`
   Use `services.Replace` to explicitly remove the prior descriptor. The Moq mock must set up `CurrentState` (returns `PcsProState.NotRunning`) and the TCS sentinel on `LaunchAndLoginAsync`. Build the factory client to trigger host startup, then await the TCS sentinel.
 
 **Async synchronization rules:**
-- **AC-1, AC-5, Test-6:** `LaunchAndLoginAsync` mock configured with `.Callback<CancellationToken>(ct => tcs.SetResult(true))`. Construct all TCS sentinels as `new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously)` to prevent inline continuation execution on the triggering thread. Await via `await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5))`.
-- **AC-2:** `await service.StartAsync(cts.Token)` is the synchronization barrier (`AutoLaunch=false` path has no `await`, so `ExecuteAsync` completes synchronously). For runtime-version robustness, prefer `await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5))`.
+- **AC-1, AC-5, Test-6:** `LaunchAndLoginAsync` mock configured with:
+  ```csharp
+  .Callback<CancellationToken>(ct => { capturedToken = ct; tcs.TrySetResult(true); })
+  .Returns(Task.CompletedTask);
+  ```
+  The `.Returns(Task.CompletedTask)` is **mandatory** — without it Moq returns `null`, causing `await LaunchAndLoginAsync(...)` to throw `NullReferenceException`. It also ensures `ExecuteAsync` returns promptly so `StopAsync(CancellationToken.None)` does not hang waiting for a non-completing task. Use `TrySetResult` to guard against double-calls. Construct all TCS sentinels as `new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously)` to prevent inline continuation execution on the triggering thread. Await via `await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5))`.
+- **AC-2:** `await service.StartAsync(CancellationToken.None)` is the synchronization barrier (`BackgroundService.StartAsync` ignores its `cancellationToken` parameter in .NET 8; `CancellationToken.None` is the correct argument). For runtime-version robustness, prefer `await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5))`.
 - **AC-3, AC-4:** `await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5))` guarantees `ExecuteAsync` has fully returned (including the catch block) before any assertions run. Do NOT use the TCS pattern here — the exception paths have no call site for `tcs.SetResult`.
 
 **Test list (6 tests):**
