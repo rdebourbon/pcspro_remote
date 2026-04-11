@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | SPEC-S-009-PlaywrightE2E.md |
 | **Status** | IN REVIEW |
-| **Version** | 0.5 |
+| **Version** | 0.6 |
 | **Date** | 2026-04-13 |
 | **Step ID** | S-009 |
 | **Governing IS** | IS-003-Web-Control-Panel.md v0.3 (APPROVED) |
@@ -100,7 +100,7 @@ The current `PcsProHub.OnConnectedAsync` calls `IConnectionTracker.Increment()`,
 
 > **Unit test implementation note — `Circuit` constructor:** `Microsoft.AspNetCore.Components.Server.Circuit` is a `sealed` class with an `internal` constructor. It cannot be instantiated from an external test assembly via `new Circuit(...)` or mocked via Moq/NSubstitute. Since `PcsProCircuitHandler` does not access the `Circuit` parameter in either `OnCircuitOpenedAsync` or `OnCircuitClosedAsync` (it only calls `IConnectionTracker.Increment()`/`Decrement()`), tests MUST pass `null!` for the `circuit` argument — e.g. `await handler.OnCircuitOpenedAsync(null!, CancellationToken.None)`. A comment in the test file should document this as an intentional consequence of Blazor's internal API surface.
 
-> **Production retention note:** `OnCircuitClosedAsync` fires only after `DisconnectedCircuitRetentionPeriod` elapses (default 3 minutes in production). For this application (a local single-PC remote controller), a brief lag in count accuracy after a tab close is acceptable. If tighter real-time accuracy is required, reduce `DisconnectedCircuitRetentionPeriod` in `appsettings.json` (e.g., `"Blazor": { "DisconnectedCircuitRetentionPeriod": "00:00:30" }` via options binding, or directly in `Program.cs`). This is a production configuration concern outside the scope of this spec.
+> **Production retention note:** `OnCircuitClosedAsync` fires only after `DisconnectedCircuitRetentionPeriod` elapses (default 3 minutes in production). For this application (a local single-PC remote controller), a brief lag in count accuracy after a tab close is acceptable. If tighter real-time accuracy is required, reduce `DisconnectedCircuitRetentionPeriod` directly in `Program.cs` using `builder.Services.Configure<CircuitOptions>(o => o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromSeconds(30))`. `CircuitOptions` is not bindable from `appsettings.json` — see §3.1. This is a production configuration concern outside the scope of this spec.
 
 ### 3.5 Project changes
 
@@ -109,6 +109,8 @@ The `PcsRemote.E2E.Tests` project must:
 - Add project references to `PcsRemote.Web` and `PcsRemote.Automation.Mock`
 - Add package references: `Microsoft.Playwright`, `Microsoft.AspNetCore.Mvc.Testing` (`Microsoft.AspNetCore.Mvc.Testing` is already in `Directory.Packages.props`; only `Microsoft.Playwright` is a new CPM entry)
 - Add the post-build browser install target described in §3.2
+
+> **`Program` class visibility prerequisite:** `WebApplicationFactory<Program>` requires the `Program` class to be `public`, which is achieved by the `public partial class Program { }` declaration at the end of `src/PcsRemote.Web/Program.cs` (added in S-001). This declaration **must remain** — do not remove it. The `Program.cs` modification in §7 (adding `AddCircuitHandler`) preserves this declaration.
 
 ---
 
