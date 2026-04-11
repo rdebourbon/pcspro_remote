@@ -94,7 +94,7 @@ Steps are identified with stable IDs (S-001 through S-009). IDs are never renumb
 
 ---
 
-### S-007 — Team name display after match load
+### S-007 — Team name display after match load ✅ DELIVERED (commit `a2eac71`)
 
 **What changes:** After `LoadMatchAsync` completes and the service reaches a post-load state, the home and away team names from the loaded `MatchInfo` are displayed in the UI (per PRD §9). This may be part of the match page or a dedicated component. bUnit tests verify that when the service has a loaded match, the team names render correctly.
 
