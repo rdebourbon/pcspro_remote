@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | SPEC-S-009-PlaywrightE2E.md |
 | **Status** | IN REVIEW |
-| **Version** | 0.6 |
+| **Version** | 0.7 |
 | **Date** | 2026-04-13 |
 | **Step ID** | S-009 |
 | **Governing IS** | IS-003-Web-Control-Panel.md v0.3 (APPROVED) |
@@ -54,7 +54,7 @@ Override `CreateHost(IHostBuilder builder)` in the `PcsProWebApplicationFactory`
 
 > **Why this order matters:** `IHostApplicationLifetime` is a DI service that only exists in `host.Services` after `base.CreateHost(builder)` has built the container. Registering the callback in step 3 (after step 2) gives the implementer a valid `host` reference to resolve services from. The callback fires later — when WAF starts the host.
 
-In `[ClassInitialize]`, after instantiating the factory, trigger host startup by calling `factory.CreateClient()` (which forces WAF to call `EnsureServer()` and start the host). Then `await` the `TaskCompletionSource<string>` to obtain `ServerAddress`. The `HttpClient` returned by `CreateClient()` may be discarded. Because there is only one host and one DI container, `factory.Services` and the live Kestrel app share the same singleton instances.
+In `[ClassInitialize]`, after instantiating the factory, trigger host startup by calling `factory.CreateClient()` (which forces WAF to call `EnsureServer()` and start the host). Then await the `TaskCompletionSource<string>` with a bounded timeout: `var serverAddress = await factory.ServerAddressTask.WaitAsync(TimeSpan.FromSeconds(30))` — a bounded wait surfaces host startup failures (DI errors, middleware exceptions) as a `TimeoutException` with a traceable stack rather than an infinite hang. The `HttpClient` returned by `CreateClient()` may be discarded. Because there is only one host and one DI container, `factory.Services` and the live Kestrel app share the same singleton instances.
 
 The app does not use `app.UseHttpsRedirection()`, so all test navigation is plain HTTP with no redirect concerns.
 
@@ -107,7 +107,7 @@ The current `PcsProHub.OnConnectedAsync` calls `IConnectionTracker.Increment()`,
 The `PcsRemote.E2E.Tests` project must:
 - Change target framework from `net8.0` to `net8.0-windows` (required to reference `PcsRemote.Web`, which targets `net8.0-windows` because it is a Windows-only automation controller; this makes the E2E project Windows-only — `dotnet test` at solution level will fail on Linux/macOS for this project)
 - Add project references to `PcsRemote.Web` and `PcsRemote.Automation.Mock`
-- Add package references: `Microsoft.Playwright`, `Microsoft.AspNetCore.Mvc.Testing` (`Microsoft.AspNetCore.Mvc.Testing` is already in `Directory.Packages.props`; only `Microsoft.Playwright` is a new CPM entry)
+- Add package references: `Microsoft.Playwright` (version **1.49.0**), `Microsoft.AspNetCore.Mvc.Testing` (`Microsoft.AspNetCore.Mvc.Testing` is already in `Directory.Packages.props`; only `Microsoft.Playwright` is a new CPM entry: `<PackageVersion Include="Microsoft.Playwright" Version="1.49.0" />`)
 - Add the post-build browser install target described in §3.2
 
 > **`Program` class visibility prerequisite:** `WebApplicationFactory<Program>` requires the `Program` class to be `public`, which is achieved by the `public partial class Program { }` declaration at the end of `src/PcsRemote.Web/Program.cs` (added in S-001). This declaration **must remain** — do not remove it. The `Program.cs` modification in §7 (adding `AddCircuitHandler`) preserves this declaration.
@@ -121,7 +121,7 @@ The `PcsRemote.E2E.Tests` project must:
 | **R-2** | The smoke test MUST verify HTTP 200 at the root URL AND the presence of the `.pcs-status-indicator` CSS class in the rendered DOM. |
 | **R-3** | The W-SC-3 test MUST use two separate Playwright browser contexts connecting to the same server. The `.connected-user-count` element in Context 1 must update to reflect 2 users when Context 2 opens, and back to 1 user when Context 2 closes. Each Playwright page navigating to the root URL (and establishing a Blazor circuit) constitutes one connected user (via `PcsProCircuitHandler`). |
 | **R-4** | The W-SC-9 test MUST verify that a state change triggered after both contexts are connected is reflected in BOTH contexts' `.pcs-status-indicator` elements showing `"Loading matches…"`. |
-| **R-5** | All Playwright waits MUST use `WaitForSelectorAsync`, `WaitForFunctionAsync`, or `Locator.WaitForAsync` — NOT `Task.Delay` fixed sleeps. |
+| **R-5** | All Playwright waits MUST use `WaitForSelectorAsync`, `WaitForFunctionAsync`, or `Locator.WaitForAsync` — NOT `Task.Delay` fixed sleeps. When `Locator.WaitForAsync` is used to wait for a specific text value, the locator MUST be constructed with a `HasText` option (e.g. `page.Locator(".css-class", new() { HasText = "expected text" }).WaitForAsync(new() { Timeout = 10_000 })`) — bare `Locator.WaitForAsync()` without `HasText` waits only for element visibility, not text content, and will return immediately with stale text, producing false-positive assertions. |
 | **R-6** | The Playwright browser must be launched in headless mode. |
 | **R-7** | All solution tests (unit + E2E) MUST pass after this step: `dotnet test` at solution level (on Windows). |
 
@@ -137,6 +137,8 @@ Then:
 - The HTTP response status is 200.
 - The DOM contains an element with CSS class `pcs-status-indicator`.
 - The element's text content is `"PCS Pro not running"` (the `NotRunning` state label).
+
+> **Note:** Blazor Server renders components asynchronously after the initial HTTP response. The text assertion MUST use `WaitForSelectorAsync` or `page.Locator(".pcs-status-indicator", new() { HasText = "PCS Pro not running" }).WaitForAsync(new() { Timeout = 10_000 })` — a direct text query before the circuit has connected will produce a false failure.
 
 ### AC-2 — W-SC-3: Connected user count updates with two contexts
 
@@ -158,7 +160,7 @@ When:
 
 Then: Context 1's `.connected-user-count` eventually shows `"1 user online"`.
 
-> **Note:** All "eventually" assertions use `WaitForFunctionAsync` or `Locator.WaitForAsync` with a **10-second** timeout — not fixed sleeps.
+> **Note:** All "eventually" assertions use `WaitForFunctionAsync` or `Locator.WaitForAsync` (with `HasText` filter) with a **10-second** timeout — not fixed sleeps. When using `Locator.WaitForAsync`, the locator MUST include a `HasText` option to wait for the correct text value rather than merely for element visibility (see R-5).
 
 ### AC-3 — W-SC-9: State change broadcast to all connected contexts
 
@@ -170,7 +172,7 @@ When:
 4. The test resolves `IPcsProAutomationService` from `factory.Services`, casts to `MockPcsProAutomationService`, and **awaits** `LaunchAndLoginAsync(CancellationToken.None)`.
 
 Then:
-- Both Context 1 and Context 2's `.pcs-status-indicator` elements eventually show `"Loading matches…"` (the `MatchSelection` label — the final state after zero-delay `LaunchAndLoginAsync` completes). Both assertions use `WaitForFunctionAsync` or `Locator.WaitForAsync` with a **10-second timeout** — not a direct text query. The synchronous mock transitions do not imply synchronous DOM rendering (state events dispatch `InvokeAsync(StateHasChanged)` asynchronously on the circuit).
+- Both Context 1 and Context 2's `.pcs-status-indicator` elements eventually show `"Loading matches…"` (the `MatchSelection` label — the final state after zero-delay `LaunchAndLoginAsync` completes). Both assertions MUST use `WaitForFunctionAsync`, or `Locator.WaitForAsync` with a `HasText` filter, with a **10-second timeout** — not a direct text query. A bare `Locator.WaitForAsync()` without `HasText` waits only for visibility, not text content. The synchronous mock transitions do not imply synchronous DOM rendering (state events dispatch `InvokeAsync(StateHasChanged)` asynchronously on the circuit).
 - Both contexts show the same text.
 
 ---
@@ -187,10 +189,10 @@ New test file: `tests/PcsRemote.E2E.Tests/PcsProE2ETests.cs`
 
 Test class setup:
 - Implement a `PcsProWebApplicationFactory : WebApplicationFactory<Program>` subclass that exposes `Task<string> ServerAddressTask { get; } = _serverAddressTcs.Task` (where `_serverAddressTcs` is the `TaskCompletionSource<string>` set in the `ApplicationStarted` callback — see §3.1). There is no separate `string ServerAddress` property; all references to the bound address go through `await ServerAddressTask`.
-- Create and start the factory once per class (`[ClassInitialize]`): instantiate the factory, call `factory.CreateClient()` to trigger startup, then `await factory.ServerAddressTask` to obtain the bound address.
+- Create and start the factory once per class (`[ClassInitialize]`): instantiate the factory, call `factory.CreateClient()` to trigger startup, then `await factory.ServerAddressTask.WaitAsync(TimeSpan.FromSeconds(30))` to obtain the bound address (the bounded wait surfaces host startup failures as a `TimeoutException` rather than an infinite hang).
 - Create `_playwright` via `await Playwright.CreateAsync()`, then launch one Playwright `IBrowser` (headless Chromium) once per class.
 - In `[ClassCleanup]`: dispose `IBrowser` first (await `DisposeAsync`), then call `_playwright.Dispose()`, then dispose the factory. This order prevents Playwright from emitting connection-reset exceptions when the Kestrel server stops.
-- Decorate the test class with `[DoNotParallelize]` to guarantee serial execution within the class and prevent connection-count pollution from concurrently running tests.
+- Decorate the test class with `[DoNotParallelize]` to prevent this class from running in parallel with other test classes in the assembly. Note: this attribute does not control parallelism between test *methods* within the class — methods execute serially by default under MSTest's current configuration (no `[assembly: Parallelize]` attribute). This prevents connection-count pollution from tests in other classes running concurrently.
 
 Each test method creates fresh `IBrowserContext` and `IPage` instances. Context and page disposal MUST occur in a `[TestCleanup]` method (not inline in the test body) to guarantee disposal even when the test throws — an undisposed context keeps a live Blazor circuit open against the shared host, inflating the connection count seen by subsequent tests.
 
@@ -206,7 +208,7 @@ Each test method creates fresh `IBrowserContext` and `IPage` instances. Context 
 | `tests/PcsRemote.Web.Tests/Hubs/PcsProHubTests.cs` | Remove the four Increment/Decrement verification tests (behaviour moved to CircuitHandler) |
 | `tests/PcsRemote.Web.Tests/Hubs/PcsProCircuitHandlerTests.cs` | **NEW**: unit tests for `PcsProCircuitHandler` (OnCircuitOpenedAsync increments, OnCircuitClosedAsync decrements) |
 | `tests/PcsRemote.E2E.Tests/PcsRemote.E2E.Tests.csproj` | Change `TargetFramework` to `net8.0-windows`; add `Microsoft.Playwright` and `Microsoft.AspNetCore.Mvc.Testing` package refs; add project refs to `PcsRemote.Web` and `PcsRemote.Automation.Mock`; add `InstallPlaywrightBrowsers` MSBuild target (§3.2) |
-| `Directory.Packages.props` | Add `Microsoft.Playwright` version entry (`Microsoft.AspNetCore.Mvc.Testing` is already present — do not add a duplicate) |
+| `Directory.Packages.props` | Add `<PackageVersion Include="Microsoft.Playwright" Version="1.49.0" />` (`Microsoft.AspNetCore.Mvc.Testing` is already present — do not add a duplicate) |
 | `tests/PcsRemote.E2E.Tests/PcsProWebApplicationFactory.cs` | **NEW**: `WebApplicationFactory<Program>` subclass that starts a real Kestrel host and exposes `Task<string> ServerAddressTask` |
 | `tests/PcsRemote.E2E.Tests/PcsProE2ETests.cs` | **NEW**: 3 E2E tests |
 
