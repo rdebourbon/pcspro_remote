@@ -1,5 +1,6 @@
 using Serilog;
 using PcsRemote.Automation.Mock;
+using PcsRemote.Web.Hubs;
 using Radzen;
 
 // Stage 1: transient bootstrap logger — captures host construction errors before full config is ready.
@@ -21,6 +22,9 @@ try
                 retainedFileCountLimit: 7));
 
     builder.Services.AddPcsProAutomationService(builder.Configuration);
+    builder.Services.AddSignalR();
+    builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
+    builder.Services.AddHostedService<PcsProStateBroadcaster>();
     builder.Services.AddRazorPages();
     builder.Services.AddServerSideBlazor();
     builder.Services.AddRadzenComponents();
@@ -32,6 +36,7 @@ try
     app.UseStaticFiles();
     app.UseRouting();
     app.MapBlazorHub();
+    app.MapHub<PcsProHub>("/hubs/pcspro");
     app.MapFallbackToPage("/_Host");
 
     app.Run();
