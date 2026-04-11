@@ -82,7 +82,7 @@ Steps are identified with stable IDs (S-001 through S-009). IDs are never renumb
 
 ---
 
-### S-006 — Match selection flow: cards, loading state, auto-select, interactivity gating
+### S-006 — Match selection flow: cards, loading state, auto-select, interactivity gating ✅ DELIVERED (commit `d55cc39`)
 
 **What changes:** A match selection page and `MatchCard` component are created. On the service reaching `MatchSelection` state (entered after login), the page calls `GetTodaysMatchesAsync` (which transitions the service to `MatchSelectionSearching`) — during which a loading indicator is shown and card interaction is disabled. On reaching `MatchSelectionReady`, results are rendered as selectable cards showing home team, away team, match type, and start time. If exactly one match is returned, it is auto-selected without user interaction. If zero matches are returned, an appropriate empty state is shown. If multiple matches are returned, only cards in `MatchSelectionReady` state are interactive; all other states render cards as non-interactive. Selecting a card calls `LoadMatchAsync` and the resulting state transitions are propagated in real-time. bUnit tests cover: card rendering with correct data, loading-state interaction lock, auto-select with one match, empty state with zero matches, non-interactive rendering in non-`MatchSelectionReady` states, and the state-gating logic for each relevant state.
 
