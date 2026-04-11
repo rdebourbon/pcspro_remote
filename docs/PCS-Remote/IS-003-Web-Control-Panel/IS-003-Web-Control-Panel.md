@@ -70,7 +70,7 @@ Steps are identified with stable IDs (S-001 through S-009). IDs are never renumb
 
 ---
 
-### S-005 — Connected user count: real-time header display
+### S-005 — Connected user count: real-time header display ✅ DELIVERED (commit `1c5ecc7`)
 
 **What changes:** The connected-user count is surfaced in the application header using the count tracking service introduced in S-003. The header component subscribes to count-change notifications and re-renders without a page refresh. bUnit tests verify correct rendering for 0, 1, and N connected users.
 
