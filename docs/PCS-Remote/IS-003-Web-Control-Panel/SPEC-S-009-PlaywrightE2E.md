@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | SPEC-S-009-PlaywrightE2E.md |
 | **Status** | IN REVIEW |
-| **Version** | 0.4 |
+| **Version** | 0.5 |
 | **Date** | 2026-04-13 |
 | **Step ID** | S-009 |
 | **Governing IS** | IS-003-Web-Control-Panel.md v0.3 (APPROVED) |
@@ -58,7 +58,7 @@ In `[ClassInitialize]`, after instantiating the factory, trigger host startup by
 
 The app does not use `app.UseHttpsRedirection()`, so all test navigation is plain HTTP with no redirect concerns.
 
-**Configuration overrides** applied to every test host instance via `WithWebHostBuilder`:
+**Configuration overrides** applied inside `PcsProWebApplicationFactory` by overriding `protected override void ConfigureWebHost(IWebHostBuilder builder)` in the subclass (NOT via the public `WithWebHostBuilder()` method — that returns a new `WebApplicationFactory<Program>` base instance, losing access to `ServerAddressTask`):
 
 IConfiguration key-value overrides (via `UseSetting`):
 - `PcsPro:UseMock = true` — use the mock automation service
@@ -97,6 +97,10 @@ The current `PcsProHub.OnConnectedAsync` calls `IConnectionTracker.Increment()`,
 2. **Registering the handler** — `builder.Services.AddCircuitHandler<PcsProCircuitHandler>()` in `Program.cs`.
 3. **Removing counting from `PcsProHub`** — `IConnectionTracker` is removed from `PcsProHub`'s constructor and calls. `PcsProHub` retains its `IPcsProAutomationService` injection and the `OnConnectedAsync` late-joiner state push (for future JavaScript clients).
 4. **Updating `PcsProHubTests`** — the four test methods that verify `Increment`/`Decrement` calls on `PcsProHub` must be deleted; a new `PcsProCircuitHandlerTests.cs` adds equivalent coverage for the handler.
+
+> **Unit test implementation note — `Circuit` constructor:** `Microsoft.AspNetCore.Components.Server.Circuit` is a `sealed` class with an `internal` constructor. It cannot be instantiated from an external test assembly via `new Circuit(...)` or mocked via Moq/NSubstitute. Since `PcsProCircuitHandler` does not access the `Circuit` parameter in either `OnCircuitOpenedAsync` or `OnCircuitClosedAsync` (it only calls `IConnectionTracker.Increment()`/`Decrement()`), tests MUST pass `null!` for the `circuit` argument — e.g. `await handler.OnCircuitOpenedAsync(null!, CancellationToken.None)`. A comment in the test file should document this as an intentional consequence of Blazor's internal API surface.
+
+> **Production retention note:** `OnCircuitClosedAsync` fires only after `DisconnectedCircuitRetentionPeriod` elapses (default 3 minutes in production). For this application (a local single-PC remote controller), a brief lag in count accuracy after a tab close is acceptable. If tighter real-time accuracy is required, reduce `DisconnectedCircuitRetentionPeriod` in `appsettings.json` (e.g., `"Blazor": { "DisconnectedCircuitRetentionPeriod": "00:00:30" }` via options binding, or directly in `Program.cs`). This is a production configuration concern outside the scope of this spec.
 
 ### 3.5 Project changes
 
@@ -180,13 +184,13 @@ New test file: `tests/PcsRemote.E2E.Tests/PcsProE2ETests.cs`
 | `StateChange_BroadcastToBothContexts` | AC-3 (W-SC-9) |
 
 Test class setup:
-- Implement a `PcsProWebApplicationFactory : WebApplicationFactory<Program>` subclass with a `ServerAddress` property (set from `IServerAddressesFeature` after Kestrel binds) — see §3.1.
-- Create and start the factory once per class (`[ClassInitialize]`): instantiate the factory, call `factory.CreateClient()` to trigger startup, then `await` the factory's `ServerAddressTask` to obtain the bound address.
+- Implement a `PcsProWebApplicationFactory : WebApplicationFactory<Program>` subclass that exposes `Task<string> ServerAddressTask { get; } = _serverAddressTcs.Task` (where `_serverAddressTcs` is the `TaskCompletionSource<string>` set in the `ApplicationStarted` callback — see §3.1). There is no separate `string ServerAddress` property; all references to the bound address go through `await ServerAddressTask`.
+- Create and start the factory once per class (`[ClassInitialize]`): instantiate the factory, call `factory.CreateClient()` to trigger startup, then `await factory.ServerAddressTask` to obtain the bound address.
 - Create `_playwright` via `await Playwright.CreateAsync()`, then launch one Playwright `IBrowser` (headless Chromium) once per class.
 - In `[ClassCleanup]`: dispose `IBrowser` first (await `DisposeAsync`), then call `_playwright.Dispose()`, then dispose the factory. This order prevents Playwright from emitting connection-reset exceptions when the Kestrel server stops.
 - Decorate the test class with `[DoNotParallelize]` to guarantee serial execution within the class and prevent connection-count pollution from concurrently running tests.
 
-Each test method creates fresh `IBrowserContext` and `IPage` instances and disposes them after the test.
+Each test method creates fresh `IBrowserContext` and `IPage` instances. Context and page disposal MUST occur in a `[TestCleanup]` method (not inline in the test body) to guarantee disposal even when the test throws — an undisposed context keeps a live Blazor circuit open against the shared host, inflating the connection count seen by subsequent tests.
 
 ---
 
@@ -201,7 +205,7 @@ Each test method creates fresh `IBrowserContext` and `IPage` instances and dispo
 | `tests/PcsRemote.Web.Tests/Hubs/PcsProCircuitHandlerTests.cs` | **NEW**: unit tests for `PcsProCircuitHandler` (OnCircuitOpenedAsync increments, OnCircuitClosedAsync decrements) |
 | `tests/PcsRemote.E2E.Tests/PcsRemote.E2E.Tests.csproj` | Change `TargetFramework` to `net8.0-windows`; add `Microsoft.Playwright` and `Microsoft.AspNetCore.Mvc.Testing` package refs; add project refs to `PcsRemote.Web` and `PcsRemote.Automation.Mock`; add `InstallPlaywrightBrowsers` MSBuild target (§3.2) |
 | `Directory.Packages.props` | Add `Microsoft.Playwright` version entry (`Microsoft.AspNetCore.Mvc.Testing` is already present — do not add a duplicate) |
-| `tests/PcsRemote.E2E.Tests/PcsProWebApplicationFactory.cs` | **NEW**: `WebApplicationFactory<Program>` subclass that starts a real Kestrel host and exposes `ServerAddress` |
+| `tests/PcsRemote.E2E.Tests/PcsProWebApplicationFactory.cs` | **NEW**: `WebApplicationFactory<Program>` subclass that starts a real Kestrel host and exposes `Task<string> ServerAddressTask` |
 | `tests/PcsRemote.E2E.Tests/PcsProE2ETests.cs` | **NEW**: 3 E2E tests |
 
 ---
