@@ -1,0 +1,33 @@
+@using PcsRemote.Web.Hubs
+@implements IDisposable
+@inject IConnectionTracker ConnectionTracker
+
+<span class="connected-user-count">@_label</span>
+
+@code {
+    private string _label = "0 users online";
+
+    protected override Task OnInitializedAsync()
+    {
+        // R-3: Subscribe before reading ConnectionCount to eliminate the race window
+        // where a count change could fire after the snapshot is taken but before
+        // the handler is attached. Ordering is a code-discipline requirement; see SPEC-S-005 R-3.
+        ConnectionTracker.ConnectionCountChanged += OnCountChanged;
+        _label = FormatLabel(ConnectionTracker.ConnectionCount);
+        return Task.CompletedTask;
+    }
+
+    private async void OnCountChanged(int newCount)
+    {
+        _label = FormatLabel(newCount);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string FormatLabel(int count) =>
+        count == 1 ? "1 user online" : $"{count} users online";
+
+    public void Dispose()
+    {
+        ConnectionTracker.ConnectionCountChanged -= OnCountChanged;
+    }
+}

@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using PcsRemote.Core;
+using PcsRemote.Web.Hubs;
 using PcsRemote.Web.Shared;
 using Radzen;
 
@@ -117,9 +118,13 @@ public class PcsProStatusIndicatorTests
     public void MainLayout_ContainsPcsProStatusIndicator()
     {
         var mock = BuildMock(PcsProState.NotRunning);
+        var trackerMock = new Mock<IConnectionTracker>();
+        trackerMock.Setup(t => t.ConnectionCount).Returns(0);
+
         using var ctx = new BunitContext();
         ctx.Services.AddRadzenComponents();
         ctx.Services.AddSingleton(mock.Object);
+        ctx.Services.AddSingleton<IConnectionTracker>(trackerMock.Object);
 
         var cut = ctx.Render<MainLayout>(p =>
             p.Add(l => l.Body, builder => { }));
