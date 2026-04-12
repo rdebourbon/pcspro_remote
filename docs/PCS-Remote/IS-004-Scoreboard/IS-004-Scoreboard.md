@@ -43,7 +43,7 @@ The implementation is registered as a singleton in `Program.cs`. The mock automa
 
 ---
 
-### S-002 — Scoreboard polling hosted service (PeriodicTimer, lifecycle tied to MatchLoaded)
+### S-002 — Scoreboard polling hosted service (PeriodicTimer, lifecycle tied to MatchLoaded) ✅ DELIVERED `b923f18`
 
 **What changes:** A background hosted service is added to `PcsRemote.Web`. It holds a `PeriodicTimer` configured from `Scoreboard:CaptureIntervalSeconds` (default: 2). The service subscribes to the `IPcsProAutomationService` state-change event on startup, then immediately reads the current state — if already `MatchLoaded` at startup, the polling loop starts without waiting for a transition event. The polling-loop start is guarded to be idempotent — a second concurrent start attempt (e.g., from a state-change event racing the startup read) is a no-op. When the state transitions to `MatchLoaded`, the service starts its polling loop, calling `IScoreboardService.CaptureAndBroadcastAsync` on each tick. When the state transitions away from `MatchLoaded` (to any other state), the timer is cancelled and the loop exits cleanly. A capture exception is caught and logged at Error level via Serilog; it does not terminate the loop — the service continues polling on subsequent ticks. The service is registered in `Program.cs` via `AddHostedService`.
 
