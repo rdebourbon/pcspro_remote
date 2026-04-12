@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | IS-006-FlaUI-Integration.md |
 | **Status** | APPROVED — Pending user approval |
-| **Version** | 0.3 |
+| **Version** | 0.4 |
 | **Date** | 2026-04-12 |
 | **Governing HLPS** | HLPS-006-FlaUI-Integration.md v0.2 (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.0 |
@@ -28,7 +28,7 @@ Steps are identified with stable IDs S-001 through S-007. IDs are never renumber
 
 ### S-001 — Project scaffold, configuration model, and DI registration
 
-**What changes:** The `PcsRemote.Automation` project is created (or restructured if an empty stub already exists) with the correct target framework (`net8.0-windows`), FlaUI NuGet references (`FlaUI.Core`, `FlaUI.UIA3`), and two configuration models: `PcsProOptions` capturing `ExecutablePath`, `WorkingDirectory`, and `Password` (bound to the `PcsPro:` section), and `ScoreboardOptions` capturing `JpegQuality` (bound to the `Scoreboard:` section). A companion `PcsRemote.Automation.Tests` stub project is confirmed to exist (or created) targeting `net8.0`. A DI registration extension wires `PcsProAutomationService` when `PcsPro:UseMock = false`, replacing the `NotSupportedPcsProAutomationService` placeholder. The `PcsProAutomationService` class is created as a skeleton implementing all nine `IPcsProAutomationService` interface methods — each method throws `NotImplementedException` at this stage.
+**What changes:** The `PcsRemote.Automation` project is created (or restructured if an empty stub already exists) with the correct target framework (`net8.0-windows`), FlaUI NuGet references (`FlaUI.Core`, `FlaUI.UIA3`), and two configuration models: `PcsProOptions` capturing `ExecutablePath`, `WorkingDirectory`, and `Password` (bound to the `PcsPro:` section), and `ScoreboardOptions` capturing `JpegQuality` (bound to the `Scoreboard:` section). A companion `PcsRemote.Automation.Tests` stub project is confirmed to exist (or created) targeting `net8.0-windows` (matching `PcsRemote.Automation` to avoid cross-TFM compatibility warnings, which are fatal under `TreatWarningsAsErrors`). A DI registration extension wires `PcsProAutomationService` when `PcsPro:UseMock = false`, replacing the `NotSupportedPcsProAutomationService` placeholder. The `PcsProAutomationService` class is created as a skeleton implementing all twelve `IPcsProAutomationService` members: the nine `Task`-returning methods throw `NotImplementedException`; `CurrentState` returns `PcsProState.NotRunning`; `LastErrorReason` returns `null`; `StateChanged` has empty add/remove accessors.
 
 **Why:** Every subsequent step builds on this scaffold. Getting the project structure, dependency graph, and configuration injection right first means all later steps inherit a correct foundation. Addresses HLPS-006 §2 DI registration and configuration sourcing requirements.
 
