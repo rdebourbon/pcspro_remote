@@ -2,7 +2,7 @@ using Radzen;
 
 namespace PcsRemote.Web;
 
-internal sealed class RadzenConfirmDialogService : IConfirmDialogService
+public sealed class RadzenConfirmDialogService : IConfirmDialogService
 {
     private readonly DialogService _dialogService;
 

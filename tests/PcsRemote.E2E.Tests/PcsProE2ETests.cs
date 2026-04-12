@@ -171,4 +171,189 @@ public class PcsProE2ETests
             await service.StopAsync(CancellationToken.None);
         }
     }
+
+    /// <summary>
+    /// TC-1 (S-SC-1): Scoreboard image renders within 3 s of reaching MatchLoaded.
+    /// </summary>
+    [TestMethod]
+    public async Task ScoreboardImage_AppearsAfterMatchLoaded()
+    {
+        var mockService = (MockPcsProAutomationService)_factory.RealServices
+            .GetRequiredService<IPcsProAutomationService>();
+        var scoreboardService = _factory.RealServices.GetRequiredService<IScoreboardService>();
+
+        try
+        {
+            await DriveToMatchLoadedAsync(_page1!);
+
+            await _page1!.Locator(".scoreboard-image[src^='data:image/jpeg;base64,']")
+                .WaitForAsync(new() { Timeout = 3_000 });
+        }
+        finally
+        {
+            await mockService.StopAsync(CancellationToken.None);
+            scoreboardService.ClearCache();
+        }
+    }
+
+    /// <summary>
+    /// TC-2 (S-SC-3): Refresh button is visible and enabled; click produces a success notification.
+    /// </summary>
+    [TestMethod]
+    public async Task RefreshButton_Click_ProducesSuccessNotification()
+    {
+        var mockService = (MockPcsProAutomationService)_factory.RealServices
+            .GetRequiredService<IPcsProAutomationService>();
+        var scoreboardService = _factory.RealServices.GetRequiredService<IScoreboardService>();
+
+        try
+        {
+            await DriveToMatchLoadedAsync(_page1!);
+            await _page1!.Locator(".scoreboard-image[src^='data:image/jpeg;base64,']")
+                .WaitForAsync(new() { Timeout = 3_000 });
+
+            var refreshButton = _page1.Locator(".refresh-scoreboard-button");
+            await refreshButton.WaitForAsync(new() { State = WaitForSelectorState.Visible });
+            Assert.IsFalse(await refreshButton.IsDisabledAsync());
+
+            await refreshButton.ClickAsync();
+
+            await _page1.Locator(".rz-notification", new() { HasText = "Scoreboard refreshed" })
+                .WaitForAsync(new() { Timeout = 5_000 });
+        }
+        finally
+        {
+            await mockService.StopAsync(CancellationToken.None);
+            scoreboardService.ClearCache();
+        }
+    }
+
+    /// <summary>
+    /// TC-3 (S-SC-8): Scoreboard image update is broadcast simultaneously to all connected contexts.
+    /// Both waiters and the final capture run in parallel to eliminate tick-skew races.
+    /// </summary>
+    [TestMethod]
+    public async Task ScoreboardImage_UpdatesBothContexts_Simultaneously()
+    {
+        var mockService = (MockPcsProAutomationService)_factory.RealServices
+            .GetRequiredService<IPcsProAutomationService>();
+        var scoreboardService = _factory.RealServices.GetRequiredService<IScoreboardService>();
+
+        try
+        {
+            // Step 1: Drive page1 to MatchLoaded and wait for initial image.
+            await DriveToMatchLoadedAsync(_page1!);
+            await _page1!.Locator(".scoreboard-image[src^='data:image/jpeg;base64,']")
+                .WaitForAsync(new() { Timeout = 3_000 });
+
+            // Step 2: Open page2; singleton service is already in MatchLoaded so image renders immediately.
+            _context2 = await _browser.NewContextAsync();
+            _page2 = await _context2.NewPageAsync();
+            await _page2.GotoAsync(_serverAddress);
+            await _page2.Locator(".scoreboard-image[src^='data:image/jpeg;base64,']")
+                .WaitForAsync(new() { Timeout = 3_000 });
+
+            // Step 3: Capture stable baselines.
+            var p1Base = await _page1.GetAttributeAsync(".scoreboard-image", "src");
+            var p2Base = await _page2.GetAttributeAsync(".scoreboard-image", "src");
+
+            // Steps 4+5 (parallel): both waiters run concurrently so both pages resolve within
+            // the same tick window, eliminating the sequential tick-skew race.
+            const string srcChangedFn =
+                "baseline => { const el = document.querySelector('.scoreboard-image'); " +
+                "return el != null && el.getAttribute('src') !== baseline; }";
+
+            await Task.WhenAll(
+                _page1.WaitForFunctionAsync(srcChangedFn, p1Base, new() { Timeout = 3_000 }),
+                _page2.WaitForFunctionAsync(srcChangedFn, p2Base, new() { Timeout = 3_000 }));
+
+            // Step 6 (parallel): simultaneous capture minimises inter-read CDP-RTT window.
+            var captured = await Task.WhenAll(
+                _page1.GetAttributeAsync(".scoreboard-image", "src"),
+                _page2.GetAttributeAsync(".scoreboard-image", "src"));
+            var p1New = captured[0];
+            var p2New = captured[1];
+
+            // Step 7: Both circuits received the same ScoreboardUpdated broadcast (S-SC-8).
+            Assert.AreEqual(p1New, p2New, "Both browser contexts must display the same scoreboard image.");
+        }
+        finally
+        {
+            await mockService.StopAsync(CancellationToken.None);
+            scoreboardService.ClearCache();
+        }
+    }
+
+    /// <summary>
+    /// TC-4 (S-SC-7): Change Match button shows a confirmation dialog; clicking Cancel
+    /// dismisses it and leaves the scoreboard image intact.
+    /// </summary>
+    [TestMethod]
+    public async Task ChangeMatchButton_ShowsDialog_CancelPreservesScoreboard()
+    {
+        var mockService = (MockPcsProAutomationService)_factory.RealServices
+            .GetRequiredService<IPcsProAutomationService>();
+        var scoreboardService = _factory.RealServices.GetRequiredService<IScoreboardService>();
+
+        try
+        {
+            await DriveToMatchLoadedAsync(_page1!);
+            await _page1!.Locator(".scoreboard-image[src^='data:image/jpeg;base64,']")
+                .WaitForAsync(new() { Timeout = 3_000 });
+
+            // Click change-match button to trigger the Radzen confirm dialog.
+            await _page1.Locator(".change-match-button").ClickAsync();
+
+            // Wait for the Radzen confirm dialog Cancel button to appear.
+            var cancelButton = _page1.GetByRole(AriaRole.Button, new() { Name = "Cancel" });
+            await cancelButton.WaitForAsync(new() { Timeout = 5_000 });
+
+            // Click Cancel.
+            await cancelButton.ClickAsync();
+
+            // Dialog must be hidden after cancel.
+            await _page1.Locator(".rz-dialog-wrapper")
+                .WaitForAsync(new() { State = WaitForSelectorState.Hidden, Timeout = 10_000 });
+
+            // Button must be re-enabled (operation-in-progress flag cleared).
+            var changeMatchButton = _page1.Locator(".change-match-button");
+            await changeMatchButton.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 3_000 });
+            Assert.IsFalse(await changeMatchButton.IsDisabledAsync());
+
+            // Scoreboard image must still be present — cancel did not clear the cache.
+            await _page1.Locator(".scoreboard-image")
+                .WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 3_000 });
+        }
+        finally
+        {
+            await mockService.StopAsync(CancellationToken.None);
+            scoreboardService.ClearCache();
+        }
+    }
+
+    /// <summary>
+    /// Navigates <paramref name="page"/> to the server, drives the singleton
+    /// <see cref="MockPcsProAutomationService"/> to <see cref="PcsProState.MatchLoaded"/>,
+    /// and waits for the Blazor circuit to reflect that state.
+    /// </summary>
+    /// <remarks>
+    /// The LaunchAndLoginAsync → GetTodaysMatchesAsync → LoadMatchAsync call sequence is
+    /// mandatory: calling LoadMatchAsync from NotRunning throws InvalidOperationException.
+    /// </remarks>
+    private async Task DriveToMatchLoadedAsync(IPage page)
+    {
+        await page.GotoAsync(_serverAddress);
+
+        var mockService = (MockPcsProAutomationService)_factory.RealServices
+            .GetRequiredService<IPcsProAutomationService>();
+
+        await mockService.LaunchAndLoginAsync(CancellationToken.None);
+
+        var matches = await mockService.GetTodaysMatchesAsync(CancellationToken.None);
+        await mockService.LoadMatchAsync(matches[0], CancellationToken.None);
+
+        // Wait for the MatchLoaded section to render (confirms circuit received state transition).
+        await page.Locator(".change-match-button")
+            .WaitForAsync(new() { Timeout = 10_000 });
+    }
 }

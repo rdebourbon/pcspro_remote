@@ -24,12 +24,15 @@ else if (_currentState == PcsProState.MatchSelectionReady)
     }
 }
 
-else if (_currentState == PcsProState.MatchLoaded && _loadedMatch is not null)
+else if (_currentState == PcsProState.MatchLoaded)
 {
-    <div class="match-loaded">
-        <span class="match-loaded__home">@_loadedMatch.HomeTeam</span>
-        <span class="match-loaded__away">@_loadedMatch.AwayTeam</span>
-    </div>
+    @if (_loadedMatch is not null)
+    {
+        <div class="match-loaded">
+            <span class="match-loaded__home">@_loadedMatch.HomeTeam</span>
+            <span class="match-loaded__away">@_loadedMatch.AwayTeam</span>
+        </div>
+    }
     <ScoreboardPreview />
     <RefreshScoreboardButton />
     <ChangeMatchButton />

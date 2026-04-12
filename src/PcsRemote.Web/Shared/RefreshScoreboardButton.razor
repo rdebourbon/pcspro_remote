@@ -53,16 +53,22 @@
 
     private async void OnRefreshCompleted(object? sender, EventArgs e)
     {
-        if (!_disposed) await InvokeAsync(() =>
+        if (!_disposed)
         {
-            NotificationService.Notify(NotificationSeverity.Success, "Scoreboard refreshed");
-        });
+            await InvokeAsync(() =>
+            {
+                NotificationService.Notify(NotificationSeverity.Success, "Scoreboard refreshed");
+            });
+        }
     }
 
     private async void OnStateChanged(object? sender, PcsProState newState)
     {
         _currentState = newState;
-        if (!_disposed) await InvokeAsync(StateHasChanged);
+        if (!_disposed)
+        {
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     public void Dispose()

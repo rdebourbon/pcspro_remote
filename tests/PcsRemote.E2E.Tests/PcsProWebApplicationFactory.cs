@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using PcsRemote.Automation.Mock;
+using PcsRemote.Core;
 using PcsRemote.Web;
 using PcsRemote.Web.Hubs;
 using Radzen;
@@ -129,7 +130,16 @@ public sealed class PcsProWebApplicationFactory : WebApplicationFactory<Program>
             ["PcsPro:Mock:LaunchDelay"] = "0",
             ["PcsPro:Mock:LoginDetectedDelay"] = "0",
             ["PcsPro:Mock:CredentialsEnteredDelay"] = "0",
-            ["PcsPro:Mock:ErrorProbability"] = "0"
+            ["PcsPro:Mock:ErrorProbability"] = "0",
+            ["PcsPro:Mock:ImageVariationProbability"] = "1",
+            ["Scoreboard:CaptureIntervalSeconds"] = "1",
+            // Provide the static web assets manifest so Radzen.Blazor.js and other RCL assets
+            // are served correctly. StaticWebAssetsStartupFilter reads this key and adds the
+            // Radzen NuGet package staticwebassets/ directory to the WebRootFileProvider,
+            // enabling _content/Radzen.Blazor/Radzen.Blazor.js to be served. Without this,
+            // RadzenDialog.Close's JSRuntime.InvokeAsync("Radzen.closeDialog") hangs and
+            // the dialog never re-renders as hidden.
+            ["StaticWebAssets"] = Path.Combine(AppContext.BaseDirectory, "PcsRemote.Web.staticwebassets.runtime.json")
         });
 
         builder.Services.AddPcsProAutomationService(builder.Configuration);
@@ -142,8 +152,17 @@ public sealed class PcsProWebApplicationFactory : WebApplicationFactory<Program>
         // prevent it from acting, but omitting it avoids an unnecessary hosted service.
         builder.Services.AddRazorPages();
         builder.Services.AddRadzenComponents();
+        builder.Services.AddSingleton<IScoreboardService, ScoreboardService>();
+        builder.Services.AddHostedService<ScoreboardPollingService>();
+        builder.Services.AddScoped<IConfirmDialogService, RadzenConfirmDialogService>();
         builder.Services.Configure<CircuitOptions>(o =>
             o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromSeconds(1));
+
+        // Ensure Razor Class Library static assets (e.g. _content/Radzen.Blazor/Radzen.Blazor.js)
+        // are served. StaticWebAssetsStartupFilter reads the StaticWebAssets config key and
+        // updates the WebRootFileProvider, but calling UseStaticWebAssets() explicitly on the
+        // web host builder guarantees the asset manifest is applied regardless of environment.
+        builder.WebHost.UseStaticWebAssets();
 
         // Programmatic Listen() takes highest priority — overrides UseUrls and any
         // Kestrel:Endpoints from appsettings. Port 0 means OS assigns a free port.
