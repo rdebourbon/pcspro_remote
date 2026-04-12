@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | **Document** | IS-003-Web-Control-Panel.md |
-| **Status** | APPROVED |
-| **Version** | 0.3 |
+| **Status** | COMPLETE |
+| **Version** | 0.4 |
 | **Date** | 2026-04-11 |
 | **Governing HLPS** | HLPS-003-Web-Control-Panel.md v0.2 (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.0 |
@@ -118,7 +118,7 @@ Steps are identified with stable IDs (S-001 through S-009). IDs are never renumb
 
 ---
 
-### S-009 — Playwright E2E project and smoke test
+### S-009 — Playwright E2E project and smoke test ✅ DELIVERED (commit `9163900`)
 
 **What changes:** The existing `PcsRemote.E2E.Tests` project (scaffolded during HLPS-001 with MSTest and FluentAssertions but no Playwright packages) is upgraded with Playwright packages and test host infrastructure. At least one smoke test is implemented: the application starts, the root URL returns HTTP 200, and the status indicator element is present in the DOM. The Playwright multi-context tests for W-SC-3 (connected user count — two browser contexts) and W-SC-9 (simultaneous state broadcast — two browser contexts assert same state) are also added in this step. The project is verified to run via `dotnet test`.
 
