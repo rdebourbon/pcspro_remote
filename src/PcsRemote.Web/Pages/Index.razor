@@ -2,6 +2,8 @@
 @using PcsRemote.Core
 @implements IDisposable
 @inject IPcsProAutomationService AutomationService
+@inject IManualModeService ManualModeService
+@inject NotificationService NotificationService
 
 <PageTitle>PCS Remote</PageTitle>
 
@@ -19,7 +21,7 @@ else if (_currentState == PcsProState.MatchSelectionReady)
     {
         @foreach (var match in _matches)
         {
-            <MatchCard Match="@match" IsInteractive="true" OnSelected="SelectMatchAsync" />
+            <MatchCard Match="@match" IsInteractive="!_manualModeActive" OnSelected="SelectMatchAsync" />
         }
     }
 }
@@ -43,13 +45,16 @@ else if (_currentState == PcsProState.MatchLoaded)
     private IReadOnlyList<MatchInfo>? _matches;
     private MatchInfo? _loadedMatch;
     private bool _fetchInProgress;
+    private bool _manualModeActive;
 
     protected override async Task OnInitializedAsync()
     {
         // R-3: Subscribe before reading CurrentState to close the race window
         // between snapshot capture and handler attachment.
         AutomationService.StateChanged += OnStateChanged;
+        ManualModeService.ManualModeChanged += OnManualModeChanged;
         _currentState = AutomationService.CurrentState;
+        _manualModeActive = ManualModeService.IsManualModeActive;
 
         if (_currentState == PcsProState.MatchSelection || _currentState == PcsProState.MatchSelectionReady)
             await FetchMatchesAsync();
@@ -126,6 +131,12 @@ else if (_currentState == PcsProState.MatchLoaded)
 
     private async Task SelectMatchAsync(MatchInfo match)
     {
+        if (ManualModeService.IsManualModeActive)
+        {
+            NotificationService.Notify(NotificationSeverity.Warning, "Automation is paused — disable manual mode before issuing commands");
+            return;
+        }
+
         // R-9: clear _matches before LoadMatchAsync so the intermediate
         // MatchSelectionReady event cannot flash stale cards.
         _loadedMatch = match;
@@ -133,8 +144,15 @@ else if (_currentState == PcsProState.MatchLoaded)
         await AutomationService.LoadMatchAsync(match);
     }
 
+    private async void OnManualModeChanged(object? sender, bool isActive)
+    {
+        _manualModeActive = isActive;
+        await InvokeAsync(StateHasChanged);
+    }
+
     public void Dispose()
     {
         AutomationService.StateChanged -= OnStateChanged;
+        ManualModeService.ManualModeChanged -= OnManualModeChanged;
     }
 }

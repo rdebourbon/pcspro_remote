@@ -120,11 +120,14 @@ public class PcsProStatusIndicatorTests
         var mock = BuildMock(PcsProState.NotRunning);
         var trackerMock = new Mock<IConnectionTracker>();
         trackerMock.Setup(t => t.ConnectionCount).Returns(0);
+        var manualModeMock = new Mock<IManualModeService>();
+        manualModeMock.Setup(s => s.IsManualModeActive).Returns(false);
 
         using var ctx = new BunitContext();
         ctx.Services.AddRadzenComponents();
         ctx.Services.AddSingleton(mock.Object);
         ctx.Services.AddSingleton<IConnectionTracker>(trackerMock.Object);
+        ctx.Services.AddSingleton(manualModeMock.Object);
 
         var cut = ctx.Render<MainLayout>(p =>
             p.Add(l => l.Body, builder => { }));

@@ -1,0 +1,41 @@
+@using PcsRemote.Core
+@implements IDisposable
+@inject IManualModeService ManualModeService
+
+@if (_isActive)
+{
+    <div class="manual-mode-banner">
+        Manual mode &mdash; automation paused by local operator
+    </div>
+}
+
+@code {
+    private bool _isActive;
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        // Subscribe before snapshot to eliminate the race window (established project pattern).
+        ManualModeService.ManualModeChanged += OnManualModeChanged;
+        _isActive = ManualModeService.IsManualModeActive;
+    }
+
+    private async void OnManualModeChanged(object? sender, bool isActive)
+    {
+        _isActive = isActive;
+        if (!_disposed)
+        {
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        ManualModeService.ManualModeChanged -= OnManualModeChanged;
+    }
+}

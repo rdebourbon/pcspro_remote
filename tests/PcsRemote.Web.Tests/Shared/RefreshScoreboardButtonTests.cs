@@ -25,13 +25,16 @@ public class RefreshScoreboardButtonTests
         NotificationService NotificationSvc,
         List<NotificationMessage> Notifications,
         BunitContext Ctx)
-    Build(PcsProState initialState, ILogger<RefreshScoreboardButton>? logger = null)
+    Build(PcsProState initialState, ILogger<RefreshScoreboardButton>? logger = null, bool manualModeActive = false)
     {
         var scoreMock = new Mock<IScoreboardService>();
         scoreMock.Setup(s => s.CurrentImage).Returns((byte[]?)null);
 
         var autoMock = new Mock<IPcsProAutomationService>();
         autoMock.Setup(a => a.CurrentState).Returns(initialState);
+
+        var manualModeMock = new Mock<IManualModeService>();
+        manualModeMock.Setup(s => s.IsManualModeActive).Returns(manualModeActive);
 
         var notificationSvc = new NotificationService();
         var notifications = new List<NotificationMessage>();
@@ -45,6 +48,7 @@ public class RefreshScoreboardButtonTests
         var ctx = new BunitContext();
         ctx.Services.AddSingleton(scoreMock.Object);
         ctx.Services.AddSingleton(autoMock.Object);
+        ctx.Services.AddSingleton(manualModeMock.Object);
         ctx.Services.AddSingleton(notificationSvc);
         ctx.Services.AddSingleton(logger ?? NullLogger<RefreshScoreboardButton>.Instance);
 
@@ -228,6 +232,75 @@ public class RefreshScoreboardButtonTests
         }
     }
 
+    // ── TC-19 (S-003): Button disabled when manual mode is active ─────────────
+
+    [TestMethod]
+    public void ManualModeActive_ButtonDisabled()
+    {
+        var (cut, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, manualModeActive: true);
+        using (ctx)
+        {
+            cut.Find(".refresh-scoreboard-button").HasAttribute("disabled").Should().BeTrue();
+        }
+    }
+
+    // ── TC-20 (S-003): Click rejected with guard notification while manual mode active ─
+
+    [TestMethod]
+    public void ManualModeActive_Click_RejectedWithNotification()
+    {
+        var (cut, scoreMock, _, _, notifications, ctx) =
+            Build(PcsProState.MatchLoaded, manualModeActive: true);
+        using (ctx)
+        {
+            cut.Find(".refresh-scoreboard-button").Click();
+
+            cut.WaitForAssertion(() =>
+            {
+                notifications.Should().ContainSingle(n =>
+                    n.Summary == "Automation is paused — disable manual mode before issuing commands" &&
+                    n.Severity == NotificationSeverity.Warning);
+                scoreMock.Verify(
+                    s => s.ForceRefreshAsync(It.IsAny<CancellationToken>()),
+                    Times.Never);
+            });
+        }
+    }
+
+    // ── TC-20b (S-003): ManualModeChanged(false) → button re-enables ─────────
+
+    [TestMethod]
+    public void ManualModeChanged_ToFalse_ReEnablesButton()
+    {
+        var manualModeMock = new Mock<IManualModeService>();
+        manualModeMock.Setup(s => s.IsManualModeActive).Returns(true);
+
+        var scoreMock = new Mock<IScoreboardService>();
+        scoreMock.Setup(s => s.CurrentImage).Returns((byte[]?)null);
+        var autoMock = new Mock<IPcsProAutomationService>();
+        autoMock.Setup(a => a.CurrentState).Returns(PcsProState.MatchLoaded);
+        var notificationSvc = new NotificationService();
+
+        var ctx = new BunitContext();
+        ctx.Services.AddSingleton(scoreMock.Object);
+        ctx.Services.AddSingleton(autoMock.Object);
+        ctx.Services.AddSingleton(manualModeMock.Object);
+        ctx.Services.AddSingleton(notificationSvc);
+        ctx.Services.AddSingleton<ILogger<RefreshScoreboardButton>>(NullLogger<RefreshScoreboardButton>.Instance);
+
+        using (ctx)
+        {
+            var cut = ctx.Render<RefreshScoreboardButton>();
+            cut.Find(".refresh-scoreboard-button").HasAttribute("disabled").Should().BeTrue();
+
+            manualModeMock.Setup(s => s.IsManualModeActive).Returns(false);
+            manualModeMock.Raise(s => s.ManualModeChanged += null, manualModeMock.Object, false);
+
+            cut.WaitForAssertion(() =>
+                cut.Find(".refresh-scoreboard-button").HasAttribute("disabled").Should().BeFalse());
+        }
+    }
+
     // ── TC-11: Multi-component integration — button click updates ScoreboardPreview ─
 
     [TestMethod]
@@ -260,6 +333,7 @@ public class RefreshScoreboardButtonTests
         using var ctx = new BunitContext();
         ctx.Services.AddSingleton(scoreMock.Object);
         ctx.Services.AddSingleton(autoMock.Object);
+        ctx.Services.AddSingleton<IManualModeService>(new Mock<IManualModeService>().Object);
         ctx.Services.AddSingleton(notificationSvc);
         ctx.Services.AddSingleton<ILogger<RefreshScoreboardButton>>(NullLogger<RefreshScoreboardButton>.Instance);
 

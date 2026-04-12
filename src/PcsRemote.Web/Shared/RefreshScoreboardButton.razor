@@ -3,6 +3,7 @@
 @implements IDisposable
 @inject IScoreboardService ScoreboardService
 @inject IPcsProAutomationService AutomationService
+@inject IManualModeService ManualModeService
 @inject NotificationService NotificationService
 @inject ILogger<RefreshScoreboardButton> Logger
 
@@ -15,23 +16,32 @@
 @code {
     private PcsProState _currentState;
     private bool _refreshInProgress;
+    private bool _manualModeActive;
     private bool _disposed;
 
-    private bool IsEnabled => _currentState == PcsProState.MatchLoaded && !_refreshInProgress;
+    private bool IsEnabled => _currentState == PcsProState.MatchLoaded && !_refreshInProgress && !_manualModeActive;
 
     protected override Task OnInitializedAsync()
     {
         // Subscribe before snapshot to narrow the race window (established project pattern).
         ScoreboardService.RefreshCompleted += OnRefreshCompleted;
         AutomationService.StateChanged += OnStateChanged;
+        ManualModeService.ManualModeChanged += OnManualModeChanged;
 
         _currentState = AutomationService.CurrentState;
+        _manualModeActive = ManualModeService.IsManualModeActive;
 
         return Task.CompletedTask;
     }
 
     private async Task OnRefreshClickedAsync()
     {
+        if (ManualModeService.IsManualModeActive)
+        {
+            NotificationService.Notify(NotificationSeverity.Warning, "Automation is paused — disable manual mode before issuing commands");
+            return;
+        }
+
         _refreshInProgress = true;
         StateHasChanged();
 
@@ -71,10 +81,24 @@
         }
     }
 
+    private async void OnManualModeChanged(object? sender, bool isActive)
+    {
+        _manualModeActive = isActive;
+        if (!_disposed)
+        {
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
     public void Dispose()
     {
         _disposed = true;
         ScoreboardService.RefreshCompleted -= OnRefreshCompleted;
         AutomationService.StateChanged -= OnStateChanged;
+        ManualModeService.ManualModeChanged -= OnManualModeChanged;
     }
 }

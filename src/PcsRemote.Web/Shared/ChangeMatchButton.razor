@@ -2,6 +2,7 @@
 @using PcsRemote.Core
 @implements IDisposable
 @inject IPcsProAutomationService AutomationService
+@inject IManualModeService ManualModeService
 @inject IScoreboardService ScoreboardService
 @inject IConfirmDialogService ConfirmDialogService
 @inject NotificationService NotificationService
@@ -16,19 +17,28 @@
 @code {
     private PcsProState _currentState;
     private bool _operationInProgress;
+    private bool _manualModeActive;
     private bool _disposed;
 
-    private bool IsEnabled => _currentState == PcsProState.MatchLoaded && !_operationInProgress;
+    private bool IsEnabled => _currentState == PcsProState.MatchLoaded && !_operationInProgress && !_manualModeActive;
 
     protected override void OnInitialized()
     {
         // Subscribe before snapshot to narrow the race window (established project pattern).
         AutomationService.StateChanged += OnStateChanged;
+        ManualModeService.ManualModeChanged += OnManualModeChanged;
         _currentState = AutomationService.CurrentState;
+        _manualModeActive = ManualModeService.IsManualModeActive;
     }
 
     private async Task OnChangeMatchClickedAsync()
     {
+        if (ManualModeService.IsManualModeActive)
+        {
+            NotificationService.Notify(NotificationSeverity.Warning, "Automation is paused — disable manual mode before issuing commands");
+            return;
+        }
+
         _operationInProgress = true;
         StateHasChanged();
 
@@ -71,9 +81,23 @@
         }
     }
 
+    private async void OnManualModeChanged(object? sender, bool isActive)
+    {
+        _manualModeActive = isActive;
+        if (!_disposed)
+        {
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
     public void Dispose()
     {
         _disposed = true;
         AutomationService.StateChanged -= OnStateChanged;
+        ManualModeService.ManualModeChanged -= OnManualModeChanged;
     }
 }

@@ -4,6 +4,7 @@ using PcsRemote.Automation.Mock;
 using PcsRemote.Core;
 using PcsRemote.Web;
 using PcsRemote.Web.Hubs;
+using PcsRemote.Web.Services;
 using Radzen;
 
 // Stage 1: transient bootstrap logger — captures host construction errors before full config is ready.
@@ -27,10 +28,12 @@ try
     builder.Services.AddPcsProAutomationService(builder.Configuration);
     builder.Services.AddSignalR();
     builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
+    builder.Services.AddSingleton<IManualModeService, ManualModeService>();
     builder.Services.AddServerSideBlazor();
     builder.Services.AddScoped<CircuitHandler, PcsProCircuitHandler>();
     builder.Services.AddSingleton<IScoreboardService, ScoreboardService>();
     builder.Services.AddHostedService<PcsProStateBroadcaster>();
+    builder.Services.AddHostedService<ManualModeBroadcaster>();
     builder.Services.AddHostedService<ScoreboardPollingService>();
     builder.Services.AddHostedService<AutoLaunchService>();
     builder.Services.AddRazorPages();

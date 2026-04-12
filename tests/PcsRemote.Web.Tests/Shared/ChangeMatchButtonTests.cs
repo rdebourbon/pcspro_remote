@@ -25,12 +25,14 @@ public class ChangeMatchButtonTests
         NotificationService NotificationSvc,
         List<NotificationMessage> Notifications,
         BunitContext Ctx)
-    Build(PcsProState initialState, ILogger<ChangeMatchButton>? logger = null)
+    Build(PcsProState initialState, ILogger<ChangeMatchButton>? logger = null, bool manualModeActive = false)
     {
         var scoreMock = new Mock<IScoreboardService>();
         var autoMock = new Mock<IPcsProAutomationService>();
         autoMock.Setup(a => a.CurrentState).Returns(initialState);
         var dialogMock = new Mock<IConfirmDialogService>();
+        var manualModeMock = new Mock<IManualModeService>();
+        manualModeMock.Setup(s => s.IsManualModeActive).Returns(manualModeActive);
 
         var notificationSvc = new NotificationService();
         var notifications = new List<NotificationMessage>();
@@ -44,6 +46,7 @@ public class ChangeMatchButtonTests
         var ctx = new BunitContext();
         ctx.Services.AddSingleton(scoreMock.Object);
         ctx.Services.AddSingleton(autoMock.Object);
+        ctx.Services.AddSingleton(manualModeMock.Object);
         ctx.Services.AddSingleton(dialogMock.Object);
         ctx.Services.AddSingleton(notificationSvc);
         ctx.Services.AddSingleton(logger ?? (ILogger<ChangeMatchButton>)NullLogger<ChangeMatchButton>.Instance);
@@ -259,6 +262,75 @@ public class ChangeMatchButtonTests
             autoMock.VerifyRemove(
                 a => a.StateChanged -= It.IsAny<EventHandler<PcsProState>>(),
                 Times.Once);
+        }
+    }
+
+    // ── TC-16 (S-003): Button disabled when manual mode is active ─────────────
+
+    [TestMethod]
+    public void ManualModeActive_ButtonDisabled()
+    {
+        var (cut, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, manualModeActive: true);
+        using (ctx)
+        {
+            cut.Find(".change-match-button").HasAttribute("disabled").Should().BeTrue();
+        }
+    }
+
+    // ── TC-17 (S-003): Click rejected with guard notification while manual mode active ─
+
+    [TestMethod]
+    public void ManualModeActive_Click_RejectedWithNotification()
+    {
+        var (cut, _, autoMock, dialogMock, _, notifications, ctx) =
+            Build(PcsProState.MatchLoaded, manualModeActive: true);
+        using (ctx)
+        {
+            cut.Find(".change-match-button").Click();
+
+            cut.WaitForAssertion(() =>
+            {
+                notifications.Should().ContainSingle(n =>
+                    n.Summary == "Automation is paused — disable manual mode before issuing commands" &&
+                    n.Severity == NotificationSeverity.Warning);
+                dialogMock.Verify(
+                    d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()),
+                    Times.Never);
+                autoMock.Verify(a => a.ChangeMatchAsync(It.IsAny<CancellationToken>()), Times.Never);
+            });
+        }
+    }
+
+    // ── TC-18 (S-003): ManualModeChanged(false) → button re-enables ──────────
+
+    [TestMethod]
+    public void ManualModeChanged_ToFalse_ReEnablesButton()
+    {
+        var manualModeMock = new Mock<IManualModeService>();
+        manualModeMock.Setup(s => s.IsManualModeActive).Returns(true);
+
+        var autoMock = new Mock<IPcsProAutomationService>();
+        autoMock.Setup(a => a.CurrentState).Returns(PcsProState.MatchLoaded);
+        var dialogMock = new Mock<IConfirmDialogService>();
+        var notificationSvc = new NotificationService();
+        var ctx = new BunitContext();
+        ctx.Services.AddSingleton(new Mock<IScoreboardService>().Object);
+        ctx.Services.AddSingleton(autoMock.Object);
+        ctx.Services.AddSingleton(manualModeMock.Object);
+        ctx.Services.AddSingleton(dialogMock.Object);
+        ctx.Services.AddSingleton(notificationSvc);
+        ctx.Services.AddSingleton<ILogger<ChangeMatchButton>>(NullLogger<ChangeMatchButton>.Instance);
+
+        using (ctx)
+        {
+            var cut = ctx.Render<ChangeMatchButton>();
+            cut.Find(".change-match-button").HasAttribute("disabled").Should().BeTrue();
+
+            manualModeMock.Setup(s => s.IsManualModeActive).Returns(false);
+            manualModeMock.Raise(s => s.ManualModeChanged += null, manualModeMock.Object, false);
+
+            cut.WaitForAssertion(() =>
+                cut.Find(".change-match-button").HasAttribute("disabled").Should().BeFalse());
         }
     }
 }

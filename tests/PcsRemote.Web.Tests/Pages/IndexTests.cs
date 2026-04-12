@@ -550,25 +550,143 @@ public class IndexTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // TC-21 (S-003): MatchCards rendered with IsInteractive=false when manual mode active
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void ManualModeActive_MatchCardsRendered_WithDisabledInteractivity()
+    {
+        var match1 = TestMatch(1);
+        var match2 = TestMatch(2);
+        var autoMock = BuildMock(PcsProState.NotRunning);
+        autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match1, match2 });
+
+        var manualModeMock = new Mock<IManualModeService>();
+        manualModeMock.Setup(s => s.IsManualModeActive).Returns(true);
+
+        using var ctx = BuildCtx(autoMock, manualModeMock: manualModeMock);
+        var cut = ctx.Render<IndexPage>();
+
+        mock_drive_to_ready(autoMock);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".match-card").Should().HaveCount(2);
+            // All cards rendered in disabled state (IsInteractive=false → match-card--disabled CSS class)
+            cut.FindAll(".match-card--disabled").Should().HaveCount(2);
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TC-22 (S-003): SelectMatchAsync guard blocks LoadMatchAsync when manual mode active.
+    //                Simulates the race window: service returns true but the ManualModeChanged
+    //                event has not yet propagated to update the component's _manualModeActive
+    //                field (so the card remains interactive and can still be clicked).
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void ManualModeActive_SelectMatch_RejectedWithNotification()
+    {
+        var match1 = TestMatch(1);
+        var match2 = TestMatch(2);
+        var autoMock = BuildMock(PcsProState.NotRunning);
+        autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match1, match2 });
+
+        var manualModeMock = new Mock<IManualModeService>();
+        manualModeMock.Setup(s => s.IsManualModeActive).Returns(false);
+
+        var notificationSvc = new NotificationService();
+        var notifications = new List<NotificationMessage>();
+        notificationSvc.Messages.CollectionChanged += (_, e) =>
+        {
+            if (e.NewItems is not null)
+                foreach (NotificationMessage msg in e.NewItems)
+                    notifications.Add(msg);
+        };
+
+        using var ctx = BuildCtx(autoMock, manualModeMock: manualModeMock, notificationService: notificationSvc);
+        var cut = ctx.Render<IndexPage>();
+
+        mock_drive_to_ready(autoMock);
+        cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
+
+        // Simulate the race: service reports active but event has not yet propagated
+        // (so _manualModeActive is still false and the cards remain interactive).
+        manualModeMock.Setup(s => s.IsManualModeActive).Returns(true);
+
+        cut.FindAll(".match-card")[0].Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            notifications.Should().ContainSingle(n =>
+                n.Summary == "Automation is paused — disable manual mode before issuing commands" &&
+                n.Severity == NotificationSeverity.Warning);
+            autoMock.Verify(
+                s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TC-23 (S-003): SelectMatchAsync proceeds normally when manual mode inactive
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void ManualModeInactive_SelectMatch_ProceedsNormally()
+    {
+        var match1 = TestMatch(1);
+        var match2 = TestMatch(2);
+        var autoMock = BuildMock(PcsProState.NotRunning);
+        autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match1, match2 });
+
+        using var ctx = BuildCtx(autoMock);
+        var cut = ctx.Render<IndexPage>();
+
+        mock_drive_to_ready(autoMock);
+        cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
+
+        cut.FindAll(".match-card")[0].Click();
+
+        cut.WaitForAssertion(() =>
+            autoMock.Verify(
+                s => s.LoadMatchAsync(It.Is<MatchInfo>(m => m == match1), It.IsAny<CancellationToken>()),
+                Times.Once));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
 
     private static BunitContext BuildCtx(
         Mock<IPcsProAutomationService> autoMock,
-        Mock<IScoreboardService>? scoreMock = null)
+        Mock<IScoreboardService>? scoreMock = null,
+        Mock<IManualModeService>? manualModeMock = null,
+        NotificationService? notificationService = null)
     {
+        var mmMock = manualModeMock ?? new Mock<IManualModeService>();
+        if (manualModeMock is null)
+            mmMock.Setup(s => s.IsManualModeActive).Returns(false);
+
         var ctx = new BunitContext();
         ctx.Services.AddSingleton(autoMock.Object);
         ctx.Services.AddSingleton((scoreMock ?? new Mock<IScoreboardService>()).Object);
-        // RefreshScoreboardButton (embedded in MatchLoaded section) requires these additional services
-        ctx.Services.AddSingleton(new NotificationService());
+        ctx.Services.AddSingleton(mmMock.Object);
+        ctx.Services.AddSingleton(notificationService ?? new NotificationService());
         ctx.Services.AddSingleton<ILogger<RefreshScoreboardButton>>(
             NullLogger<RefreshScoreboardButton>.Instance);
-        // ChangeMatchButton (embedded in MatchLoaded section) requires these additional services
         ctx.Services.AddSingleton(new Mock<IConfirmDialogService>().Object);
         ctx.Services.AddSingleton<ILogger<ChangeMatchButton>>(
             NullLogger<ChangeMatchButton>.Instance);
         return ctx;
+    }
+
+    private static void mock_drive_to_ready(Mock<IPcsProAutomationService> autoMock)
+    {
+        autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchSelection);
+        autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchSelectionReady);
     }
 
     private static Mock<IPcsProAutomationService> BuildMock(PcsProState initialState)
