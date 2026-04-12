@@ -41,6 +41,11 @@ else if (_currentState == PcsProState.MatchLoaded)
     <ChangeMatchButton />
 }
 
+else if (_currentState == PcsProState.Error)
+{
+    <ErrorDisplay />
+}
+
 @code {
     private PcsProState _currentState;
     private IReadOnlyList<MatchInfo>? _matches;

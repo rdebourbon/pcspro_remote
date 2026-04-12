@@ -1,0 +1,129 @@
+@using Microsoft.Extensions.Logging
+@using PcsRemote.Core
+@implements IDisposable
+@inject IPcsProAutomationService AutomationService
+@inject IManualModeService ManualModeService
+@inject IOperationCoordinatorService CoordinatorService
+@inject NotificationService NotificationService
+@inject ILogger<ErrorDisplay> Logger
+
+@if (_currentState == PcsProState.Error)
+{
+    <div class="error-display">
+        <span class="error-display--icon">&#x1F534;</span>
+        <span class="error-display__reason">@(string.IsNullOrEmpty(_errorReason) ? "An unexpected error occurred." : _errorReason)</span>
+        <button class="error-display__retry-btn"
+                title="@(_operationInProgress ? "Automation in progress\u2026" : (_manualModeActive ? "Automation is paused" : ""))"
+                disabled="@(_operationInProgress || _manualModeActive)"
+                @onclick="OnRetryClickedAsync">
+            &#x27F3; Retry
+        </button>
+    </div>
+}
+
+@code {
+    private PcsProState _currentState;
+    private string? _errorReason;
+    private bool _operationInProgress;
+    private bool _manualModeActive;
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        // Subscribe before snapshot to narrow the race window (established project pattern).
+        AutomationService.StateChanged += OnStateChanged;
+        ManualModeService.ManualModeChanged += OnManualModeChanged;
+        CoordinatorService.OperationInProgressChanged += OnOperationInProgressChanged;
+        _currentState = AutomationService.CurrentState;
+        _errorReason = AutomationService.LastErrorReason;
+        _manualModeActive = ManualModeService.IsManualModeActive;
+        _operationInProgress = CoordinatorService.IsOperationInProgress;
+    }
+
+    private async Task OnRetryClickedAsync()
+    {
+        if (_operationInProgress)
+            return;
+
+        if (ManualModeService.IsManualModeActive)
+        {
+            NotificationService.Notify(NotificationSeverity.Warning, "Automation is paused — disable manual mode before retrying");
+            return;
+        }
+
+        bool acquired = false;
+        try
+        {
+            // BeginOperation() returns false if another browser already owns the lock (no-op).
+            // Only proceed — and only release — when this call wins the CAS.
+            acquired = CoordinatorService.BeginOperation();
+            if (!acquired)
+                return;
+            await AutomationService.RetryAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogError(ex, "Retry operation failed");
+            NotificationService.Notify(NotificationSeverity.Error, "Retry failed");
+        }
+        finally
+        {
+            if (acquired)
+                CoordinatorService.MarkComplete();
+        }
+    }
+
+    private async void OnStateChanged(object? sender, PcsProState newState)
+    {
+        if (_disposed)
+            return;
+        _currentState = newState;
+        _errorReason = AutomationService.LastErrorReason;
+        if (!_disposed)
+        {
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    private async void OnOperationInProgressChanged(object? sender, bool isInProgress)
+    {
+        if (_disposed)
+            return;
+        _operationInProgress = isInProgress;
+        if (!_disposed)
+        {
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    private async void OnManualModeChanged(object? sender, bool isActive)
+    {
+        if (_disposed)
+            return;
+        _manualModeActive = isActive;
+        if (!_disposed)
+        {
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        AutomationService.StateChanged -= OnStateChanged;
+        ManualModeService.ManualModeChanged -= OnManualModeChanged;
+        CoordinatorService.OperationInProgressChanged -= OnOperationInProgressChanged;
+    }
+}

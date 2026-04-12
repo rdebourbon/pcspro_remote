@@ -74,4 +74,14 @@ public interface IPcsProAutomationService
     /// Accepts an optional <paramref name="ct"/> to cancel the operation.
     /// </summary>
     Task ChangeMatchAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Recovers from an error state by transitioning from <see cref="PcsProState.Error"/>
+    /// to <see cref="PcsProState.NotRunning"/> and immediately restarting the full launch
+    /// sequence via <see cref="LaunchAndLoginAsync"/>.
+    /// Throws <see cref="InvalidOperationException"/> if the current state is not
+    /// <see cref="PcsProState.Error"/>.
+    /// Accepts an optional <paramref name="ct"/> to cancel the operation.
+    /// </summary>
+    Task RetryAsync(CancellationToken ct = default);
 }

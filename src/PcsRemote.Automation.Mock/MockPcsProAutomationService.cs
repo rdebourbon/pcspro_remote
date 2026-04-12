@@ -192,6 +192,32 @@ public class MockPcsProAutomationService : IPcsProAutomationService
         }
     }
 
+    public async Task RetryAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("RetryAsync starting from {State}", _currentState);
+
+        if (!_semaphore.Wait(0))
+            throw new InvalidOperationException("A lifecycle operation is already in progress.");
+
+        try
+        {
+            if (_currentState != PcsProState.Error)
+                throw new InvalidOperationException(
+                    $"RetryAsync requires Error state; current state is {_currentState}.");
+
+            LastErrorReason = null;
+            Transition(PcsProState.NotRunning);
+            _logger.LogInformation("RetryAsync — transitioned to {State}, releasing semaphore before re-launch", PcsProState.NotRunning);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+
+        // Semaphore released before calling LaunchAndLoginAsync to avoid re-entrancy deadlock.
+        await LaunchAndLoginAsync(ct);
+    }
+
     public Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
