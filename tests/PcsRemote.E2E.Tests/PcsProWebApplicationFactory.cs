@@ -12,6 +12,7 @@ using PcsRemote.Automation.Mock;
 using PcsRemote.Core;
 using PcsRemote.Web;
 using PcsRemote.Web.Hubs;
+using PcsRemote.Web.Services;
 using Radzen;
 using System.Net;
 
@@ -145,9 +146,13 @@ public sealed class PcsProWebApplicationFactory : WebApplicationFactory<Program>
         builder.Services.AddPcsProAutomationService(builder.Configuration);
         builder.Services.AddSignalR();
         builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
+        builder.Services.AddSingleton<IManualModeService, ManualModeService>();
+        builder.Services.AddSingleton<IOperationCoordinatorService, OperationCoordinatorService>();
         builder.Services.AddServerSideBlazor();
         builder.Services.AddScoped<CircuitHandler, PcsProCircuitHandler>();
         builder.Services.AddHostedService<PcsProStateBroadcaster>();
+        builder.Services.AddHostedService<ManualModeBroadcaster>();
+        builder.Services.AddHostedService<OperationInProgressBroadcaster>();
         // AutoLaunchService is intentionally omitted — PcsPro:AutoLaunch=false would
         // prevent it from acting, but omitting it avoids an unnecessary hosted service.
         builder.Services.AddRazorPages();
