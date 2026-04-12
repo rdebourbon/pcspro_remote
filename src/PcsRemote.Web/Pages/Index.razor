@@ -30,6 +30,7 @@ else if (_currentState == PcsProState.MatchLoaded && _loadedMatch is not null)
         <span class="match-loaded__home">@_loadedMatch.HomeTeam</span>
         <span class="match-loaded__away">@_loadedMatch.AwayTeam</span>
     </div>
+    <ScoreboardPreview />
 }
 
 @code {

@@ -22,8 +22,7 @@ public class IndexTests
         var mock = BuildMock(PcsProState.MatchSelection);
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>())).Returns(tcs.Task);
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
 
@@ -40,8 +39,7 @@ public class IndexTests
     {
         var mock = BuildMock(PcsProState.NotRunning);
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelectionSearching);
@@ -63,8 +61,7 @@ public class IndexTests
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { match1, match2 });
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
@@ -85,8 +82,7 @@ public class IndexTests
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo>());
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
@@ -109,8 +105,7 @@ public class IndexTests
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { singleMatch });
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
@@ -136,8 +131,7 @@ public class IndexTests
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { singleMatch });
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
 
@@ -165,8 +159,7 @@ public class IndexTests
         mock.Setup(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()))
             .Returns(loadTcs.Task);
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
@@ -200,8 +193,7 @@ public class IndexTests
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { match1, match2 });
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
@@ -234,8 +226,7 @@ public class IndexTests
             .ReturnsAsync(new List<MatchInfo> { match1, match2 })
             .Returns(tcs.Task);  // Second call never completes
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
 
@@ -263,8 +254,7 @@ public class IndexTests
     {
         var mock = BuildMock(PcsProState.MatchSelectionSearching);
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
 
@@ -282,8 +272,7 @@ public class IndexTests
     {
         var mock = BuildMock(PcsProState.NotRunning);
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelectionReady);
@@ -301,8 +290,7 @@ public class IndexTests
     {
         var mock = BuildMock(PcsProState.NotRunning);
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
 
@@ -328,8 +316,7 @@ public class IndexTests
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { match });
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
 
@@ -356,8 +343,7 @@ public class IndexTests
     {
         var mock = BuildMock(PcsProState.NotRunning);
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
 
@@ -377,8 +363,7 @@ public class IndexTests
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { match1, match2 });
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
@@ -408,8 +393,7 @@ public class IndexTests
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { match });
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
         // Drive fetch first, then arrive at MatchSelectionReady (path-a)
@@ -443,8 +427,7 @@ public class IndexTests
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { match });
 
-        using var ctx = new BunitContext();
-        ctx.Services.AddSingleton(mock.Object);
+        using var ctx = BuildCtx(mock);
 
         // On mount: OnInitializedAsync reads MatchSelectionReady → calls FetchMatchesAsync
         // FetchMatchesAsync completes with 1 match while _currentState == MatchSelectionReady → path-b fires
@@ -462,8 +445,51 @@ public class IndexTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // TC-9 (S-003): Index.razor embeds ScoreboardPreview and preserves team names
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void MatchLoaded_ScoreboardPreviewEmbedded_TeamNamesPreserved()
+    {
+        var match = new MatchInfo("1", "Riverside CC", "Westwood CC", "League", new DateOnly(2026, 6, 20));
+        var autoMock = BuildMock(PcsProState.MatchSelectionReady);
+        autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match });
+
+        var scoreMock = new Mock<IScoreboardService>();
+        scoreMock.Setup(s => s.CurrentImage).Returns((byte[]?)null);
+
+        using var ctx = BuildCtx(autoMock, scoreMock);
+        var cut = ctx.Render<IndexPage>();
+
+        // Path-b auto-select fires; drive to MatchLoaded
+        cut.WaitForAssertion(() =>
+            autoMock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
+        autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
+
+        cut.WaitForAssertion(() =>
+        {
+            // Team names are preserved
+            cut.Find(".match-loaded__home").TextContent.Should().Be("Riverside CC");
+            cut.Find(".match-loaded__away").TextContent.Should().Be("Westwood CC");
+            // ScoreboardPreview is embedded (placeholder because no image cached)
+            cut.Find(".scoreboard-placeholder");
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
+
+    private static BunitContext BuildCtx(
+        Mock<IPcsProAutomationService> autoMock,
+        Mock<IScoreboardService>? scoreMock = null)
+    {
+        var ctx = new BunitContext();
+        ctx.Services.AddSingleton(autoMock.Object);
+        ctx.Services.AddSingleton((scoreMock ?? new Mock<IScoreboardService>()).Object);
+        return ctx;
+    }
 
     private static Mock<IPcsProAutomationService> BuildMock(PcsProState initialState)
     {

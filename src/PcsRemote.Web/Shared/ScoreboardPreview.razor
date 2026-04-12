@@ -1,0 +1,70 @@
+@using PcsRemote.Core
+@implements IDisposable
+@inject IScoreboardService ScoreboardService
+@inject IPcsProAutomationService AutomationService
+
+@if (_currentState == PcsProState.MatchLoaded && _currentImage is not null)
+{
+    <img class="scoreboard-image"
+         src="data:image/jpeg;base64,@Convert.ToBase64String(_currentImage)"
+         alt="Scoreboard" />
+}
+else
+{
+    <div class="scoreboard-placeholder">No scoreboard data</div>
+}
+
+@code {
+    private PcsProState _currentState;
+    private byte[]? _currentImage;
+
+    protected override Task OnInitializedAsync()
+    {
+        // Subscribe before reading state/image to narrow the race window between
+        // subscription and snapshot (established pattern — see PcsProStatusIndicator).
+        ScoreboardService.ScoreboardUpdated += OnScoreboardUpdated;
+        AutomationService.StateChanged += OnStateChanged;
+
+        _currentState = AutomationService.CurrentState;
+        _currentImage = _currentState == PcsProState.MatchLoaded
+            ? ScoreboardService.CurrentImage
+            : null;
+
+        return Task.CompletedTask;
+    }
+
+    private async void OnScoreboardUpdated(object? sender, byte[] image)
+    {
+        _currentImage = image;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnStateChanged(object? sender, PcsProState newState)
+    {
+        if (newState == PcsProState.MatchLoaded && _currentState == PcsProState.MatchLoaded)
+            return; // MatchLoaded→MatchLoaded idempotency guard (spec §3.4)
+
+        _currentState = newState;
+
+        if (newState == PcsProState.MatchLoaded)
+        {
+            // Re-read cache to pick up images captured between the previous state
+            // and this transition event (handles cold-start polling window).
+            _currentImage = ScoreboardService.CurrentImage;
+        }
+        else
+        {
+            // Clear local image so the placeholder renders correctly even if the
+            // service cache has not yet been cleared by ClearCache().
+            _currentImage = null;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ScoreboardService.ScoreboardUpdated -= OnScoreboardUpdated;
+        AutomationService.StateChanged -= OnStateChanged;
+    }
+}
