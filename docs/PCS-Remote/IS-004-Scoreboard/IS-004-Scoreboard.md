@@ -86,7 +86,7 @@ Exceptions thrown by `ForceRefreshAsync` are caught by the service (S-001) and l
 
 ---
 
-### S-005 — Change match flow (confirmation modal, state cleanup, MatchSelection transition)
+### S-005 — Change match flow (confirmation modal, state cleanup, MatchSelection transition) ✅ DELIVERED 7cf5a42
 
 **What changes:** A "Change Match" button is added to the scoreboard section. The button is enabled only when state = `MatchLoaded`; disabled in all other states (including `Launching` and `MatchSelectionSearching` — S-SC-12). On click, a Radzen confirmation modal appears with the message "Load a different match? PCS Pro will close and reopen…" (per PRD §12). The modal has "Confirm" and "Cancel" actions. On Cancel, the modal closes with no state change. On Confirm:
 1. `IScoreboardService.ClearCache` is called — clears the stored hash and cached image.
