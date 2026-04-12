@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Document** | IS-005-Hardening.md |
-| **Status** | IN REVIEW |
+| **Status** | APPROVED — Pending user approval |
 | **Version** | 0.2 |
 | **Date** | 2026-04-12 |
 | **Governing HLPS** | HLPS-005-Hardening.md v0.2 (APPROVED) |
@@ -169,3 +169,4 @@ The `PcsProWebApplicationFactory` is extended to register mock error injection, 
 | Round | Date | Reviewers | Result |
 |---|---|---|---|
 | R1 | 2026-04-12 | Claude Opus 4.6, GPT-5.4, Claude Sonnet 4.6 | NEEDS REVIEW — 9 findings applied (v0.2) |
+| R2 | 2026-04-12 | Claude Opus 4.6, GPT-5.4 | APPROVED — unanimous; 9/9 findings verified; 0 regressions |
