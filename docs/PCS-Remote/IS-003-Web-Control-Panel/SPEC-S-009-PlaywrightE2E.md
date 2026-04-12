@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Document** | SPEC-S-009-PlaywrightE2E.md |
-| **Status** | IN REVIEW |
+| **Status** | APPROVED |
 | **Version** | 0.10 |
 | **Date** | 2026-04-13 |
 | **Step ID** | S-009 |
