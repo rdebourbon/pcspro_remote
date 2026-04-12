@@ -12,7 +12,7 @@ public sealed class ScoreboardPollingService : BackgroundService
 {
     private readonly IScoreboardService _scoreboardService;
     private readonly IPcsProAutomationService _automationService;
-    private readonly TimeSpan _interval;
+    private readonly Func<IPeriodicTimer> _timerFactory;
     private readonly ILogger<ScoreboardPollingService> _logger;
 
     private readonly object _loopLock = new();
@@ -39,25 +39,23 @@ public sealed class ScoreboardPollingService : BackgroundService
             seconds = 2;
         }
 
-        _interval = TimeSpan.FromSeconds(seconds);
+        _timerFactory = () => new RealPeriodicTimer(TimeSpan.FromSeconds(seconds));
     }
 
     /// <summary>
-    /// Test-only constructor that accepts a pre-computed interval, bypassing config parsing.
-    /// Allows unit tests to use sub-second intervals for reliable parallel execution.
+    /// Test-only constructor: accepts an <see cref="IPeriodicTimer"/> factory, bypassing
+    /// config parsing and real clock. The factory is called once per loop start.
     /// </summary>
     internal ScoreboardPollingService(
         IScoreboardService scoreboardService,
         IPcsProAutomationService automationService,
-        TimeSpan interval,
+        Func<IPeriodicTimer> timerFactory,
         ILogger<ScoreboardPollingService> logger)
     {
         _scoreboardService = scoreboardService;
         _automationService = automationService;
         _logger = logger;
-        _interval = interval > TimeSpan.Zero
-            ? interval
-            : throw new ArgumentOutOfRangeException(nameof(interval), "Interval must be positive.");
+        _timerFactory = timerFactory;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -165,7 +163,7 @@ public sealed class ScoreboardPollingService : BackgroundService
 
     private async Task RunLoopAsync(CancellationToken loopToken)
     {
-        using var timer = new PeriodicTimer(_interval);
+        await using var timer = _timerFactory();
 
         try
         {

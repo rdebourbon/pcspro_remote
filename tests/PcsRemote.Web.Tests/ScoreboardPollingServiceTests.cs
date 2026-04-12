@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -8,7 +9,7 @@ using PcsRemote.Web;
 namespace PcsRemote.Web.Tests;
 
 [TestClass]
-[DoNotParallelize] // BackgroundService tests use PeriodicTimer; run sequentially to avoid thread-pool contention with concurrent tests.
+[DoNotParallelize] // tests share process resources; run sequentially within the assembly
 public sealed class ScoreboardPollingServiceTests
 {
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -21,42 +22,47 @@ public sealed class ScoreboardPollingServiceTests
         return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
     }
 
+    /// <summary>
+    /// Builds a <see cref="ScoreboardPollingService"/> backed by a <see cref="FakePeriodicTimer"/>
+    /// factory. Ticks never fire automatically — tests drive them via the returned channel reader.
+    /// </summary>
     private static (
-        ScoreboardPollingService Service,
-        Mock<IScoreboardService> ScoreboardMock,
-        Mock<IPcsProAutomationService> AutomationMock)
-    Build(PcsProState initialState = PcsProState.NotRunning, int intervalMs = 50)
+        ScoreboardPollingService Svc,
+        Mock<IScoreboardService> ScoreMock,
+        Mock<IPcsProAutomationService> AutoMock,
+        ChannelReader<FakePeriodicTimer> Timers)
+    BuildFake(PcsProState initialState = PcsProState.NotRunning)
     {
         var scoreMock = new Mock<IScoreboardService>();
         var autoMock = new Mock<IPcsProAutomationService>();
         autoMock.Setup(a => a.CurrentState).Returns(initialState);
 
-        // Use milliseconds via a custom config-less approach: supply fractional seconds.
-        // Since config only reads integer seconds, we build the service with a 1s config
-        // but override via a direct subclass approach — instead, we accept ms directly
-        // by using a helper that injects a very small interval via config key.
-        // For sub-second granularity in tests we use 1s minimum from config.
-        // To get faster test execution, we expose a test-only ctor that accepts TimeSpan.
-        var config = BuildConfig(1); // 1s is the minimum config-driven value
-        _ = intervalMs; // intervalMs used in Test-only ctor path below
-        var svc = new ScoreboardPollingService(scoreMock.Object, autoMock.Object, config, NullLogger<ScoreboardPollingService>.Instance);
-        return (svc, scoreMock, autoMock);
+        // Thread-safe channel: factory (called on Task.Run thread) writes; test thread reads.
+        var timerChannel = Channel.CreateUnbounded<FakePeriodicTimer>(
+            new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+
+        var svc = new ScoreboardPollingService(
+            scoreMock.Object, autoMock.Object,
+            () =>
+            {
+                var t = new FakePeriodicTimer();
+                timerChannel.Writer.TryWrite(t);
+                return t;
+            },
+            NullLogger<ScoreboardPollingService>.Instance);
+
+        return (svc, scoreMock, autoMock, timerChannel.Reader);
     }
 
-    private static (
-        ScoreboardPollingService Service,
-        Mock<IScoreboardService> ScoreboardMock,
-        Mock<IPcsProAutomationService> AutomationMock)
-    BuildFast(PcsProState initialState = PcsProState.NotRunning)
+    /// <summary>
+    /// Reads the next timer created by the factory (waits up to <paramref name="timeout"/>).
+    /// </summary>
+    private static async Task<FakePeriodicTimer> ReadTimerAsync(
+        ChannelReader<FakePeriodicTimer> timers,
+        TimeSpan timeout = default)
     {
-        var scoreMock = new Mock<IScoreboardService>();
-        var autoMock = new Mock<IPcsProAutomationService>();
-        autoMock.Setup(a => a.CurrentState).Returns(initialState);
-
-        // Use the test-only TimeSpan constructor so tests run at 50 ms —
-        // fast enough to avoid thread-pool saturation under parallel test execution.
-        var svc = new ScoreboardPollingService(scoreMock.Object, autoMock.Object, TimeSpan.FromMilliseconds(50), NullLogger<ScoreboardPollingService>.Instance);
-        return (svc, scoreMock, autoMock);
+        if (timeout == default) timeout = TimeSpan.FromSeconds(5);
+        return await timers.ReadAsync().AsTask().WaitAsync(timeout);
     }
 
     // ── TC-1: Cold-start polling ─────────────────────────────────────────────
@@ -64,7 +70,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StartAsync_StateAlreadyMatchLoaded_StartsPollingImmediately()
     {
-        var (svc, scoreMock, _) = BuildFast(PcsProState.MatchLoaded);
+        var (svc, scoreMock, _, timers) = BuildFake(PcsProState.MatchLoaded);
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         scoreMock
@@ -73,6 +79,10 @@ public sealed class ScoreboardPollingServiceTests
             .Returns(Task.CompletedTask);
 
         await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        timer.TriggerTick();
+
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         scoreMock.Verify(s => s.CaptureAndBroadcastAsync(It.IsAny<CancellationToken>()), Times.AtLeastOnce);
@@ -86,11 +96,13 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StartAsync_StateNotMatchLoaded_DoesNotStartPolling()
     {
-        var (svc, scoreMock, _) = BuildFast(PcsProState.NotRunning);
+        var (svc, scoreMock, _, timers) = BuildFake(PcsProState.NotRunning);
 
         await svc.StartAsync(CancellationToken.None);
-        await Task.Delay(200); // Wait longer than one tick would take
 
+        // ExecuteAsync subscribes to StateChanged then awaits indefinitely — no StartLoop
+        // for NotRunning state means no timer was created and no ticks were fired.
+        timers.TryRead(out _).Should().BeFalse("no loop should start for NotRunning state");
         scoreMock.Verify(s => s.CaptureAndBroadcastAsync(It.IsAny<CancellationToken>()), Times.Never);
 
         await svc.StopAsync(CancellationToken.None);
@@ -102,7 +114,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StateChanged_ToMatchLoaded_StartsPolling()
     {
-        var (svc, scoreMock, autoMock) = BuildFast(PcsProState.NotRunning);
+        var (svc, scoreMock, autoMock, timers) = BuildFake(PcsProState.NotRunning);
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         scoreMock
@@ -111,8 +123,11 @@ public sealed class ScoreboardPollingServiceTests
             .Returns(Task.CompletedTask);
 
         await svc.StartAsync(CancellationToken.None);
-
         autoMock.Raise(a => a.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
+
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        timer.TriggerTick();
 
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -127,7 +142,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StateChanged_AwayFromMatchLoaded_StopsPolling()
     {
-        var (svc, scoreMock, autoMock) = BuildFast(PcsProState.MatchLoaded);
+        var (svc, scoreMock, autoMock, timers) = BuildFake(PcsProState.MatchLoaded);
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         scoreMock
@@ -136,15 +151,27 @@ public sealed class ScoreboardPollingServiceTests
             .Returns(Task.CompletedTask);
 
         await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        timer.TriggerTick();
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5)); // confirm polling started
 
-        // Transition away — stop polling
+        // Transition away — OnStateChanged fires StopLoopAsync fire-and-forget
         autoMock.Raise(a => a.StateChanged += null, autoMock.Object, PcsProState.MatchSelection);
-        await Task.Delay(200); // allow stop to settle
 
-        var countAfterStop = scoreMock.Invocations.Count(i => i.Method.Name == nameof(IScoreboardService.CaptureAndBroadcastAsync));
-        await Task.Delay(300); // wait several ticks worth to confirm no new captures
-        var countAfterWait = scoreMock.Invocations.Count(i => i.Method.Name == nameof(IScoreboardService.CaptureAndBroadcastAsync));
+        // WhenDisposed completes when RunLoopAsync's await-using disposes the timer — i.e.,
+        // the loop has fully exited after the cancellation token was fired.
+        await timer.WhenDisposed.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var countAfterStop = scoreMock.Invocations.Count(
+            i => i.Method.Name == nameof(IScoreboardService.CaptureAndBroadcastAsync));
+
+        // Timer is disposed — TriggerTick is a no-op (channel writer is completed)
+        timer.TriggerTick();
+        timer.TriggerTick();
+
+        var countAfterWait = scoreMock.Invocations.Count(
+            i => i.Method.Name == nameof(IScoreboardService.CaptureAndBroadcastAsync));
 
         countAfterWait.Should().Be(countAfterStop, "polling should have stopped");
 
@@ -157,7 +184,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task CaptureThrows_ErrorIsLogged_LoopContinues()
     {
-        var (svc, scoreMock, autoMock) = BuildFast(PcsProState.NotRunning);
+        var (svc, scoreMock, autoMock, timers) = BuildFake(PcsProState.NotRunning);
         var secondCallTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         int callCount = 0;
 
@@ -175,7 +202,15 @@ public sealed class ScoreboardPollingServiceTests
         await svc.StartAsync(CancellationToken.None);
         autoMock.Raise(a => a.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
 
-        await secondCallTcs.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var timer = await ReadTimerAsync(timers);
+
+        await timer.WaitingForTickAsync(); // loop ready for tick 1
+        timer.TriggerTick();               // tick 1 → CaptureAndBroadcastAsync throws
+
+        await timer.WaitingForTickAsync(); // loop caught exception and is ready for tick 2
+        timer.TriggerTick();               // tick 2 → sets secondCallTcs
+
+        await secondCallTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         callCount.Should().BeGreaterThanOrEqualTo(2, "loop must continue after exception");
 
@@ -204,6 +239,9 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task IntervalConfig_KeyPresent_UsesConfiguredValue()
     {
+        // This test uses the production IConfiguration constructor — it exercises config
+        // parsing and therefore uses a real RealPeriodicTimer. The 5s timeout is generous
+        // for a 1s interval so this test remains stable even without a fake timer.
         var scoreMock = new Mock<IScoreboardService>();
         var autoMock = new Mock<IPcsProAutomationService>();
         autoMock.Setup(a => a.CurrentState).Returns(PcsProState.MatchLoaded);
@@ -231,7 +269,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StopAsync_WhilePolling_ExitsCleanly()
     {
-        var (svc, scoreMock, autoMock) = BuildFast(PcsProState.MatchLoaded);
+        var (svc, scoreMock, _, timers) = BuildFake(PcsProState.MatchLoaded);
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         scoreMock
@@ -240,6 +278,9 @@ public sealed class ScoreboardPollingServiceTests
             .Returns(Task.CompletedTask);
 
         await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        timer.TriggerTick();
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         Func<Task> stop = () => svc.StopAsync(CancellationToken.None);
@@ -253,33 +294,40 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StartLoop_CalledConcurrently_IsIdempotent()
     {
-        var (svc, scoreMock, autoMock) = BuildFast(PcsProState.NotRunning);
+        var (svc, scoreMock, autoMock, timers) = BuildFake(PcsProState.NotRunning);
         var captureCount = 0;
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         scoreMock
             .Setup(s => s.CaptureAndBroadcastAsync(It.IsAny<CancellationToken>()))
             .Returns<CancellationToken>(_ =>
             {
                 Interlocked.Increment(ref captureCount);
-                tcs.TrySetResult(true);
                 return Task.CompletedTask;
             });
 
         await svc.StartAsync(CancellationToken.None);
 
-        // Fire two concurrent MatchLoaded events
+        // Fire two concurrent MatchLoaded events — Interlocked CAS must reject the second
         await Task.WhenAll(
             Task.Run(() => autoMock.Raise(a => a.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded)),
             Task.Run(() => autoMock.Raise(a => a.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded)));
 
-        await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.Delay(200); // wait for a few extra ticks to detect a rogue second loop
+        // Exactly one Task.Run was dispatched (CAS loser returns without Task.Run) —
+        // so exactly one timer will ever be created.
+        var timer = await ReadTimerAsync(timers);
+        timers.TryRead(out _).Should().BeFalse("CAS gate must allow only one loop to start");
 
-        // With 50 ms interval over ~200 ms, one loop yields ~4 ticks.
-        // Two concurrent loops would yield ~8+ — assert no runaway doubling.
-        var observed = Volatile.Read(ref captureCount);
-        observed.Should().BeLessThanOrEqualTo(8, "only one loop should be active");
+        // Trigger 3 ticks — one active loop yields exactly 3 captures; a rogue second
+        // loop would double each tick producing 6+.
+        for (var i = 0; i < 3; i++)
+        {
+            await timer.WaitingForTickAsync();
+            timer.TriggerTick();
+        }
+        // Wait for the loop to be ready for a 4th tick — confirms all 3 ticks were processed.
+        await timer.WaitingForTickAsync();
+
+        Volatile.Read(ref captureCount).Should().Be(3, "three ticks must yield exactly 3 captures from one loop");
 
         await svc.StopAsync(CancellationToken.None);
         svc.Dispose();
@@ -290,7 +338,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StateChanged_AwayFromMatchLoaded_LoopTaskCompletesWithoutException()
     {
-        var (svc, scoreMock, autoMock) = BuildFast(PcsProState.MatchLoaded);
+        var (svc, scoreMock, autoMock, timers) = BuildFake(PcsProState.MatchLoaded);
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         scoreMock
@@ -299,15 +347,19 @@ public sealed class ScoreboardPollingServiceTests
             .Returns(Task.CompletedTask);
 
         await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        timer.TriggerTick();
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // Transition away — this calls StopLoopAsync internally
+        // Transition away — StopLoopAsync fires asynchronously from OnStateChanged
         autoMock.Raise(a => a.StateChanged += null, autoMock.Object, PcsProState.MatchSelection);
 
-        // Give async void handler time to complete
-        await Task.Delay(2000);
+        // WhenDisposed is deterministic: fires when RunLoopAsync's await-using exits.
+        // This replaces the previous Task.Delay(2000) with a precise synchronisation point.
+        await timer.WhenDisposed.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // ExecuteTask should still be running (service alive), no fault
+        // ExecuteTask should still be running (service alive), not faulted
         svc.ExecuteTask.Should().NotBeNull();
         svc.ExecuteTask!.IsFaulted.Should().BeFalse("loop exit should not fault the service");
 
@@ -320,7 +372,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StopAsync_WhileIdle_ExitsCleanly()
     {
-        var (svc, _, _) = BuildFast(PcsProState.NotRunning);
+        var (svc, _, _, _) = BuildFake(PcsProState.NotRunning);
 
         await svc.StartAsync(CancellationToken.None);
 
@@ -335,7 +387,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task CaptureAndBroadcastAsync_ReceivesLoopCancellationToken()
     {
-        var (svc, scoreMock, autoMock) = BuildFast(PcsProState.NotRunning);
+        var (svc, scoreMock, autoMock, timers) = BuildFake(PcsProState.NotRunning);
         CancellationToken capturedToken = default;
         var captureTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -351,18 +403,22 @@ public sealed class ScoreboardPollingServiceTests
         await svc.StartAsync(CancellationToken.None);
         autoMock.Raise(a => a.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
 
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        timer.TriggerTick();
         await captureTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // Assert the captured token is a real cancellable loop-scoped token (not CancellationToken.None).
         capturedToken.Should().NotBe(CancellationToken.None, "loop-scoped token must be forwarded");
         capturedToken.CanBeCanceled.Should().BeTrue("a real loop-scoped token must be cancellable");
         capturedToken.IsCancellationRequested.Should().BeFalse("token should not yet be cancelled");
 
         autoMock.Raise(a => a.StateChanged += null, autoMock.Object, PcsProState.MatchSelection);
-        await Task.Delay(2000); // allow StopLoopAsync to cancel and dispose
 
-        // Do NOT check capturedToken.IsCancellationRequested here — CTS is disposed after a clean stop
-        // and accessing a token property on a disposed source is undefined behaviour across .NET versions.
+        // WhenDisposed replaces the previous Task.Delay(2000) — deterministic loop exit signal.
+        await timer.WhenDisposed.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Do NOT check capturedToken.IsCancellationRequested — CTS is disposed after a clean
+        // stop and accessing a token property on a disposed source is undefined behaviour.
 
         await svc.StopAsync(CancellationToken.None);
         svc.Dispose();
