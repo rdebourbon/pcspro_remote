@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | **Document** | IS-005-Hardening.md |
-| **Status** | APPROVED — Pending user approval |
-| **Version** | 0.2 |
-| **Date** | 2026-04-12 |
+| **Status** | IN PROGRESS — S-006 complete, S-007 next |
+| **Version** | 0.3 |
+| **Date** | 2026-05-07 |
 | **Governing HLPS** | HLPS-005-Hardening.md v0.2 (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.1 |
 | **Prerequisites** | IS-004 delivered (scoreboard pipeline, polling service, RefreshScoreboardButton, ChangeMatchButton, Playwright E2E infrastructure) |
@@ -104,7 +104,7 @@ The server-side guard (state machine `InvalidOperationException` on invalid trig
 
 ---
 
-### S-006 — TrayHost restructure: in-process web hosting and STA message loop
+### S-006 — TrayHost restructure: in-process web hosting and STA message loop ✅ COMPLETE (833b7b3)
 
 **What changes:** `PcsRemote.TrayHost.Program.cs` is restructured to become the process entry point for the combined application. It builds and runs the ASP.NET Core `WebApplication` (previously started from `PcsRemote.Web.Program.cs`). An `IHostedService` implementation in `TrayHost` is responsible for starting the WinForms `Application.Run()` message loop on a dedicated background thread configured with STA apartment state. This ensures the WinForms message pump and Kestrel's MTA thread pool coexist without STA/MTA conflicts.
 
