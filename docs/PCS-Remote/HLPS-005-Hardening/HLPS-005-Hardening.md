@@ -3,10 +3,10 @@
 | Field | Value |
 |---|---|
 | **Document** | HLPS-005-Hardening.md |
-| **Status** | DRAFT |
+| **Status** | APPROVED — Pending user approval |
 | **Version** | 0.2 |
 | **Date** | 2026-04-10 |
-| **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.0 |
+| **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.1 |
 | **Dependencies** | HLPS-003 (web UI baseline), HLPS-004 (scoreboard controls — button-locking and error display harden these components) |
 
 ---
@@ -96,4 +96,4 @@ This HLPS delivers four capabilities:
 | Round | Date | Reviewers | Result |
 |---|---|---|---|
 | R1 | 2026-04-10 | Claude Opus 4.6, GPT-5.4, Claude Sonnet 4.6 | NEEDS REVIEW — 2 CRITICAL, 7 HIGH, 4 MEDIUM |
-| R2 | 2026-04-10 | Agent (self-review, all R1 findings applied) | Pending user sign-off |
+| R2 | 2026-04-10 | Claude Opus 4.6, GPT-5.4, Claude Sonnet 4.6 | **APPROVED** — 13/13 R1 findings verified, 0 regressions, 0 new blocking issues |
