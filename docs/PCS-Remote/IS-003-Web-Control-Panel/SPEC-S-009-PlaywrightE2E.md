@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | SPEC-S-009-PlaywrightE2E.md |
 | **Status** | IN REVIEW |
-| **Version** | 0.8 |
+| **Version** | 0.9 |
 | **Date** | 2026-04-13 |
 | **Step ID** | S-009 |
 | **Governing IS** | IS-003-Web-Control-Panel.md v0.3 (APPROVED) |
@@ -89,6 +89,8 @@ Because `WebApplicationFactory` provides access to the DI container, the W-SC-9 
 
 With zero-delay mock configuration, `LaunchAndLoginAsync` fires all three state transitions synchronously before returning (`Launching → LoginScreen → MatchSelection`). Each transition fires `StateChanged`, which `PcsProStatusIndicator` handles via `async void OnStateChanged` → `InvokeAsync(StateHasChanged)`. The `InvokeAsync` dispatch is asynchronous — the DOM update is queued on the Blazor circuit dispatcher and has NOT completed by the time `LaunchAndLoginAsync` returns. AC-3 must therefore use `WaitForFunctionAsync` to await the final text, not a direct text assertion.
 
+After all AC-3 assertions pass, the test MUST call `await service.StopAsync(CancellationToken.None)` on the resolved mock service. `MockPcsProAutomationService.StopAsync` transitions any non-`NotRunning` state back to `PcsProState.NotRunning` — resetting the shared singleton so that AC-1 (which asserts `"PCS Pro not running"`) passes regardless of test execution order. MSTest provides no guaranteed method-execution order within a class; without this reset, any run where AC-3 executes before AC-1 produces a false failure in AC-1.
+
 ### 3.4 Circuit-based connection counting
 
 The current `PcsProHub.OnConnectedAsync` calls `IConnectionTracker.Increment()`, but no browser-side JavaScript connects to `/hubs/pcspro`. Blazor Server circuits use the `/_blazor` endpoint, not `PcsProHub`. This step fixes the counting by:
@@ -161,7 +163,7 @@ When:
 Then: Context 1's `.connected-user-count` eventually shows `"2 users online"`.
 
 When:
-5. `await page2.CloseAsync()` is called (closes the tab; triggers the circuit disconnect timer — do NOT close `context2` here as it must remain open for orderly disposal in test cleanup).
+5. `await page2.CloseAsync()` is called (closes the tab; triggers the circuit disconnect timer — do NOT close `context2` here as it must remain open for orderly disposal in test cleanup). Immediately after `CloseAsync()` returns, set `_page2 = null` — this prevents `[TestCleanup]` from calling `DisposeAsync()` on the already-closed page (`IPage.DisposeAsync()` calls `CloseAsync()` internally; calling it on a closed page throws `PlaywrightException` and causes AC-2 to report as **Failed** despite passing assertions).
 
 Then: Context 1's `.connected-user-count` eventually shows `"1 user online"`.
 
@@ -179,6 +181,8 @@ When:
 Then:
 - Both Context 1 and Context 2's `.pcs-status-indicator` elements eventually show `"Loading matches…"` (the `MatchSelection` label — the final state after zero-delay `LaunchAndLoginAsync` completes). Both assertions MUST use `WaitForFunctionAsync`, or `Locator.WaitForAsync` with a `HasText` filter, with a **10-second timeout** — not a direct text query. A bare `Locator.WaitForAsync()` without `HasText` waits only for visibility, not text content. The synchronous mock transitions do not imply synchronous DOM rendering (state events dispatch `InvokeAsync(StateHasChanged)` asynchronously on the circuit).
 - Both contexts show the same text.
+
+After all assertions pass, the test MUST call `await service.StopAsync(CancellationToken.None)` to reset `MockPcsProAutomationService` back to `PcsProState.NotRunning`. This prevents state from AC-3 from polluting AC-1 in any test run where MSTest executes AC-3 first.
 
 ---
 
