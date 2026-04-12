@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
+    <ProjectReference Include="..\PcsRemote.Automation\PcsRemote.Automation.csproj" />
     <ProjectReference Include="..\PcsRemote.Automation.Mock\PcsRemote.Automation.Mock.csproj" />
     <ProjectReference Include="..\PcsRemote.Core\PcsRemote.Core.csproj" />
   </ItemGroup>

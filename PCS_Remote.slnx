@@ -8,6 +8,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PcsRemote.Automation.Mock.Tests/PcsRemote.Automation.Mock.Tests.csproj" />
+    <Project Path="tests/PcsRemote.Automation.Tests/PcsRemote.Automation.Tests.csproj" />
     <Project Path="tests/PcsRemote.Core.Tests/PcsRemote.Core.Tests.csproj" />
     <Project Path="tests/PcsRemote.E2E.Tests/PcsRemote.E2E.Tests.csproj" />
     <Project Path="tests/PcsRemote.TrayHost.Tests/PcsRemote.TrayHost.Tests.csproj" />

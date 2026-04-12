@@ -19,7 +19,7 @@ public sealed class MockServiceCollectionExtensionsTests
         => new ConfigurationBuilder().AddInMemoryCollection(pairs).Build();
 
     // ──────────────────────────────────────────────────────────────────────
-    // S-007 AC-7: UseMock=true → MockPcsProAutomationService resolved
+    // UseMock=true → MockPcsProAutomationService resolved
     // ──────────────────────────────────────────────────────────────────────
 
     [TestMethod]
@@ -40,28 +40,5 @@ public sealed class MockServiceCollectionExtensionsTests
 
         service.Should().BeOfType<MockPcsProAutomationService>(
             "UseMock=true must resolve the mock implementation");
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // S-007 AC-8: UseMock=false → NotSupportedException on any call
-    // ──────────────────────────────────────────────────────────────────────
-
-    [TestMethod]
-    public async Task AddPcsProAutomationService_UseMockFalse_ResolvesPlaceholderThatThrows()
-    {
-        var config = BuildConfig(new Dictionary<string, string?>
-        {
-            ["PcsPro:UseMock"] = "false"
-        });
-
-        var services = new ServiceCollection();
-        services.AddPcsProAutomationService(config);
-
-        using var sp = services.BuildServiceProvider();
-        var service = sp.GetRequiredService<IPcsProAutomationService>();
-
-        await service.Invoking(s => s.LaunchAndLoginAsync())
-            .Should().ThrowAsync<NotSupportedException>(
-                "the placeholder service must throw NotSupportedException for all operations");
     }
 }

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components.Server.Circuits;
+using PcsRemote.Automation;
 using PcsRemote.Automation.Mock;
 using PcsRemote.Core;
 using PcsRemote.Web.Hubs;
@@ -20,7 +21,10 @@ public static class WebApplicationBuilderExtensions
     /// </summary>
     public static WebApplicationBuilder AddPcsRemoteServices(this WebApplicationBuilder builder)
     {
-        builder.Services.AddPcsProAutomationService(builder.Configuration);
+        if (builder.Configuration.GetValue<bool>("PcsPro:UseMock"))
+            builder.Services.AddPcsProAutomationService(builder.Configuration);
+        else
+            builder.Services.AddPcsProAutomation(builder.Configuration);
         builder.Services.AddSignalR();
         builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
         builder.Services.AddSingleton<IManualModeService, ManualModeService>();
