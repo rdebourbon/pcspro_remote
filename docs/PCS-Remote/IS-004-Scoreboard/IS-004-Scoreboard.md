@@ -22,7 +22,7 @@ Each step is independently verifiable and builds on the previous. Steps are iden
 
 ## Steps
 
-### S-001 — Scoreboard service: interface, singleton, delta detection, and event model
+### S-001 — Scoreboard service: interface, singleton, delta detection, and event model ✅ DELIVERED `2bc5784`
 
 **What changes:** A `IScoreboardService` interface is introduced in `PcsRemote.Core` and a concrete singleton implementation is added in `PcsRemote.Web`. The service owns:
 - A cache of the current scoreboard image (byte array, nullable — null until first capture).
