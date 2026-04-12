@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | **Document** | IS-005-Hardening.md |
-| **Status** | IN PROGRESS — S-007 complete, S-008 next |
-| **Version** | 0.3 |
-| **Date** | 2026-05-07 |
+| **Status** | ✅ COMPLETE — all 8 steps delivered |
+| **Version** | 0.4 |
+| **Date** | 2026-04-12 |
 | **Governing HLPS** | HLPS-005-Hardening.md v0.2 (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.1 |
 | **Prerequisites** | IS-004 delivered (scoreboard pipeline, polling service, RefreshScoreboardButton, ChangeMatchButton, Playwright E2E infrastructure) |
@@ -136,7 +136,7 @@ All context menu operations originate on the WinForms STA thread; any calls to A
 
 ---
 
-### S-008 — Playwright E2E: error display, retry flow, multi-browser operation locking, and manual mode
+### S-008 — Playwright E2E: error display, retry flow, multi-browser operation locking, and manual mode ✅ COMPLETE (dcfd411)
 
 **What changes:** Playwright E2E tests are added to `PcsRemote.E2E.Tests` covering:
 
@@ -170,3 +170,17 @@ The `PcsProWebApplicationFactory` is extended to register mock error injection, 
 |---|---|---|---|
 | R1 | 2026-04-12 | Claude Opus 4.6, GPT-5.4, Claude Sonnet 4.6 | NEEDS REVIEW — 9 findings applied (v0.2) |
 | R2 | 2026-04-12 | Claude Opus 4.6, GPT-5.4 | APPROVED — unanimous; 9/9 findings verified; 0 regressions |
+
+## Delivery Record
+
+| Step | Commit | Notes |
+|------|--------|-------|
+| S-001 | `09f2c4f` | `IManualModeService` interface |
+| S-002 | `5a09a5f` | `LastErrorReason` propagation |
+| S-003 | `7e96ce9` | `ManualModeService`, hub extension, manual mode banner |
+| S-004 | `61f8044` | `OperationCoordinator`, multi-browser locking |
+| S-005 | (squash-merged) | `ErrorDisplay`, retry flow |
+| S-006 | `833b7b3` | TrayHost restructure, STA thread |
+| S-007 | `aca04d6` | TrayHost context menu |
+| S-008 | `dcfd411` | Playwright E2E tests (5 TCs) |
+| Fix   | `aa56fe9` | Replace `Channel<bool>` with `SemaphoreSlim` in `FakePeriodicTimer`; eliminates timer flakiness |
