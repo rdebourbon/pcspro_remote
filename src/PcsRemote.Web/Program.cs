@@ -31,6 +31,7 @@ try
     builder.Services.AddScoped<CircuitHandler, PcsProCircuitHandler>();
     builder.Services.AddSingleton<IScoreboardService, ScoreboardService>();
     builder.Services.AddHostedService<PcsProStateBroadcaster>();
+    builder.Services.AddHostedService<ScoreboardPollingService>();
     builder.Services.AddHostedService<AutoLaunchService>();
     builder.Services.AddRazorPages();
     builder.Services.AddRadzenComponents();
