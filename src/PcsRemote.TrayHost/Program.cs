@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
+using PcsRemote.Core;
 using PcsRemote.TrayHost;
 using PcsRemote.Web;
 
@@ -27,7 +29,10 @@ try
     // Register the WinForms STA-thread pump as a hosted service.
     // Main thread remains MTA so app.Run() can drive ASP.NET Core's async host machinery
     // without deadlocking on Task continuations inside the host infrastructure.
-    builder.Services.AddSingleton<Func<ApplicationContext>>(_ => () => new TrayApplicationContext());
+    builder.Services.AddSingleton<Func<ApplicationContext>>(sp => () => new TrayApplicationContext(
+        sp.GetRequiredService<IManualModeService>(),
+        sp.GetRequiredService<IPcsProAutomationService>(),
+        sp.GetRequiredService<IConfiguration>()));
     builder.Services.AddHostedService<WinFormsHostedService>();
 
     var app = builder.Build();

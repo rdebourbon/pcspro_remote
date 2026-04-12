@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Document** | IS-005-Hardening.md |
-| **Status** | IN PROGRESS — S-006 complete, S-007 next |
+| **Status** | IN PROGRESS — S-007 complete, S-008 next |
 | **Version** | 0.3 |
 | **Date** | 2026-05-07 |
 | **Governing HLPS** | HLPS-005-Hardening.md v0.2 (APPROVED) |
@@ -118,7 +118,7 @@ All DI registrations previously in `PcsRemote.Web.Program.cs` remain in Web; `Tr
 
 ---
 
-### S-007 — TrayHost context menu: manual mode toggle, Open Browser, and Exit
+### S-007 — TrayHost context menu: manual mode toggle, Open Browser, and Exit ✅ COMPLETE (aca04d6)
 
 **What changes:** The `NotifyIcon` context menu in `PcsRemote.TrayHost` is wired to application services:
 
