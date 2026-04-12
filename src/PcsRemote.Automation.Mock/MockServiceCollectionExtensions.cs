@@ -66,4 +66,7 @@ internal sealed class NotSupportedPcsProAutomationService : IPcsProAutomationSer
 
     public Task StopAsync(CancellationToken ct = default) =>
         throw new NotSupportedException(NotImplementedMessage);
+
+    public Task ChangeMatchAsync(CancellationToken ct = default) =>
+        throw new NotSupportedException(NotImplementedMessage);
 }

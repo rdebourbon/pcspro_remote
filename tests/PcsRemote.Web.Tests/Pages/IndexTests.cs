@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using PcsRemote.Core;
+using PcsRemote.Web;
 using PcsRemote.Web.Shared;
 using Radzen;
 using IndexPage = PcsRemote.Web.Pages.Index;
@@ -514,6 +515,41 @@ public class IndexTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // TC-10 (S-005): Index.razor embeds ChangeMatchButton in MatchLoaded section
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void MatchLoaded_ChangeMatchButtonPresent_AllMatchLoadedElementsPresent()
+    {
+        var match = new MatchInfo("1", "Riverside CC", "Westwood CC", "League", new DateOnly(2026, 6, 20));
+        var autoMock = BuildMock(PcsProState.MatchSelectionReady);
+        autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match });
+
+        var scoreMock = new Mock<IScoreboardService>();
+        scoreMock.Setup(s => s.CurrentImage).Returns((byte[]?)null);
+
+        using var ctx = BuildCtx(autoMock, scoreMock);
+        var cut = ctx.Render<IndexPage>();
+
+        cut.WaitForAssertion(() =>
+            autoMock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
+        autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
+
+        cut.WaitForAssertion(() =>
+        {
+            // S-005 AC-10: change match button present
+            cut.Find(".change-match-button");
+            // S-004 AC-10 unchanged: refresh button present
+            cut.Find(".refresh-scoreboard-button");
+            // S-003 AC-10 unchanged: team names and placeholder unaffected
+            cut.Find(".match-loaded__home").TextContent.Should().Be("Riverside CC");
+            cut.Find(".match-loaded__away").TextContent.Should().Be("Westwood CC");
+            cut.Find(".scoreboard-placeholder");
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -528,6 +564,10 @@ public class IndexTests
         ctx.Services.AddSingleton(new NotificationService());
         ctx.Services.AddSingleton<ILogger<RefreshScoreboardButton>>(
             NullLogger<RefreshScoreboardButton>.Instance);
+        // ChangeMatchButton (embedded in MatchLoaded section) requires these additional services
+        ctx.Services.AddSingleton(new Mock<IConfirmDialogService>().Object);
+        ctx.Services.AddSingleton<ILogger<ChangeMatchButton>>(
+            NullLogger<ChangeMatchButton>.Instance);
         return ctx;
     }
 

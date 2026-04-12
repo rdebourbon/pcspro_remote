@@ -163,6 +163,29 @@ public class MockPcsProAutomationService : IPcsProAutomationService
         }
     }
 
+    public async Task ChangeMatchAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("ChangeMatchAsync starting from {State}", _currentState);
+
+        if (!_semaphore.Wait(0))
+            throw new InvalidOperationException("A lifecycle operation is already in progress.");
+
+        try
+        {
+            if (_currentState != PcsProState.MatchLoaded)
+                throw new InvalidOperationException(
+                    $"ChangeMatchAsync requires MatchLoaded state; current state is {_currentState}.");
+
+            await Task.Delay(_options.ChangeMatchDelay, ct);
+            Transition(PcsProState.MatchSelection);
+            _logger.LogInformation("ChangeMatchAsync complete — reached {State}", PcsProState.MatchSelection);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
     public Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);

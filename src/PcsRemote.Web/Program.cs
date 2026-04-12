@@ -35,6 +35,7 @@ try
     builder.Services.AddHostedService<AutoLaunchService>();
     builder.Services.AddRazorPages();
     builder.Services.AddRadzenComponents();
+    builder.Services.AddScoped<IConfirmDialogService, RadzenConfirmDialogService>();
 
     var app = builder.Build();
 

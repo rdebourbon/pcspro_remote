@@ -1,0 +1,75 @@
+@using Microsoft.Extensions.Logging
+@using PcsRemote.Core
+@implements IDisposable
+@inject IPcsProAutomationService AutomationService
+@inject IScoreboardService ScoreboardService
+@inject IConfirmDialogService ConfirmDialogService
+@inject NotificationService NotificationService
+@inject ILogger<ChangeMatchButton> Logger
+
+<button class="change-match-button"
+        disabled="@(!IsEnabled)"
+        @onclick="OnChangeMatchClickedAsync">
+    Change Match
+</button>
+
+@code {
+    private PcsProState _currentState;
+    private bool _operationInProgress;
+    private bool _disposed;
+
+    private bool IsEnabled => _currentState == PcsProState.MatchLoaded && !_operationInProgress;
+
+    protected override Task OnInitializedAsync()
+    {
+        // Subscribe before snapshot to narrow the race window (established project pattern).
+        AutomationService.StateChanged += OnStateChanged;
+        _currentState = AutomationService.CurrentState;
+        return Task.CompletedTask;
+    }
+
+    private async Task OnChangeMatchClickedAsync()
+    {
+        _operationInProgress = true;
+        StateHasChanged();
+
+        var confirmed = await ConfirmDialogService.ConfirmAsync(
+            "Load a different match? PCS Pro will close and reopen to the match selection screen.",
+            "Change Match");
+
+        if (confirmed != true)
+        {
+            _operationInProgress = false;
+            if (!_disposed) StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            ScoreboardService.ClearCache();
+            await AutomationService.ChangeMatchAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogError(ex, "Change match operation failed");
+            NotificationService.Notify(NotificationSeverity.Error, "Change match failed");
+        }
+        finally
+        {
+            _operationInProgress = false;
+            if (!_disposed) StateHasChanged();
+        }
+    }
+
+    private async void OnStateChanged(object? sender, PcsProState newState)
+    {
+        _currentState = newState;
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        AutomationService.StateChanged -= OnStateChanged;
+    }
+}

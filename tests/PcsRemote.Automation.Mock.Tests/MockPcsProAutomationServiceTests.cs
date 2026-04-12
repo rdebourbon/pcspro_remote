@@ -927,6 +927,44 @@ public sealed class MockPcsProAutomationServiceTests
         var sut = new MockPcsProAutomationService(Options.Create(opts), logger);
         return (sut, logger);
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // TC-12: ChangeMatchAsync transitions MatchLoaded → MatchSelection
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task ChangeMatchAsync_FromMatchLoaded_TransitionsToMatchSelection()
+    {
+        var sut = CreateSut(o => o.ChangeMatchDelay = TimeSpan.Zero);
+        // Drive to MatchLoaded
+        await sut.LaunchAndLoginAsync();
+        var matches = await sut.GetTodaysMatchesAsync();
+        await sut.LoadMatchAsync(matches[0]);
+        sut.CurrentState.Should().Be(PcsProState.MatchLoaded);
+
+        var events = CaptureEvents(sut);
+        await sut.ChangeMatchAsync();
+
+        sut.CurrentState.Should().Be(PcsProState.MatchSelection);
+        events.Should().Contain(PcsProState.MatchSelection);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // TC-13: ChangeMatchAsync throws from non-MatchLoaded state
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task ChangeMatchAsync_FromNonMatchLoadedState_ThrowsInvalidOperationException()
+    {
+        var sut = CreateSut();
+        // Default initial state is MatchSelection after LaunchAndLogin
+        await sut.LaunchAndLoginAsync();
+        sut.CurrentState.Should().Be(PcsProState.MatchSelection);
+
+        var act = async () => await sut.ChangeMatchAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────

@@ -56,4 +56,14 @@ public interface IPcsProAutomationService
     /// Accepts an optional <paramref name="ct"/> to cancel the operation.
     /// </summary>
     Task StopAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Closes the current match and returns PCS Pro to the match selection screen,
+    /// transitioning the lifecycle state from <see cref="PcsProState.MatchLoaded"/> to
+    /// <see cref="PcsProState.MatchSelection"/>.
+    /// Throws <see cref="InvalidOperationException"/> if the current state is not
+    /// <see cref="PcsProState.MatchLoaded"/>.
+    /// Accepts an optional <paramref name="ct"/> to cancel the operation.
+    /// </summary>
+    Task ChangeMatchAsync(CancellationToken ct = default);
 }
