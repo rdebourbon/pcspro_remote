@@ -1,0 +1,74 @@
+@using Microsoft.Extensions.Logging
+@using PcsRemote.Core
+@implements IDisposable
+@inject IScoreboardService ScoreboardService
+@inject IPcsProAutomationService AutomationService
+@inject NotificationService NotificationService
+@inject ILogger<RefreshScoreboardButton> Logger
+
+<button class="refresh-scoreboard-button"
+        disabled="@(!IsEnabled)"
+        @onclick="OnRefreshClickedAsync">
+    Refresh Scoreboard
+</button>
+
+@code {
+    private PcsProState _currentState;
+    private bool _refreshInProgress;
+    private bool _disposed;
+
+    private bool IsEnabled => _currentState == PcsProState.MatchLoaded && !_refreshInProgress;
+
+    protected override Task OnInitializedAsync()
+    {
+        // Subscribe before snapshot to narrow the race window (established project pattern).
+        ScoreboardService.RefreshCompleted += OnRefreshCompleted;
+        AutomationService.StateChanged += OnStateChanged;
+
+        _currentState = AutomationService.CurrentState;
+
+        return Task.CompletedTask;
+    }
+
+    private async Task OnRefreshClickedAsync()
+    {
+        _refreshInProgress = true;
+        StateHasChanged();
+
+        try
+        {
+            await ScoreboardService.ForceRefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Forced scoreboard refresh failed");
+            NotificationService.Notify(NotificationSeverity.Error, "Refresh failed");
+        }
+        finally
+        {
+            _refreshInProgress = false;
+            if (!_disposed) StateHasChanged();
+        }
+    }
+
+    private async void OnRefreshCompleted(object? sender, EventArgs e)
+    {
+        await InvokeAsync(() =>
+        {
+            NotificationService.Notify(NotificationSeverity.Success, "Scoreboard refreshed");
+        });
+    }
+
+    private async void OnStateChanged(object? sender, PcsProState newState)
+    {
+        _currentState = newState;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        ScoreboardService.RefreshCompleted -= OnRefreshCompleted;
+        AutomationService.StateChanged -= OnStateChanged;
+    }
+}
