@@ -40,6 +40,8 @@ internal sealed class NotSupportedPcsProAutomationService : IPcsProAutomationSer
 
     public PcsProState CurrentState => PcsProState.NotRunning;
 
+    public string? LastErrorReason => null;
+
     public event EventHandler<PcsProState> StateChanged
     {
         add { }

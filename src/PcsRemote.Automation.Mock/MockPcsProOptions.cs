@@ -17,4 +17,11 @@ public class MockPcsProOptions
     public int? RngSeed { get; set; } = null;
     public double ImageVariationProbability { get; set; } = 0.2;
     public int FakeMatchCount { get; set; } = 3;
+
+    /// <summary>
+    /// When set to a value other than <see cref="MockForcedErrorMode.None"/>, bypasses
+    /// the probability roll and fires exactly that error path. Tests use this to target
+    /// a specific H-SC-8 failure mode in isolation.
+    /// </summary>
+    public MockForcedErrorMode ForcedErrorMode { get; set; } = MockForcedErrorMode.None;
 }

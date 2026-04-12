@@ -11,6 +11,14 @@ public interface IPcsProAutomationService
     PcsProState CurrentState { get; }
 
     /// <summary>
+    /// Gets a human-readable description of the most recent error, or <see langword="null"/>
+    /// when the service is not in the <see cref="PcsProState.Error"/> state.
+    /// The value is cleared (set to <see langword="null"/>) when the service transitions
+    /// out of the <see cref="PcsProState.Error"/> state (e.g., after <see cref="StopAsync"/>).
+    /// </summary>
+    string? LastErrorReason { get; }
+
+    /// <summary>
     /// Raised whenever the lifecycle state changes; the event argument contains the new state.
     /// </summary>
     event EventHandler<PcsProState> StateChanged;

@@ -326,7 +326,7 @@ public sealed class MockPcsProAutomationServiceTests
         await sut.LaunchAndLoginAsync();
 
         sut.CurrentState.Should().Be(PcsProState.Error);
-        sut.LastErrorReason.Should().Be("Error before Launching transition");
+        sut.LastErrorReason.Should().Be("Failed to start PCS Pro process");
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -344,7 +344,7 @@ public sealed class MockPcsProAutomationServiceTests
         await sut.LoadMatchAsync(new MatchInfo("m1"));
 
         sut.CurrentState.Should().Be(PcsProState.Error);
-        sut.LastErrorReason.Should().Be("Error before MatchSelectionSearching transition");
+        sut.LastErrorReason.Should().Be("Failed to trigger match search");
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -365,7 +365,7 @@ public sealed class MockPcsProAutomationServiceTests
 
         sut.CurrentState.Should().Be(PcsProState.Error);
         sut.CurrentState.Should().NotBe(PcsProState.MatchSelection);
-        sut.LastErrorReason.Should().Be("Error before ChangeMatch MatchSelection transition");
+        sut.LastErrorReason.Should().Be("Failed to return to match selection when changing match");
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -566,7 +566,7 @@ public sealed class MockPcsProAutomationServiceTests
         // Error 1: LoadMatchAsync from MatchLoaded → ChangeMatchDelay fires
         opts.ErrorProbability = 1.0;
         await sut.LoadMatchAsync(new MatchInfo("m2"));
-        sut.LastErrorReason.Should().Be("Error before ChangeMatch MatchSelection transition");
+        sut.LastErrorReason.Should().Be("Failed to return to match selection when changing match");
 
         // Reset to NotRunning (clears LastErrorReason)
         await sut.StopAsync();
@@ -574,7 +574,7 @@ public sealed class MockPcsProAutomationServiceTests
 
         // Error 2: LaunchAndLoginAsync → LaunchDelay fires (different reason)
         await sut.LaunchAndLoginAsync();
-        sut.LastErrorReason.Should().Be("Error before Launching transition",
+        sut.LastErrorReason.Should().Be("Failed to start PCS Pro process",
             "second error reason must overwrite the first");
     }
 
@@ -871,7 +871,7 @@ public sealed class MockPcsProAutomationServiceTests
         await sut.LaunchAndLoginAsync();
 
         var warning = logger.Captured.Single(e => e.Level == LogLevel.Warning);
-        warning.Message.Should().Contain("Error before Launching transition");
+        warning.Message.Should().Contain("Failed to start PCS Pro process");
     }
 
     // ──────────────────────────────────────────────────────────────────────
