@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | SPEC-S-009-PlaywrightE2E.md |
 | **Status** | IN REVIEW |
-| **Version** | 0.9 |
+| **Version** | 0.10 |
 | **Date** | 2026-04-13 |
 | **Step ID** | S-009 |
 | **Governing IS** | IS-003-Web-Control-Panel.md v0.3 (APPROVED) |
@@ -52,7 +52,7 @@ Override `CreateHost(IHostBuilder builder)` in the `PcsProWebApplicationFactory`
 3. Register `host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStarted` callback that reads `host.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First()` and calls `_serverAddressTcs.SetResult(addr)` on a `TaskCompletionSource<string>` stored on the factory subclass.
 4. Return `host`.
 
-> **Why this order matters:** `IHostApplicationLifetime` is a DI service that only exists in `host.Services` after `base.CreateHost(builder)` has built the container. Registering the callback in step 3 (after step 2) gives the implementer a valid `host` reference to resolve services from. The callback fires later — when WAF starts the host.
+> **Why this order matters:** `IHostApplicationLifetime` is a DI service that only exists in `host.Services` after `base.CreateHost(builder)` has built the container. Registering the callback in step 3 (after step 2) gives the implementer a valid `host` reference to resolve services from. The `ApplicationStarted` `CancellationToken` is already cancelled by the time step 3 runs, because `base.CreateHost` calls `host.Start()` internally. Registering a callback on an already-cancelled `CancellationToken` executes it synchronously on the calling thread — `_serverAddressTcs.SetResult(addr)` therefore runs inline during step 3, and `ServerAddressTask` is already completed before `CreateHost` returns.
 
 In `[ClassInitialize]`, after instantiating the factory, trigger host startup by calling `factory.CreateClient()` (which forces WAF to call `EnsureServer()` and start the host). Then await the `TaskCompletionSource<string>` with a bounded timeout: `var serverAddress = await factory.ServerAddressTask.WaitAsync(TimeSpan.FromSeconds(30))` — a bounded wait surfaces host startup failures (DI errors, middleware exceptions) as a `TimeoutException` with a traceable stack rather than an infinite hang. The `HttpClient` returned by `CreateClient()` may be discarded. Because there is only one host and one DI container, `factory.Services` and the live Kestrel app share the same singleton instances.
 
@@ -197,7 +197,7 @@ New test file: `tests/PcsRemote.E2E.Tests/PcsProE2ETests.cs`
 | `StateChange_BroadcastToBothContexts` | AC-3 (W-SC-9) |
 
 Test class setup:
-- Implement a `PcsProWebApplicationFactory : WebApplicationFactory<Program>` subclass that exposes `Task<string> ServerAddressTask { get; } = _serverAddressTcs.Task` (where `_serverAddressTcs` is the `TaskCompletionSource<string>` set in the `ApplicationStarted` callback — see §3.1). There is no separate `string ServerAddress` property; all references to the bound address go through `await ServerAddressTask`.
+- Implement a `PcsProWebApplicationFactory : WebApplicationFactory<Program>` subclass that exposes `Task<string> ServerAddressTask => _serverAddressTcs.Task` (expression-bodied property — `{ get; } = _serverAddressTcs.Task` is a field initializer form that emits CS0236 because it references a non-static instance field; the expression-bodied form `=> _serverAddressTcs.Task` is equivalent and compiles cleanly). `_serverAddressTcs` is the `TaskCompletionSource<string>` set in the `ApplicationStarted` callback — see §3.1. There is no separate `string ServerAddress` property; all references to the bound address go through `await ServerAddressTask`.
 - Create and start the factory once per class (`[ClassInitialize]`): instantiate the factory, call `factory.CreateClient()` to trigger startup, then `await factory.ServerAddressTask.WaitAsync(TimeSpan.FromSeconds(30))` to obtain the bound address (the bounded wait surfaces host startup failures as a `TimeoutException` rather than an infinite hang).
 - Create `_playwright` via `await Playwright.CreateAsync()`, then launch one Playwright `IBrowser` (headless Chromium) once per class.
 - In `[ClassCleanup]`: dispose `IBrowser` first (await `DisposeAsync`), then call `_playwright.Dispose()`, then dispose the factory. This order prevents Playwright from emitting connection-reset exceptions when the Kestrel server stops.
