@@ -103,7 +103,7 @@ Step 2 and 3 are ordered by the state machine transition — when state leaves `
 
 ---
 
-### S-006 — Playwright E2E: multi-browser scoreboard update and refresh flow
+### S-006 — Playwright E2E: multi-browser scoreboard update and refresh flow ✅ DELIVERED `19781e3`
 
 **What changes:** New Playwright E2E tests are added to `PcsRemote.E2E.Tests`. The tests cover:
 - Scoreboard image appears in the browser when state = `MatchLoaded` and the mock has generated an image (S-SC-1 timing intent verified by waiting for image element, not stopwatch).
