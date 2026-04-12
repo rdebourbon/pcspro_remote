@@ -72,7 +72,7 @@ When state = `MatchLoaded` and a cached image exists, the component renders the 
 
 ---
 
-### S-004 — Refresh scoreboard button (forced capture, ScoreboardUpdated + RefreshCompleted flow)
+### S-004 — Refresh scoreboard button (forced capture, ScoreboardUpdated + RefreshCompleted flow) ✅ DELIVERED `1cb54d7`
 
 **What changes:** A "Refresh Scoreboard" button is added to the scoreboard section. The button is enabled only when state = `MatchLoaded` and disabled in all other states. On click, the button calls `IScoreboardService.ForceRefreshAsync`. While the refresh is in progress, the button is disabled to prevent concurrent requests. A brief transient notification (e.g., a Radzen notification toast) is displayed when `RefreshCompleted` fires, informing the operator that the refresh succeeded. The `ScoreboardPreview` component (from S-003) automatically reflects the new image via the `ScoreboardUpdated` event — no additional wiring is needed in this step.
 
