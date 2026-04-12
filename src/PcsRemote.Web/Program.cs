@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Components.Server.Circuits;
 using Serilog;
 using PcsRemote.Automation.Mock;
 using PcsRemote.Web;
@@ -25,10 +26,11 @@ try
     builder.Services.AddPcsProAutomationService(builder.Configuration);
     builder.Services.AddSignalR();
     builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
+    builder.Services.AddServerSideBlazor();
+    builder.Services.AddScoped<CircuitHandler, PcsProCircuitHandler>();
     builder.Services.AddHostedService<PcsProStateBroadcaster>();
     builder.Services.AddHostedService<AutoLaunchService>();
     builder.Services.AddRazorPages();
-    builder.Services.AddServerSideBlazor();
     builder.Services.AddRadzenComponents();
 
     var app = builder.Build();

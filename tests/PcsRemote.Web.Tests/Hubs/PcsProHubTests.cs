@@ -9,7 +9,6 @@ namespace PcsRemote.Web.Tests.Hubs;
 [TestClass]
 public class PcsProHubTests
 {
-    private Mock<IConnectionTracker> _trackerMock = null!;
     private Mock<IPcsProAutomationService> _automationServiceMock = null!;
     private Mock<IHubCallerClients> _clientsMock = null!;
     private Mock<ISingleClientProxy> _callerMock = null!;
@@ -17,7 +16,6 @@ public class PcsProHubTests
     [TestInitialize]
     public void SetUp()
     {
-        _trackerMock = new Mock<IConnectionTracker>();
         _automationServiceMock = new Mock<IPcsProAutomationService>();
         _clientsMock = new Mock<IHubCallerClients>();
         _callerMock = new Mock<ISingleClientProxy>();
@@ -28,17 +26,9 @@ public class PcsProHubTests
 
     private PcsProHub CreateHub()
     {
-        var hub = new PcsProHub(_trackerMock.Object, _automationServiceMock.Object);
+        var hub = new PcsProHub(_automationServiceMock.Object);
         hub.Clients = _clientsMock.Object;
         return hub;
-    }
-
-    [TestMethod]
-    public async Task OnConnectedAsync_IncrementsConnectionCountExactlyOnce()
-    {
-        using var hub = CreateHub();
-        await hub.OnConnectedAsync();
-        _trackerMock.Verify(t => t.Increment(), Times.Once);
     }
 
     [TestMethod]
@@ -54,28 +44,5 @@ public class PcsProHubTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
-
-    [TestMethod]
-    public async Task OnDisconnectedAsync_DecrementsConnectionCountExactlyOnce()
-    {
-        using var hub = CreateHub();
-        await hub.OnDisconnectedAsync(null);
-        _trackerMock.Verify(t => t.Decrement(), Times.Once);
-    }
-
-    [TestMethod]
-    public async Task OnConnectedAsync_DoesNotDecrement()
-    {
-        using var hub = CreateHub();
-        await hub.OnConnectedAsync();
-        _trackerMock.Verify(t => t.Decrement(), Times.Never);
-    }
-
-    [TestMethod]
-    public async Task OnDisconnectedAsync_DoesNotIncrement()
-    {
-        using var hub = CreateHub();
-        await hub.OnDisconnectedAsync(null);
-        _trackerMock.Verify(t => t.Increment(), Times.Never);
-    }
 }
+
