@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | PROJECT-CONTEXT.md |
 | **Type** | Shared reference — not an HLPS |
-| **Version** | 1.0 |
+| **Version** | 1.1 |
 | **Date** | 2026-04-10 |
 | **Source PRD** | `docs/Requirements/PRD - Match Selection and Scoreboard.md` v1.0 |
 
@@ -55,7 +55,7 @@ LED Scoreboard
 
 5. **PrintWindow Win32 API**: Captures WPF window content off-screen via `PW_RENDERFULLCONTENT`. Works regardless of window visibility or occlusion.
 
-6. **Separate SignalR hub for image broadcast**: Keeps binary image data separate from Blazor circuit state. Allows future non-Blazor consumers.
+6. **Blazor circuit-based scoreboard delivery**: Scoreboard images are distributed via a shared singleton service event (`ScoreboardUpdated`). Each `ScoreboardPreview` component subscribes to this event and re-renders via `InvokeAsync(StateHasChanged)` on its own Blazor circuit. This is idiomatic for Blazor Server, avoids a separate hub, and is sufficient for the local-network single-machine deployment. Late joiners read the service's cached current image on `OnInitializedAsync`. The `PcsProHub` remains for state-change broadcast and future non-Blazor consumers of state events; it is not used for image data.
 
 7. **System tray hosting with manual mode**: Console app with NotifyIcon. Manual mode toggle pauses remote automation for local PCS Pro use. Auto-started via Task Scheduler.
 
