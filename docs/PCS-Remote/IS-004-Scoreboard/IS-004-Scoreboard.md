@@ -55,7 +55,7 @@ The implementation is registered as a singleton in `Program.cs`. The mock automa
 
 ---
 
-### S-003 — ScoreboardPreview Blazor component (live image rendering and placeholder)
+### S-003 — ScoreboardPreview Blazor component (live image rendering and placeholder) ✅ DELIVERED `3c1566c`
 
 **What changes:** A `ScoreboardPreview` Razor component is added to `PcsRemote.Web`. On `OnInitializedAsync`, the component:
 - Reads the current cached image from `IScoreboardService` (late-joiner support — displays the current image immediately without waiting for the next poll).
