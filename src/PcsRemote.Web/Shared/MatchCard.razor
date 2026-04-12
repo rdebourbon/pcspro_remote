@@ -12,7 +12,7 @@
 }
 else
 {
-    <div class="match-card match-card--disabled">
+    <div class="match-card match-card--disabled" title="@(DisabledTitle ?? string.Empty)">
         <span class="match-card-home">@Match.HomeTeam</span>
         <span class="match-card-away">@Match.AwayTeam</span>
         <span class="match-card-type">@Match.MatchType</span>
@@ -23,6 +23,7 @@ else
 @code {
     [Parameter, EditorRequired] public MatchInfo Match { get; set; } = default!;
     [Parameter] public bool IsInteractive { get; set; }
+    [Parameter] public string? DisabledTitle { get; set; }
     [Parameter] public EventCallback<MatchInfo> OnSelected { get; set; }
 
     private Task HandleClick() => OnSelected.InvokeAsync(Match);

@@ -4,10 +4,12 @@
 @inject IScoreboardService ScoreboardService
 @inject IPcsProAutomationService AutomationService
 @inject IManualModeService ManualModeService
+@inject IOperationCoordinatorService CoordinatorService
 @inject NotificationService NotificationService
 @inject ILogger<RefreshScoreboardButton> Logger
 
 <button class="refresh-scoreboard-button"
+        title="@(_operationInProgress ? "Automation in progress\u2026" : "")"
         disabled="@(!IsEnabled)"
         @onclick="OnRefreshClickedAsync">
     Refresh Scoreboard
@@ -15,11 +17,11 @@
 
 @code {
     private PcsProState _currentState;
-    private bool _refreshInProgress;
+    private bool _operationInProgress;
     private bool _manualModeActive;
     private bool _disposed;
 
-    private bool IsEnabled => _currentState == PcsProState.MatchLoaded && !_refreshInProgress && !_manualModeActive;
+    private bool IsEnabled => _currentState == PcsProState.MatchLoaded && !_operationInProgress && !_manualModeActive;
 
     protected override Task OnInitializedAsync()
     {
@@ -27,26 +29,34 @@
         ScoreboardService.RefreshCompleted += OnRefreshCompleted;
         AutomationService.StateChanged += OnStateChanged;
         ManualModeService.ManualModeChanged += OnManualModeChanged;
+        CoordinatorService.OperationInProgressChanged += OnOperationInProgressChanged;
 
         _currentState = AutomationService.CurrentState;
         _manualModeActive = ManualModeService.IsManualModeActive;
+        _operationInProgress = CoordinatorService.IsOperationInProgress;
 
         return Task.CompletedTask;
     }
 
     private async Task OnRefreshClickedAsync()
     {
+        if (_operationInProgress)
+            return;
+
         if (ManualModeService.IsManualModeActive)
         {
             NotificationService.Notify(NotificationSeverity.Warning, "Automation is paused — disable manual mode before issuing commands");
             return;
         }
 
-        _refreshInProgress = true;
-        StateHasChanged();
-
+        bool acquired = false;
         try
         {
+            // BeginOperation() returns false if another browser already owns the lock (no-op).
+            // Only proceed — and only release — when this call wins the CAS.
+            acquired = CoordinatorService.BeginOperation();
+            if (!acquired)
+                return;
             await ScoreboardService.ForceRefreshAsync();
         }
         catch (Exception ex)
@@ -56,8 +66,21 @@
         }
         finally
         {
-            _refreshInProgress = false;
-            if (!_disposed) StateHasChanged();
+            if (acquired)
+                CoordinatorService.MarkComplete();
+        }
+    }
+
+    private async void OnOperationInProgressChanged(object? sender, bool isInProgress)
+    {
+        _operationInProgress = isInProgress;
+        if (!_disposed)
+        {
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException) { }
         }
     }
 
@@ -100,5 +123,6 @@
         ScoreboardService.RefreshCompleted -= OnRefreshCompleted;
         AutomationService.StateChanged -= OnStateChanged;
         ManualModeService.ManualModeChanged -= OnManualModeChanged;
+        CoordinatorService.OperationInProgressChanged -= OnOperationInProgressChanged;
     }
 }

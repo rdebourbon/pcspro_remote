@@ -29,11 +29,13 @@ try
     builder.Services.AddSignalR();
     builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
     builder.Services.AddSingleton<IManualModeService, ManualModeService>();
+    builder.Services.AddSingleton<IOperationCoordinatorService, OperationCoordinatorService>();
     builder.Services.AddServerSideBlazor();
     builder.Services.AddScoped<CircuitHandler, PcsProCircuitHandler>();
     builder.Services.AddSingleton<IScoreboardService, ScoreboardService>();
     builder.Services.AddHostedService<PcsProStateBroadcaster>();
     builder.Services.AddHostedService<ManualModeBroadcaster>();
+    builder.Services.AddHostedService<OperationInProgressBroadcaster>();
     builder.Services.AddHostedService<ScoreboardPollingService>();
     builder.Services.AddHostedService<AutoLaunchService>();
     builder.Services.AddRazorPages();

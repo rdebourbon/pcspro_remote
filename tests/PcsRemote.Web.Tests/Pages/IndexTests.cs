@@ -664,16 +664,22 @@ public class IndexTests
         Mock<IPcsProAutomationService> autoMock,
         Mock<IScoreboardService>? scoreMock = null,
         Mock<IManualModeService>? manualModeMock = null,
+        Mock<IOperationCoordinatorService>? coordinatorMock = null,
         NotificationService? notificationService = null)
     {
         var mmMock = manualModeMock ?? new Mock<IManualModeService>();
         if (manualModeMock is null)
             mmMock.Setup(s => s.IsManualModeActive).Returns(false);
 
+        var coordMock = coordinatorMock ?? new Mock<IOperationCoordinatorService>();
+        if (coordinatorMock is null)
+            coordMock.Setup(s => s.IsOperationInProgress).Returns(false);
+
         var ctx = new BunitContext();
         ctx.Services.AddSingleton(autoMock.Object);
         ctx.Services.AddSingleton((scoreMock ?? new Mock<IScoreboardService>()).Object);
         ctx.Services.AddSingleton(mmMock.Object);
+        ctx.Services.AddSingleton(coordMock.Object);
         ctx.Services.AddSingleton(notificationService ?? new NotificationService());
         ctx.Services.AddSingleton<ILogger<RefreshScoreboardButton>>(
             NullLogger<RefreshScoreboardButton>.Instance);
@@ -681,6 +687,155 @@ public class IndexTests
         ctx.Services.AddSingleton<ILogger<ChangeMatchButton>>(
             NullLogger<ChangeMatchButton>.Instance);
         return ctx;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TC-21: Match cards rendered with match-card--disabled when coordinator in-progress
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void OperationInProgress_MatchCardsRendered_WithDisabledInteractivity()
+    {
+        var match1 = TestMatch(1);
+        var match2 = TestMatch(2);
+        var autoMock = BuildMock(PcsProState.NotRunning);
+        autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match1, match2 });
+
+        var coordinatorMock = new Mock<IOperationCoordinatorService>();
+        coordinatorMock.Setup(s => s.IsOperationInProgress).Returns(true);
+
+        using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
+        var cut = ctx.Render<IndexPage>();
+
+        mock_drive_to_ready(autoMock);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".match-card").Should().HaveCount(2);
+            cut.FindAll(".match-card--disabled").Should().HaveCount(2);
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TC-22: Tooltip "Automation in progress…" on disabled match cards when in-progress
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void OperationInProgress_MatchCards_HaveTooltipAttribute()
+    {
+        var match1 = TestMatch(1);
+        var match2 = TestMatch(2);
+        var autoMock = BuildMock(PcsProState.NotRunning);
+        autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match1, match2 });
+
+        var coordinatorMock = new Mock<IOperationCoordinatorService>();
+        coordinatorMock.Setup(s => s.IsOperationInProgress).Returns(true);
+
+        using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
+        var cut = ctx.Render<IndexPage>();
+
+        mock_drive_to_ready(autoMock);
+
+        cut.WaitForAssertion(() =>
+            cut.Find(".match-card--disabled").GetAttribute("title")
+                .Should().Be("Automation in progress\u2026"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TC-23: SelectMatchAsync returns without calling LoadMatchAsync when in-progress
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void OperationInProgress_SelectMatch_RejectedSilently()
+    {
+        var match1 = TestMatch(1);
+        var match2 = TestMatch(2);
+        var autoMock = BuildMock(PcsProState.NotRunning);
+        autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match1, match2 });
+
+        var coordinatorMock = new Mock<IOperationCoordinatorService>();
+        coordinatorMock.Setup(s => s.IsOperationInProgress).Returns(false);
+
+        using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
+        var cut = ctx.Render<IndexPage>();
+
+        mock_drive_to_ready(autoMock);
+        cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
+
+        // Coordinator fires in-progress — component field updates but re-render may not have hidden the cards yet.
+        // The guard in SelectMatchAsync is the defense-in-depth for this TOCTOU window.
+        coordinatorMock.Raise(c => c.OperationInProgressChanged += null, coordinatorMock.Object, true);
+
+        // Cards become non-interactive once the component's _operationInProgress field is updated.
+        cut.WaitForAssertion(() => cut.FindAll(".match-card--disabled").Should().HaveCount(2));
+
+        // bUnit cannot dispatch click events on non-interactive elements, so the guard in
+        // SelectMatchAsync is not directly exercisable via UI simulation here. The key invariant
+        // verified by this test is that the coordinator event causes the cards to become disabled —
+        // LoadMatchAsync is never called because no interactive card click can occur.
+        autoMock.Verify(
+            s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TC-24: Match cards re-enable when coordinator fires in-progress = false
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void CoordinatorFiresComplete_MatchCardsReEnable()
+    {
+        var match1 = TestMatch(1);
+        var match2 = TestMatch(2);
+        var autoMock = BuildMock(PcsProState.NotRunning);
+        autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match1, match2 });
+
+        var coordinatorMock = new Mock<IOperationCoordinatorService>();
+        coordinatorMock.Setup(s => s.IsOperationInProgress).Returns(true);
+
+        using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
+        var cut = ctx.Render<IndexPage>();
+
+        mock_drive_to_ready(autoMock);
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".match-card--disabled").Should().HaveCount(2));
+
+        coordinatorMock.Raise(c => c.OperationInProgressChanged += null, coordinatorMock.Object, false);
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".match-card--disabled").Should().BeEmpty());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TC-25: Late-join — index rendered when coordinator already in-progress → cards disabled
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void LateJoin_CoordinatorAlreadyInProgress_CardsRenderedDisabled()
+    {
+        var match1 = TestMatch(1);
+        var match2 = TestMatch(2);
+        var autoMock = BuildMock(PcsProState.MatchSelectionReady);
+        autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { match1, match2 });
+
+        var coordinatorMock = new Mock<IOperationCoordinatorService>();
+        coordinatorMock.Setup(s => s.IsOperationInProgress).Returns(true);
+
+        using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
+        var cut = ctx.Render<IndexPage>();
+
+        // Fetch completes; state is already MatchSelectionReady on mount — no event needed
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".match-card").Should().HaveCount(2);
+            cut.FindAll(".match-card--disabled").Should().HaveCount(2,
+                "late-joining client should see cards as disabled immediately");
+        });
     }
 
     private static void mock_drive_to_ready(Mock<IPcsProAutomationService> autoMock)

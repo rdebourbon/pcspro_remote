@@ -3,12 +3,14 @@
 @implements IDisposable
 @inject IPcsProAutomationService AutomationService
 @inject IManualModeService ManualModeService
+@inject IOperationCoordinatorService CoordinatorService
 @inject IScoreboardService ScoreboardService
 @inject IConfirmDialogService ConfirmDialogService
 @inject NotificationService NotificationService
 @inject ILogger<ChangeMatchButton> Logger
 
 <button class="change-match-button"
+        title="@(_operationInProgress ? "Automation in progress\u2026" : "")"
         disabled="@(!IsEnabled)"
         @onclick="OnChangeMatchClickedAsync">
     Change Match
@@ -27,32 +29,38 @@
         // Subscribe before snapshot to narrow the race window (established project pattern).
         AutomationService.StateChanged += OnStateChanged;
         ManualModeService.ManualModeChanged += OnManualModeChanged;
+        CoordinatorService.OperationInProgressChanged += OnOperationInProgressChanged;
         _currentState = AutomationService.CurrentState;
         _manualModeActive = ManualModeService.IsManualModeActive;
+        _operationInProgress = CoordinatorService.IsOperationInProgress;
     }
 
     private async Task OnChangeMatchClickedAsync()
     {
+        if (_operationInProgress)
+            return;
+
         if (ManualModeService.IsManualModeActive)
         {
             NotificationService.Notify(NotificationSeverity.Warning, "Automation is paused — disable manual mode before issuing commands");
             return;
         }
 
-        _operationInProgress = true;
-        StateHasChanged();
+        var confirmed = await ConfirmDialogService.ConfirmAsync(
+            "Load a different match? PCS Pro will close and reopen to the match selection screen.",
+            "Change Match");
 
+        if (confirmed != true)
+            return;
+
+        bool acquired = false;
         try
         {
-            var confirmed = await ConfirmDialogService.ConfirmAsync(
-                "Load a different match? PCS Pro will close and reopen to the match selection screen.",
-                "Change Match");
-
-            if (confirmed != true)
-            {
+            // BeginOperation() returns false if another browser already owns the lock (no-op).
+            // Only proceed — and only release — when this call wins the CAS.
+            acquired = CoordinatorService.BeginOperation();
+            if (!acquired)
                 return;
-            }
-
             ScoreboardService.ClearCache();
             await AutomationService.ChangeMatchAsync();
         }
@@ -63,8 +71,21 @@
         }
         finally
         {
-            _operationInProgress = false;
-            if (!_disposed) StateHasChanged();
+            if (acquired)
+                CoordinatorService.MarkComplete();
+        }
+    }
+
+    private async void OnOperationInProgressChanged(object? sender, bool isInProgress)
+    {
+        _operationInProgress = isInProgress;
+        if (!_disposed)
+        {
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException) { }
         }
     }
 
@@ -99,5 +120,6 @@
         _disposed = true;
         AutomationService.StateChanged -= OnStateChanged;
         ManualModeService.ManualModeChanged -= OnManualModeChanged;
+        CoordinatorService.OperationInProgressChanged -= OnOperationInProgressChanged;
     }
 }

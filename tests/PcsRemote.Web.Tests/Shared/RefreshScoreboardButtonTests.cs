@@ -22,10 +22,11 @@ public class RefreshScoreboardButtonTests
         IRenderedComponent<RefreshScoreboardButton> Cut,
         Mock<IScoreboardService> ScoreMock,
         Mock<IPcsProAutomationService> AutoMock,
+        Mock<IOperationCoordinatorService> CoordinatorMock,
         NotificationService NotificationSvc,
         List<NotificationMessage> Notifications,
         BunitContext Ctx)
-    Build(PcsProState initialState, ILogger<RefreshScoreboardButton>? logger = null, bool manualModeActive = false)
+    Build(PcsProState initialState, ILogger<RefreshScoreboardButton>? logger = null, bool manualModeActive = false, bool operationInProgress = false)
     {
         var scoreMock = new Mock<IScoreboardService>();
         scoreMock.Setup(s => s.CurrentImage).Returns((byte[]?)null);
@@ -35,6 +36,16 @@ public class RefreshScoreboardButtonTests
 
         var manualModeMock = new Mock<IManualModeService>();
         manualModeMock.Setup(s => s.IsManualModeActive).Returns(manualModeActive);
+
+        var coordinatorMock = new Mock<IOperationCoordinatorService>();
+        coordinatorMock.Setup(c => c.IsOperationInProgress).Returns(operationInProgress);
+        coordinatorMock
+            .Setup(c => c.BeginOperation())
+            .Callback(() => coordinatorMock.Raise(c => c.OperationInProgressChanged += null, coordinatorMock.Object, true))
+            .Returns(true);
+        coordinatorMock
+            .Setup(c => c.MarkComplete())
+            .Raises(c => c.OperationInProgressChanged += null, coordinatorMock.Object, false);
 
         var notificationSvc = new NotificationService();
         var notifications = new List<NotificationMessage>();
@@ -49,19 +60,18 @@ public class RefreshScoreboardButtonTests
         ctx.Services.AddSingleton(scoreMock.Object);
         ctx.Services.AddSingleton(autoMock.Object);
         ctx.Services.AddSingleton(manualModeMock.Object);
+        ctx.Services.AddSingleton(coordinatorMock.Object);
         ctx.Services.AddSingleton(notificationSvc);
         ctx.Services.AddSingleton(logger ?? NullLogger<RefreshScoreboardButton>.Instance);
 
         var cut = ctx.Render<RefreshScoreboardButton>();
-        return (cut, scoreMock, autoMock, notificationSvc, notifications, ctx);
+        return (cut, scoreMock, autoMock, coordinatorMock, notificationSvc, notifications, ctx);
     }
-
-    // ── TC-1: Button enabled in MatchLoaded state ─────────────────────────────
 
     [TestMethod]
     public void MatchLoaded_ButtonEnabled()
     {
-        var (cut, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             cut.Find(".refresh-scoreboard-button").HasAttribute("disabled").Should().BeFalse();
@@ -80,26 +90,22 @@ public class RefreshScoreboardButtonTests
     [DataRow(PcsProState.Error)]
     public void NonMatchLoadedState_ButtonDisabled(PcsProState state)
     {
-        var (cut, _, _, _, _, ctx) = Build(state);
+        var (cut, _, _, _, _, _, ctx) = Build(state);
         using (ctx)
         {
             cut.Find(".refresh-scoreboard-button").HasAttribute("disabled").Should().BeTrue();
         }
     }
 
-    // ── TC-3: Button disabled while refresh is in progress ────────────────────
+    // ── TC-3: Button disabled when coordinator fires in-progress = true ────────
 
     [TestMethod]
-    public void RefreshInProgress_ButtonDisabled()
+    public void CoordinatorFiresInProgress_ButtonDisabled()
     {
-        var tcs = new TaskCompletionSource();
-        var (cut, scoreMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, _, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
-            scoreMock.Setup(s => s.ForceRefreshAsync(It.IsAny<CancellationToken>()))
-                .Returns(tcs.Task);
-
-            cut.Find(".refresh-scoreboard-button").Click();
+            coordinatorMock.Raise(c => c.OperationInProgressChanged += null, coordinatorMock.Object, true);
 
             cut.WaitForAssertion(() =>
                 cut.Find(".refresh-scoreboard-button").HasAttribute("disabled").Should().BeTrue());
@@ -111,7 +117,7 @@ public class RefreshScoreboardButtonTests
     [TestMethod]
     public void ButtonClick_CallsForceRefreshAsyncOnce()
     {
-        var (cut, scoreMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, scoreMock, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             scoreMock.Setup(s => s.ForceRefreshAsync(It.IsAny<CancellationToken>()))
@@ -129,7 +135,7 @@ public class RefreshScoreboardButtonTests
     [TestMethod]
     public void RefreshCompleted_ShowsSuccessNotification()
     {
-        var (cut, scoreMock, _, _, notifications, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, scoreMock, _, _, _, notifications, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             scoreMock.Raise(s => s.RefreshCompleted += null, scoreMock.Object, EventArgs.Empty);
@@ -147,7 +153,7 @@ public class RefreshScoreboardButtonTests
     {
         var thrown = new InvalidOperationException("capture error");
         var loggerMock = new Mock<ILogger<RefreshScoreboardButton>>();
-        var (cut, scoreMock, _, _, notifications, ctx) = Build(PcsProState.MatchLoaded, loggerMock.Object);
+        var (cut, scoreMock, _, _, _, notifications, ctx) = Build(PcsProState.MatchLoaded, loggerMock.Object);
         using (ctx)
         {
             scoreMock.Setup(s => s.ForceRefreshAsync(It.IsAny<CancellationToken>()))
@@ -182,7 +188,7 @@ public class RefreshScoreboardButtonTests
     [TestMethod]
     public void ForceRefreshAsyncCompletes_ButtonReenables()
     {
-        var (cut, scoreMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, scoreMock, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             scoreMock.Setup(s => s.ForceRefreshAsync(It.IsAny<CancellationToken>()))
@@ -200,7 +206,7 @@ public class RefreshScoreboardButtonTests
     [TestMethod]
     public void StateChanged_AwayFromMatchLoaded_DisablesButton()
     {
-        var (cut, _, autoMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, autoMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             cut.Find(".refresh-scoreboard-button").HasAttribute("disabled").Should().BeFalse();
@@ -217,7 +223,7 @@ public class RefreshScoreboardButtonTests
     [TestMethod]
     public void Dispose_UnsubscribesFromBothEvents()
     {
-        var (cut, scoreMock, autoMock, _, _, ctx) = Build(PcsProState.NotRunning);
+        var (cut, scoreMock, autoMock, _, _, _, ctx) = Build(PcsProState.NotRunning);
         using (ctx)
         {
             // Direct disposal pattern (established project convention — see ScoreboardPreviewTests.cs)
@@ -232,12 +238,99 @@ public class RefreshScoreboardButtonTests
         }
     }
 
+    // ── TC-26: Dispose unsubscribes from coordinator event ──────────────────
+
+    [TestMethod]
+    public void Dispose_UnsubscribesFromCoordinatorEvent()
+    {
+        var (cut, _, _, coordinatorMock, _, _, ctx) = Build(PcsProState.NotRunning);
+        using (ctx)
+        {
+            cut.Instance.Dispose();
+
+            coordinatorMock.VerifyRemove(
+                c => c.OperationInProgressChanged -= It.IsAny<EventHandler<bool>>(),
+                Times.Once);
+        }
+    }
+
+    // ── TC-27: Tooltip present when button disabled due to coordinator ────────
+
+    [TestMethod]
+    public void OperationInProgress_TooltipAttributePresent()
+    {
+        var (cut, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, operationInProgress: true);
+        using (ctx)
+        {
+            cut.Find(".refresh-scoreboard-button").GetAttribute("title")
+                .Should().Be("Automation in progress\u2026");
+        }
+    }
+
+    // ── TC-28: Button re-enables when coordinator fires false ────────────────
+
+    [TestMethod]
+    public void CoordinatorFiresComplete_ButtonReenables()
+    {
+        var (cut, _, _, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded, operationInProgress: true);
+        using (ctx)
+        {
+            cut.Find(".refresh-scoreboard-button").HasAttribute("disabled").Should().BeTrue();
+
+            coordinatorMock.Raise(c => c.OperationInProgressChanged += null, coordinatorMock.Object, false);
+
+            cut.WaitForAssertion(() =>
+                cut.Find(".refresh-scoreboard-button").HasAttribute("disabled").Should().BeFalse());
+        }
+    }
+
+    // ── TC-29: ForceRefreshAsync throws → MarkComplete called in finally ──────
+
+    [TestMethod]
+    public void ForceRefreshAsyncThrows_MarkCompleteCalledInFinally()
+    {
+        var (cut, scoreMock, _, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        using (ctx)
+        {
+            scoreMock.Setup(s => s.ForceRefreshAsync(It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("boom"));
+
+            cut.Find(".refresh-scoreboard-button").Click();
+
+            cut.WaitForAssertion(() =>
+                coordinatorMock.Verify(c => c.MarkComplete(), Times.Once));
+        }
+    }
+
+    // ── TC-30: BeginOperation returns false (lock lost to another browser) → ForceRefreshAsync not called, MarkComplete never called ─
+
+    [TestMethod]
+    public void BeginOperationReturnsFalse_ForceRefreshNotCalled_MarkCompleteNeverCalled()
+    {
+        var (cut, scoreMock, _, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        using (ctx)
+        {
+            // Simulate another browser winning the CAS: BeginOperation is a no-op (returns false)
+            coordinatorMock.Setup(c => c.BeginOperation()).Returns(false);
+
+            cut.Find(".refresh-scoreboard-button").Click();
+
+            cut.WaitForAssertion(() =>
+            {
+                scoreMock.Verify(s => s.ForceRefreshAsync(It.IsAny<CancellationToken>()), Times.Never,
+                    "refresh must not run when this browser did not acquire the coordinator lock");
+                coordinatorMock.Verify(c => c.MarkComplete(), Times.Never,
+                    "MarkComplete must not be called when BeginOperation returned false");
+            });
+        }
+    }
+
     // ── TC-19 (S-003): Button disabled when manual mode is active ─────────────
 
     [TestMethod]
     public void ManualModeActive_ButtonDisabled()
     {
-        var (cut, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, manualModeActive: true);
+        var (cut, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, manualModeActive: true);
         using (ctx)
         {
             cut.Find(".refresh-scoreboard-button").HasAttribute("disabled").Should().BeTrue();
@@ -249,7 +342,7 @@ public class RefreshScoreboardButtonTests
     [TestMethod]
     public void ManualModeActive_Click_RejectedWithNotification()
     {
-        var (cut, scoreMock, _, _, notifications, ctx) =
+        var (cut, scoreMock, _, _, _, notifications, ctx) =
             Build(PcsProState.MatchLoaded, manualModeActive: true);
         using (ctx)
         {
@@ -279,12 +372,15 @@ public class RefreshScoreboardButtonTests
         scoreMock.Setup(s => s.CurrentImage).Returns((byte[]?)null);
         var autoMock = new Mock<IPcsProAutomationService>();
         autoMock.Setup(a => a.CurrentState).Returns(PcsProState.MatchLoaded);
+        var coordinatorMock = new Mock<IOperationCoordinatorService>();
+        coordinatorMock.Setup(c => c.IsOperationInProgress).Returns(false);
         var notificationSvc = new NotificationService();
 
         var ctx = new BunitContext();
         ctx.Services.AddSingleton(scoreMock.Object);
         ctx.Services.AddSingleton(autoMock.Object);
         ctx.Services.AddSingleton(manualModeMock.Object);
+        ctx.Services.AddSingleton(coordinatorMock.Object);
         ctx.Services.AddSingleton(notificationSvc);
         ctx.Services.AddSingleton<ILogger<RefreshScoreboardButton>>(NullLogger<RefreshScoreboardButton>.Instance);
 
@@ -334,6 +430,9 @@ public class RefreshScoreboardButtonTests
         ctx.Services.AddSingleton(scoreMock.Object);
         ctx.Services.AddSingleton(autoMock.Object);
         ctx.Services.AddSingleton<IManualModeService>(new Mock<IManualModeService>().Object);
+        var coordinatorMock = new Mock<IOperationCoordinatorService>();
+        coordinatorMock.Setup(c => c.BeginOperation()).Returns(true);
+        ctx.Services.AddSingleton(coordinatorMock.Object);
         ctx.Services.AddSingleton(notificationSvc);
         ctx.Services.AddSingleton<ILogger<RefreshScoreboardButton>>(NullLogger<RefreshScoreboardButton>.Instance);
 

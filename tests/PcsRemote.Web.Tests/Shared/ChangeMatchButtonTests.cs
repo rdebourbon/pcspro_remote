@@ -22,10 +22,11 @@ public class ChangeMatchButtonTests
         Mock<IScoreboardService> ScoreMock,
         Mock<IPcsProAutomationService> AutoMock,
         Mock<IConfirmDialogService> DialogMock,
+        Mock<IOperationCoordinatorService> CoordinatorMock,
         NotificationService NotificationSvc,
         List<NotificationMessage> Notifications,
         BunitContext Ctx)
-    Build(PcsProState initialState, ILogger<ChangeMatchButton>? logger = null, bool manualModeActive = false)
+    Build(PcsProState initialState, ILogger<ChangeMatchButton>? logger = null, bool manualModeActive = false, bool operationInProgress = false)
     {
         var scoreMock = new Mock<IScoreboardService>();
         var autoMock = new Mock<IPcsProAutomationService>();
@@ -33,6 +34,16 @@ public class ChangeMatchButtonTests
         var dialogMock = new Mock<IConfirmDialogService>();
         var manualModeMock = new Mock<IManualModeService>();
         manualModeMock.Setup(s => s.IsManualModeActive).Returns(manualModeActive);
+
+        var coordinatorMock = new Mock<IOperationCoordinatorService>();
+        coordinatorMock.Setup(c => c.IsOperationInProgress).Returns(operationInProgress);
+        coordinatorMock
+            .Setup(c => c.BeginOperation())
+            .Callback(() => coordinatorMock.Raise(c => c.OperationInProgressChanged += null, coordinatorMock.Object, true))
+            .Returns(true);
+        coordinatorMock
+            .Setup(c => c.MarkComplete())
+            .Raises(c => c.OperationInProgressChanged += null, coordinatorMock.Object, false);
 
         var notificationSvc = new NotificationService();
         var notifications = new List<NotificationMessage>();
@@ -47,20 +58,19 @@ public class ChangeMatchButtonTests
         ctx.Services.AddSingleton(scoreMock.Object);
         ctx.Services.AddSingleton(autoMock.Object);
         ctx.Services.AddSingleton(manualModeMock.Object);
+        ctx.Services.AddSingleton(coordinatorMock.Object);
         ctx.Services.AddSingleton(dialogMock.Object);
         ctx.Services.AddSingleton(notificationSvc);
         ctx.Services.AddSingleton(logger ?? (ILogger<ChangeMatchButton>)NullLogger<ChangeMatchButton>.Instance);
 
         var cut = ctx.Render<ChangeMatchButton>();
-        return (cut, scoreMock, autoMock, dialogMock, notificationSvc, notifications, ctx);
+        return (cut, scoreMock, autoMock, dialogMock, coordinatorMock, notificationSvc, notifications, ctx);
     }
-
-    // ── TC-1: Button enabled in MatchLoaded state ─────────────────────────────
 
     [TestMethod]
     public void MatchLoaded_ButtonEnabled()
     {
-        var (cut, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             cut.Find(".change-match-button").HasAttribute("disabled").Should().BeFalse();
@@ -79,7 +89,7 @@ public class ChangeMatchButtonTests
     [DataRow(PcsProState.Error)]
     public void NonMatchLoadedState_ButtonDisabled(PcsProState state)
     {
-        var (cut, _, _, _, _, _, ctx) = Build(state);
+        var (cut, _, _, _, _, _, _, ctx) = Build(state);
         using (ctx)
         {
             cut.Find(".change-match-button").HasAttribute("disabled").Should().BeTrue();
@@ -91,7 +101,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void StateChanged_ToMatchLoaded_EnablesButton()
     {
-        var (cut, _, autoMock, _, _, _, ctx) = Build(PcsProState.NotRunning);
+        var (cut, _, autoMock, _, _, _, _, ctx) = Build(PcsProState.NotRunning);
         using (ctx)
         {
             autoMock.Raise(a => a.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
@@ -106,7 +116,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void StateChanged_AwayFromMatchLoaded_DisablesButton()
     {
-        var (cut, _, autoMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, autoMock, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             autoMock.Raise(a => a.StateChanged += null, autoMock.Object, PcsProState.MatchSelection);
@@ -121,7 +131,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void Click_ShowsConfirmDialog_WithCorrectArguments()
     {
-        var (cut, _, _, dialogMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, _, dialogMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -145,7 +155,7 @@ public class ChangeMatchButtonTests
     [DataRow(null)]
     public void Cancel_NoClearCache_NoChangeMatchAsync(bool? dialogResult)
     {
-        var (cut, scoreMock, autoMock, dialogMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, scoreMock, autoMock, dialogMock, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -166,7 +176,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void Confirm_ClearCacheCalledBeforeChangeMatchAsync()
     {
-        var (cut, scoreMock, autoMock, dialogMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, scoreMock, autoMock, dialogMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             var callOrder = new List<string>();
@@ -197,7 +207,7 @@ public class ChangeMatchButtonTests
     {
         var thrown = new InvalidOperationException("automation error");
         var loggerMock = new Mock<ILogger<ChangeMatchButton>>();
-        var (cut, scoreMock, autoMock, dialogMock, _, notifications, ctx) =
+        var (cut, scoreMock, autoMock, dialogMock, _, _, notifications, ctx) =
             Build(PcsProState.MatchLoaded, loggerMock.Object);
         using (ctx)
         {
@@ -228,21 +238,15 @@ public class ChangeMatchButtonTests
         }
     }
 
-    // ── TC-9: Button disabled during in-progress operation ────────────────────
+    // ── TC-9: Button disabled when coordinator fires in-progress = true ────────
 
     [TestMethod]
-    public void OperationInProgress_ButtonDisabled()
+    public void CoordinatorFiresInProgress_ButtonDisabled()
     {
-        var tcs = new TaskCompletionSource<bool?>();
-        var (cut, _, autoMock, dialogMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, _, _, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
-            dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
-                .Returns(tcs.Task);
-            autoMock.Setup(a => a.ChangeMatchAsync(It.IsAny<CancellationToken>()))
-                .Returns(Task.CompletedTask);
-
-            cut.Find(".change-match-button").Click();
+            coordinatorMock.Raise(c => c.OperationInProgressChanged += null, coordinatorMock.Object, true);
 
             cut.WaitForAssertion(() =>
                 cut.Find(".change-match-button").HasAttribute("disabled").Should().BeTrue());
@@ -254,7 +258,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void Dispose_UnsubscribesFromStateChanged()
     {
-        var (cut, _, autoMock, _, _, _, ctx) = Build(PcsProState.NotRunning);
+        var (cut, _, autoMock, _, _, _, _, ctx) = Build(PcsProState.NotRunning);
         using (ctx)
         {
             cut.Instance.Dispose();
@@ -265,12 +269,135 @@ public class ChangeMatchButtonTests
         }
     }
 
+    // ── TC-15: Dispose unsubscribes from coordinator ──────────────────────────
+
+    [TestMethod]
+    public void Dispose_UnsubscribesFromCoordinatorEvent()
+    {
+        var (cut, _, _, _, coordinatorMock, _, _, ctx) = Build(PcsProState.NotRunning);
+        using (ctx)
+        {
+            cut.Instance.Dispose();
+
+            coordinatorMock.VerifyRemove(
+                c => c.OperationInProgressChanged -= It.IsAny<EventHandler<bool>>(),
+                Times.Once);
+        }
+    }
+
+    // ── TC-16: Button re-enables when coordinator fires in-progress = false ────
+
+    [TestMethod]
+    public void CoordinatorFiresComplete_ButtonReenables()
+    {
+        var (cut, _, _, _, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded, operationInProgress: true);
+        using (ctx)
+        {
+            cut.Find(".change-match-button").HasAttribute("disabled").Should().BeTrue();
+
+            coordinatorMock.Raise(c => c.OperationInProgressChanged += null, coordinatorMock.Object, false);
+
+            cut.WaitForAssertion(() =>
+                cut.Find(".change-match-button").HasAttribute("disabled").Should().BeFalse());
+        }
+    }
+
+    // ── TC-17: Tooltip present when button disabled due to coordinator ─────────
+
+    [TestMethod]
+    public void OperationInProgress_TooltipAttributePresent()
+    {
+        var (cut, _, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, operationInProgress: true);
+        using (ctx)
+        {
+            cut.Find(".change-match-button").GetAttribute("title")
+                .Should().Be("Automation in progress\u2026");
+        }
+    }
+
+    // ── TC-18: Tooltip absent when button not disabled by coordinator ──────────
+
+    [TestMethod]
+    public void NoOperationInProgress_TooltipAttributeEmpty()
+    {
+        var (cut, _, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        using (ctx)
+        {
+            var title = cut.Find(".change-match-button").GetAttribute("title") ?? string.Empty;
+            title.Should().BeEmpty();
+        }
+    }
+
+    // ── TC-19: Button re-enables if automation throws (finally guarantees MarkComplete) ─
+
+    [TestMethod]
+    public void ChangeMatchAsyncThrows_MarkCompleteCalledInFinally()
+    {
+        var (cut, scoreMock, autoMock, dialogMock, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        using (ctx)
+        {
+            autoMock.Setup(a => a.ChangeMatchAsync(It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("boom"));
+            dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(true);
+            scoreMock.Setup(s => s.ClearCache());
+
+            cut.Find(".change-match-button").Click();
+
+            cut.WaitForAssertion(() =>
+                coordinatorMock.Verify(c => c.MarkComplete(), Times.Once));
+        }
+    }
+
+    // ── TC-20: Dialog cancelled → BeginOperation never called ─────────────────
+
+    [TestMethod]
+    public void DialogCancelled_BeginOperationNeverCalled()
+    {
+        var (cut, _, _, dialogMock, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        using (ctx)
+        {
+            dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(false);
+
+            cut.Find(".change-match-button").Click();
+
+            cut.WaitForAssertion(() =>
+                coordinatorMock.Verify(c => c.BeginOperation(), Times.Never));
+        }
+    }
+
+    // ── TC-21: BeginOperation returns false (lock lost to another browser) → automation not called, MarkComplete never called ─
+
+    [TestMethod]
+    public void BeginOperationReturnsFalse_AutomationNotCalled_MarkCompleteNeverCalled()
+    {
+        var (cut, _, autoMock, dialogMock, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        using (ctx)
+        {
+            // Simulate another browser winning the CAS: BeginOperation is a no-op (returns false)
+            coordinatorMock.Setup(c => c.BeginOperation()).Returns(false);
+            dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(true);
+
+            cut.Find(".change-match-button").Click();
+
+            cut.WaitForAssertion(() =>
+            {
+                autoMock.Verify(a => a.ChangeMatchAsync(It.IsAny<CancellationToken>()), Times.Never,
+                    "automation must not run when this browser did not acquire the coordinator lock");
+                coordinatorMock.Verify(c => c.MarkComplete(), Times.Never,
+                    "MarkComplete must not be called when BeginOperation returned false");
+            });
+        }
+    }
+
     // ── TC-16 (S-003): Button disabled when manual mode is active ─────────────
 
     [TestMethod]
     public void ManualModeActive_ButtonDisabled()
     {
-        var (cut, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, manualModeActive: true);
+        var (cut, _, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, manualModeActive: true);
         using (ctx)
         {
             cut.Find(".change-match-button").HasAttribute("disabled").Should().BeTrue();
@@ -282,7 +409,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void ManualModeActive_Click_RejectedWithNotification()
     {
-        var (cut, _, autoMock, dialogMock, _, notifications, ctx) =
+        var (cut, _, autoMock, dialogMock, _, _, notifications, ctx) =
             Build(PcsProState.MatchLoaded, manualModeActive: true);
         using (ctx)
         {
@@ -312,11 +439,14 @@ public class ChangeMatchButtonTests
         var autoMock = new Mock<IPcsProAutomationService>();
         autoMock.Setup(a => a.CurrentState).Returns(PcsProState.MatchLoaded);
         var dialogMock = new Mock<IConfirmDialogService>();
+        var coordinatorMock = new Mock<IOperationCoordinatorService>();
+        coordinatorMock.Setup(c => c.IsOperationInProgress).Returns(false);
         var notificationSvc = new NotificationService();
         var ctx = new BunitContext();
         ctx.Services.AddSingleton(new Mock<IScoreboardService>().Object);
         ctx.Services.AddSingleton(autoMock.Object);
         ctx.Services.AddSingleton(manualModeMock.Object);
+        ctx.Services.AddSingleton(coordinatorMock.Object);
         ctx.Services.AddSingleton(dialogMock.Object);
         ctx.Services.AddSingleton(notificationSvc);
         ctx.Services.AddSingleton<ILogger<ChangeMatchButton>>(NullLogger<ChangeMatchButton>.Instance);
