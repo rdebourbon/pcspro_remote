@@ -26,6 +26,8 @@ public static class AutomationServiceCollectionExtensions
     {
         services.Configure<PcsProOptions>(configuration.GetSection("PcsPro"));
         services.Configure<ScoreboardOptions>(configuration.GetSection("Scoreboard"));
+        services.AddSingleton<IProcessManager, SystemProcessManager>();
+        services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IPcsProAutomationService, PcsProAutomationService>();
         return services;
     }

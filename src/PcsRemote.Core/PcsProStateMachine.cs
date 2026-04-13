@@ -20,6 +20,9 @@ public sealed class PcsProStateMachine
     /// <summary>Seconds to wait for a match to open from the ready state.</summary>
     public const int MatchSelectionReadyTimeoutSeconds = 15;
 
+    /// <summary>Seconds to wait for PCS Pro to close gracefully before escalating to force-kill.</summary>
+    public const int GracefulCloseTimeoutSeconds = 5;
+
     private readonly StateMachine<PcsProState, PcsProTrigger> _machine;
 
     /// <summary>Gets the current state of the PCS Pro application lifecycle.</summary>
