@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | **Document** | HLPS-007-Deployment.md |
-| **Status** | IN REVIEW |
-| **Version** | 0.4 |
+| **Status** | APPROVED |
+| **Version** | 0.5 |
 | **Date** | 2026-04-14 |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.1 |
 | **Dependencies** | HLPS-003 (control panel), HLPS-004 (scoreboard), HLPS-005 (system tray integrated), HLPS-006 (real automation working) |
@@ -39,12 +39,13 @@ This HLPS delivers production-ready deployment: a self-contained publish, Task S
   - `PcsPro:AutoLaunch` — whether PCS Pro is launched automatically on service start
   - `PcsPro:ExecutablePath` and `PcsPro:WorkingDirectory` — path to cricket.exe installation (required for real mode)
   - `PcsPro:Password` — how to set via the System-scoped environment variable `PcsPro__Password` (double-underscore hierarchy separator — no application prefix); User Secrets is a development-only mechanism and must not be used in production
-  - `PcsPro:UseMock` — how to switch between mock and real mode
+  - `PcsPro:UseMock` — top-level boolean to switch between mock and real mode (note: distinct from the `PcsPro:Mock` subsection below — `PcsPro:UseMock` is a production-relevant setting; `PcsPro:Mock` contains dev/test-only parameters)
   - `Kestrel:Endpoints:Http:Url` — network port and bind address (default `http://0.0.0.0:5000`)
   - `Scoreboard:JpegQuality` — image compression setting
   - Log file location (`logs/` subdirectory of deployment directory), log level, and 7-day retention policy
   - `AllowedHosts` — host filtering (default `"*"` is appropriate for LAN deployment; note if restricting to specific hostnames)
-  - Note on `PcsPro:Mock` section — development/test settings; not relevant for production deployment
+  - Note on `PcsPro:Mock` subsection — development/test parameters (delay timings, probability settings); not relevant for production deployment
+  - Note on `appsettings.Development.json` — this file is included in the publish output but is not loaded unless `DOTNET_ENVIRONMENT=Development` is set; do not set that variable on the garage PC
 - **Operational guide**: Step-by-step document for club volunteers covering:
   - How to access the control panel from a browser (including the application's IP address or hostname)
   - What each status indicator means
@@ -53,8 +54,9 @@ This HLPS delivers production-ready deployment: a self-contained publish, Task S
   - How to check log files for troubleshooting
   - How to restart the application if needed
   - What to expect after a reboot (auto-logon or manual login requirement — resolution depends on D-U-5)
+  - How to update the PCS Pro executable path in `appsettings.json` if PCS Pro is reinstalled or upgraded to a different directory
   - What to do if a Windows SmartScreen prompt appears on first run
-- **Deployment script**: PowerShell script (required, not optional) automating: copy publish artefacts to deployment directory, create/update Task Scheduler task, create or replace Windows Firewall rule, set System-scoped environment variables (at minimum: `PcsPro__Password` for PCS Pro credentials — see configuration documentation)
+- **Deployment script**: PowerShell script (required, not optional) that **must be run with Administrator elevation** (Run as Administrator — required for System-scoped environment variables and Windows Firewall rule creation). Automates: copy publish artefacts to deployment directory, create/update Task Scheduler task, create or replace Windows Firewall rule, set System-scoped environment variables (at minimum: `PcsPro__Password` for PCS Pro credentials — password must be entered interactively at script runtime via `Read-Host -AsSecureString` and must never be hardcoded in the script file itself)
 - **Smoke test checklist**: Manual verification steps to run after deployment covering: application starts at logon, control panel reachable from a separate LAN device, PCS Pro launches in real mode, match selection works, scoreboard visible, manual mode toggle works, crash recovery restarts the process
 
 ### Out of Scope
@@ -73,7 +75,7 @@ This HLPS delivers production-ready deployment: a self-contained publish, Task S
 |---|---|---|
 | D-SC-1 | Application publishes as a self-contained, portable artefact set for `win-x64` | `dotnet publish src/PcsRemote.TrayHost/PcsRemote.TrayHost.csproj -c Release -r win-x64 --self-contained` succeeds; copy output to a clean directory on a machine without .NET installed; application starts correctly |
 | D-SC-2 | Task Scheduler starts application at logon of the designated user in the interactive session | Logoff/logon cycle on garage PC; application appears in system tray without manual intervention |
-| D-SC-3 | Application restarts automatically after crash within 60 seconds; recovery continues after multiple sequential crashes | Kill process; verify restart within ≤ 60 seconds; kill three times in succession; verify it continues to restart |
+| D-SC-3 | Application restarts automatically after crash within 60 seconds; recovery continues after multiple sequential crashes | Kill process; verify restart within ≤ 60 seconds (Task Scheduler restart delay ≤ 30 s per §2 + application startup time); kill three times in succession; verify it continues to restart |
 | D-SC-4 | Configuration guide is complete and accurate | A person who has not previously configured the system can complete a fresh configuration from scratch using only the guide, without agent assistance, within 30 minutes |
 | D-SC-5 | Operational guide is understandable by a club volunteer | A person unfamiliar with the system can: access the control panel, identify system status, enable manual mode, and locate today's log file — using only the guide, without agent assistance |
 | D-SC-6 | PCS Pro password can be changed without code or rebuild | Follow config guide to update the environment variable; restart application; verify successful login to PCS Pro |
@@ -105,6 +107,8 @@ This HLPS delivers production-ready deployment: a self-contained publish, Task S
 | R1 fixes | 2026-04-14 | Orchestrator | All 15 findings triaged and applied — see triage table below |
 | R2 | 2026-04-14 | Claude Opus 4.6, Claude Sonnet 4.6 | NEEDS REVISION — 2 HIGH, 6 MEDIUM, 3 LOW; all R1 findings RESOLVED |
 | R2 fixes | 2026-04-14 | Orchestrator | All 11 findings triaged and applied — see triage table below |
+| R3 | 2026-04-14 | Claude Opus 4.6, Claude Sonnet 4.6 | Opus: APPROVED (2 LOW); Sonnet: NEEDS REVISION (2 MEDIUM, 2 LOW); all R2 findings RESOLVED |
+| R3 fixes | 2026-04-14 | Orchestrator | All 6 findings triaged and applied — see triage table below |
 
 ### R1 Triage Summary
 
@@ -139,4 +143,15 @@ This HLPS delivers production-ready deployment: a self-contained publish, Task S
 | Garage PC IP discoverability unregistered (Sonnet MEDIUM) | Accepted — D-U-7 added; operational guide scope to include IP discovery step |
 | PCS Pro installation path unregistered (Sonnet MEDIUM) | Accepted — D-U-8 added; marked Blocking: Yes for real-mode smoke test |
 | "Start in" rationale too narrow (Sonnet LOW) | Accepted — broadened to "all relative paths (log files, configuration, static content)" |
+
+### R3 Triage Summary
+
+| Finding | Decision |
+|---|---|
+| Password secure handling not specified in deployment script scope (Sonnet MEDIUM) | Accepted — `Read-Host -AsSecureString` requirement and no-plaintext-in-script rule added to deployment script scope |
+| `PcsPro:UseMock` vs `PcsPro:Mock` ambiguity (Sonnet MEDIUM; confirmed real against codebase) | Accepted — clarifying parenthetical added: "top-level boolean, distinct from the `PcsPro:Mock` subsection" |
+| Deployment script requires elevation — not stated (Opus LOW) | Accepted — "must be run with Administrator elevation" added to deployment script scope; rationale given |
+| `appsettings.Development.json` in publish output unmentioned (Opus LOW) | Accepted — note added to config documentation scope; warns against setting `DOTNET_ENVIRONMENT=Development` |
+| D-SC-3 60s / §2 30s relationship implicit (Sonnet LOW) | Accepted — D-SC-3 verification now cross-references "restart delay ≤ 30 s per §2 + application startup" |
+| Operational guide missing PCS Pro reinstall path scenario (Sonnet LOW) | Accepted — bullet added: "How to update PCS Pro executable path if PCS Pro is reinstalled or upgraded" |
 
