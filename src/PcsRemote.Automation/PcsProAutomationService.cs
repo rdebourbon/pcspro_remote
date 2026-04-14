@@ -21,6 +21,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     private readonly IProcessManager _processManager;
     private readonly TimeProvider _timeProvider;
     private readonly ILoginAutomation _loginAutomation;
+    private readonly IMatchSelectionAutomation _matchSelectionAutomation;
     private readonly PcsProStateMachine _stateMachine;
 
     /// <summary>
@@ -44,13 +45,22 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     private Task? _crashWatcherTask;
     private string? _lastErrorReason;
 
+    /// <summary>
+    /// 0 = idle, 1 = a match-selection lifecycle operation is in progress.
+    /// Used by GetTodaysMatchesAsync and LoadMatchAsync to prevent concurrent calls.
+    /// Interlocked because these methods release <see cref="_operationLock"/> between
+    /// poll iterations and a lock-held check alone cannot cover the full operation window.
+    /// </summary>
+    private int _isMatchSelectionOperationInProgress;
+
     public PcsProAutomationService(
         IOptions<PcsProOptions> options,
         IOptions<ScoreboardOptions> scoreboardOptions,
         ILogger<PcsProAutomationService> logger,
         IProcessManager processManager,
         TimeProvider timeProvider,
-        ILoginAutomation loginAutomation)
+        ILoginAutomation loginAutomation,
+        IMatchSelectionAutomation matchSelectionAutomation)
     {
         _options = options.Value;
         _scoreboardOptions = scoreboardOptions.Value;
@@ -58,6 +68,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         _processManager = processManager;
         _timeProvider = timeProvider;
         _loginAutomation = loginAutomation;
+        _matchSelectionAutomation = matchSelectionAutomation;
 
         _stateMachine = new PcsProStateMachine();
         _stateMachine.OnTransitioned(newState =>
@@ -603,15 +614,263 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
     }
 
-    // ---- S-004 through S-007 (not yet implemented) -----------------------
+    // ---- S-004: Match selection automation ----------------------------------
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default) =>
-        throw new NotImplementedException($"{nameof(GetTodaysMatchesAsync)} is not yet implemented.");
+    public async Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("GetTodaysMatchesAsync starting; current state {State}", CurrentState);
+
+        if (Interlocked.CompareExchange(ref _isMatchSelectionOperationInProgress, 1, 0) != 0)
+            throw new InvalidOperationException("A lifecycle operation is already in progress.");
+
+        try
+        {
+            return await GetTodaysMatchesCoreAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isMatchSelectionOperationInProgress, 0);
+        }
+    }
+
+    private async Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesCoreAsync(CancellationToken ct)
+    {
+        var startTimestamp = _timeProvider.GetTimestamp();
+
+        try
+        {
+            _matchSelectionAutomation.OpenMatchDialogAndSearch();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GetTodaysMatchesAsync: interaction error opening match dialog");
+            await FireErrorUnderLockAsync(
+                PcsProTrigger.Timeout,
+                "Match selection interaction failed").ConfigureAwait(false);
+            return [];
+        }
+
+        // SearchTriggered: MatchSelection → MatchSelectionSearching
+        // guardTerminal: crash watcher may have fired between OpenMatchDialogAndSearch and here.
+        await FireUnderLockAsync(PcsProTrigger.SearchTriggered, guardTerminal: true).ConfigureAwait(false);
+        if (_stateMachine.CurrentState is PcsProState.Error or PcsProState.NotRunning)
+            return [];
+
+        // 200ms guard: PCS Pro may not have started the spinner immediately.
+        try
+        {
+            await Task.Delay(200, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            await FireErrorUnderLockAsync(
+                PcsProTrigger.Timeout,
+                "Match search cancelled by caller").ConfigureAwait(false);
+            throw;
+        }
+
+        // Poll until spinner clears, timeout, cancellation, or terminal state.
+        return await PollForSpinnerAndParseAsync(startTimestamp, ct).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<MatchInfo>> PollForSpinnerAndParseAsync(
+        long startTimestamp,
+        CancellationToken ct)
+    {
+        const int PollIntervalMs = 200;
+
+        while (true)
+        {
+            if (_stateMachine.CurrentState is PcsProState.Error or PcsProState.NotRunning)
+                return [];
+
+            if (_matchSelectionAutomation.IsUnexpectedDialogPresent())
+            {
+                _logger.LogWarning("GetTodaysMatchesAsync: unexpected dialog during spinner wait");
+                _matchSelectionAutomation.TryCloseUnexpectedDialog();
+                await FireErrorUnderLockAsync(
+                    PcsProTrigger.UnexpectedDialog,
+                    "An unexpected dialog appeared during match search").ConfigureAwait(false);
+                return [];
+            }
+
+            if (!_matchSelectionAutomation.IsSpinnerVisible())
+            {
+                _logger.LogDebug("GetTodaysMatchesAsync: spinner cleared — reading DataGrid");
+                return await ParseAndFilterMatchesAsync(startTimestamp, ct).ConfigureAwait(false);
+            }
+
+            if (_timeProvider.GetElapsedTime(startTimestamp).TotalSeconds
+                >= PcsProStateMachine.MatchSelectionSearchingTimeoutSeconds)
+            {
+                var reason =
+                    $"Match search did not complete within " +
+                    $"{PcsProStateMachine.MatchSelectionSearchingTimeoutSeconds} seconds";
+                _logger.LogWarning("GetTodaysMatchesAsync: timeout — {Reason}", reason);
+                await FireErrorUnderLockAsync(PcsProTrigger.Timeout, reason).ConfigureAwait(false);
+                return [];
+            }
+
+            try
+            {
+                await Task.Delay(PollIntervalMs, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                await FireErrorUnderLockAsync(
+                    PcsProTrigger.Timeout,
+                    "Match search cancelled by caller").ConfigureAwait(false);
+                throw;
+            }
+        }
+    }
+
+    private async Task<IReadOnlyList<MatchInfo>> ParseAndFilterMatchesAsync(
+        long startTimestamp,
+        CancellationToken ct)
+    {
+        // SpinnerGone: MatchSelectionSearching → MatchSelectionReady
+        // guardTerminal: crash watcher may have fired while spinner was polling.
+        await FireUnderLockAsync(PcsProTrigger.SpinnerGone, guardTerminal: true).ConfigureAwait(false);
+        if (_stateMachine.CurrentState is PcsProState.Error or PcsProState.NotRunning)
+            return [];
+
+        IReadOnlyList<string> rowTexts;
+        try
+        {
+            rowTexts = _matchSelectionAutomation.ReadDataGridRowTexts();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GetTodaysMatchesAsync: interaction error reading DataGrid");
+            await FireErrorUnderLockAsync(
+                PcsProTrigger.Timeout,
+                "Match selection interaction failed").ConfigureAwait(false);
+            return [];
+        }
+
+        var parsed = new List<MatchInfo>();
+        foreach (var rowText in rowTexts)
+        {
+            if (MatchRowParser.TryParse(rowText, out var match))
+                parsed.Add(match! /* non-null when TryParse returns true — out parameter contract */);
+            else
+                _logger.LogWarning("GetTodaysMatchesAsync: could not parse row text {RowText}", rowText);
+        }
+
+        var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().DateTime);
+        var filtered = MatchRowParser.FilterToday(parsed, today);
+
+        if (filtered.Count == 0)
+        {
+            const string NoMatchesReason = "No matches found for today";
+            _logger.LogWarning("GetTodaysMatchesAsync: {Reason}", NoMatchesReason);
+            await FireErrorUnderLockAsync(PcsProTrigger.Timeout, NoMatchesReason).ConfigureAwait(false);
+            return [];
+        }
+
+        _logger.LogInformation(
+            "GetTodaysMatchesAsync complete — {MatchCount} match(es) found", filtered.Count);
+        return filtered;
+    }
 
     /// <inheritdoc/>
-    public Task LoadMatchAsync(MatchInfo match, CancellationToken ct = default) =>
-        throw new NotImplementedException($"{nameof(LoadMatchAsync)} is not yet implemented.");
+    public async Task LoadMatchAsync(MatchInfo match, CancellationToken ct = default)
+    {
+        _logger.LogInformation(
+            "LoadMatchAsync starting; MatchId={MatchId}, current state {State}",
+            match.MatchId, CurrentState);
+
+        if (Interlocked.CompareExchange(ref _isMatchSelectionOperationInProgress, 1, 0) != 0)
+            throw new InvalidOperationException("A lifecycle operation is already in progress.");
+
+        try
+        {
+            await LoadMatchCoreAsync(match, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isMatchSelectionOperationInProgress, 0);
+        }
+    }
+
+    private async Task LoadMatchCoreAsync(MatchInfo match, CancellationToken ct)
+    {
+        var startTimestamp = _timeProvider.GetTimestamp();
+
+        try
+        {
+            _matchSelectionAutomation.SelectAndOpenMatch(match);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LoadMatchAsync: interaction error selecting match");
+            await FireErrorUnderLockAsync(
+                PcsProTrigger.Timeout,
+                "Match selection interaction failed").ConfigureAwait(false);
+            return;
+        }
+
+        await PollForMatchLoadedAsync(startTimestamp, ct).ConfigureAwait(false);
+    }
+
+    private async Task PollForMatchLoadedAsync(long startTimestamp, CancellationToken ct)
+    {
+        const int PollIntervalMs = 200;
+
+        while (true)
+        {
+            if (_stateMachine.CurrentState is PcsProState.Error or PcsProState.NotRunning)
+                return;
+
+            if (_matchSelectionAutomation.IsUnexpectedDialogPresent())
+            {
+                _logger.LogWarning("LoadMatchAsync: unexpected dialog during open wait");
+                _matchSelectionAutomation.TryCloseUnexpectedDialog();
+                await FireErrorUnderLockAsync(
+                    PcsProTrigger.UnexpectedDialog,
+                    "An unexpected dialog appeared while opening match").ConfigureAwait(false);
+                return;
+            }
+
+            if (_matchSelectionAutomation.IsMatchLoaded())
+            {
+                _logger.LogDebug("LoadMatchAsync: match loaded");
+
+                // MatchOpened: MatchSelectionReady → MatchLoaded
+                // guardTerminal: crash watcher may have fired between load detection and here.
+                await FireUnderLockAsync(PcsProTrigger.MatchOpened, guardTerminal: true)
+                    .ConfigureAwait(false);
+
+                _logger.LogInformation("LoadMatchAsync complete — service in {State}", CurrentState);
+                return;
+            }
+
+            if (_timeProvider.GetElapsedTime(startTimestamp).TotalSeconds
+                >= PcsProStateMachine.MatchSelectionReadyTimeoutSeconds)
+            {
+                var reason =
+                    $"Match did not open within " +
+                    $"{PcsProStateMachine.MatchSelectionReadyTimeoutSeconds} seconds";
+                _logger.LogWarning("LoadMatchAsync: timeout — {Reason}", reason);
+                await FireErrorUnderLockAsync(PcsProTrigger.Timeout, reason).ConfigureAwait(false);
+                return;
+            }
+
+            try
+            {
+                await Task.Delay(PollIntervalMs, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                await FireErrorUnderLockAsync(
+                    PcsProTrigger.Timeout,
+                    "Match open cancelled by caller").ConfigureAwait(false);
+                throw;
+            }
+        }
+    }
 
     /// <inheritdoc/>
     public Task<MatchTeams> GetTeamNamesAsync(CancellationToken ct = default) =>

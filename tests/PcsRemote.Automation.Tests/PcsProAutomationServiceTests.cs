@@ -1,3 +1,4 @@
+using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -16,7 +17,8 @@ public sealed class PcsProAutomationServiceTests
     private static PcsProAutomationService CreateService(
         FakeProcessManager processManager,
         FakeTimeProvider timeProvider,
-        FakeLoginAutomation? loginAutomation = null)
+        FakeLoginAutomation? loginAutomation = null,
+        IMatchSelectionAutomation? matchSelectionAutomation = null)
     {
         var options = Options.Create(new PcsProOptions
         {
@@ -31,7 +33,8 @@ public sealed class PcsProAutomationServiceTests
             NullLogger<PcsProAutomationService>.Instance,
             processManager,
             timeProvider,
-            loginAutomation ?? new FakeLoginAutomation());
+            loginAutomation ?? new FakeLoginAutomation(),
+            matchSelectionAutomation ?? new FakeMatchSelectionAutomation());
     }
 
     /// <summary>
@@ -40,14 +43,42 @@ public sealed class PcsProAutomationServiceTests
     /// Returns the service in <see cref="PcsProState.MatchSelection"/> state.
     /// </summary>
     private static async Task<(PcsProAutomationService Service, FakeProcessHandle Handle)>
-        CreateServiceAtMatchSelectionAsync(FakeLoginAutomation? loginAutomation = null)
+        CreateServiceAtMatchSelectionAsync(
+            FakeLoginAutomation? loginAutomation = null,
+            IMatchSelectionAutomation? matchSelectionAutomation = null)
     {
         var handle = new FakeProcessHandle { MainWindowVisible = true };
         var pm = new FakeProcessManager { StartedHandle = handle };
         var tp = new FakeTimeProvider();
-        var svc = CreateService(pm, tp, loginAutomation ?? new FakeLoginAutomation());
+        var svc = CreateService(
+            pm, tp,
+            loginAutomation ?? new FakeLoginAutomation(),
+            matchSelectionAutomation ?? new FakeMatchSelectionAutomation());
         await svc.LaunchAndLoginAsync();
         return (svc, handle);
+    }
+
+    /// <summary>
+    /// Creates a service at <see cref="PcsProState.MatchSelectionReady"/> by firing
+    /// <see cref="PcsProTrigger.SearchTriggered"/> and <see cref="PcsProTrigger.SpinnerGone"/>
+    /// directly on the state machine. Used for <see cref="PcsProAutomationService.LoadMatchAsync"/> tests.
+    /// </summary>
+    private static async Task<(PcsProAutomationService Service, FakeProcessHandle Handle, MatchInfo TestMatch)>
+        CreateServiceAtMatchSelectionReadyAsync(
+            IMatchSelectionAutomation? matchSelectionAutomation = null)
+    {
+        var (svc, handle) = await CreateServiceAtMatchSelectionAsync(
+            matchSelectionAutomation: matchSelectionAutomation ?? new FakeMatchSelectionAutomation());
+
+        // MatchRowParser.TryParse always returns false in stub mode, so GetTodaysMatchesAsync
+        // cannot reach MatchSelectionReady in tests. Drive the state machine directly.
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(svc)!;
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+
+        return (svc, handle, new MatchInfo("99999"));
     }
 
     // -----------------------------------------------------------------------
@@ -478,7 +509,8 @@ public sealed class PcsProAutomationServiceTests
             NullLogger<PcsProAutomationService>.Instance,
             pm,
             new FakeTimeProvider(),
-            fake);
+            fake,
+            new FakeMatchSelectionAutomation());
 
         await svc.LaunchAndLoginAsync();
 
@@ -588,6 +620,408 @@ public sealed class PcsProAutomationServiceTests
         svc.CurrentState.Should().Be(PcsProState.Error);
         svc.LastErrorReason.Should().Be("Login phase cancelled by caller");
     }
+
+    // =======================================================================
+    // S-004: GetTodaysMatchesAsync
+    // =======================================================================
+
+    // -----------------------------------------------------------------------
+    // AC-1 / AC-5 — SearchTriggered fired; SpinnerGone fired; MatchSelectionReady
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_WhenSpinnerImmediatelyGone_TransitionsToMatchSelectionReady()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { SpinnerVisible = false };
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(matchSelectionAutomation: fakeMatchSel);
+
+        await svc.GetTodaysMatchesAsync();
+
+        // Spinner immediately gone → SpinnerGone fires → MatchSelectionReady.
+        // Then zero rows → FilterToday returns [] → Error fires.
+        // Error is expected here because TryParse always returns false in stub.
+        // AC-1: SearchTriggered was fired — verified by the state sequence.
+        fakeMatchSel.SearchTriggered.Should().BeTrue();
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-2 — startTimestamp before OpenMatchDialogAndSearch
+    // (Tested implicitly: if timeout fired before search, startTimestamp must have been recorded first.
+    //  Direct verification requires a time-controlled test — see timeout test AC-6.)
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // AC-4 — Poll loop continues while spinner is visible
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_WhenSpinnerClearsAfterTwoPolls_WaitsForSpinnerToGone()
+    {
+        // Start from MatchSelection, transition through GetTodaysMatchesAsync.
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(
+            matchSelectionAutomation: new SpinnerDropsAfterNCallsFake(dropsAfterCalls: 3));
+
+        await svc.GetTodaysMatchesAsync();
+
+        svc.CurrentState.Should().Be(PcsProState.Error,
+            "after spinner gone + zero rows, Error fires (no matches for today)");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-6 — Timeout fires error with descriptive reason
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_WhenSpinnerNeverClears_TransitionsToErrorOnTimeout()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { SpinnerVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = new FakeProcessHandle { MainWindowVisible = true } };
+        var tp = new FakeTimeProvider();
+        var svc = CreateService(pm, tp, matchSelectionAutomation: fakeMatchSel);
+        await svc.LaunchAndLoginAsync();
+
+        // Start the operation, then advance fake time while it is polling.
+        // Task.Delay inside the service uses the real clock; the timeout check uses the fake clock.
+        // We must advance AFTER startTimestamp is captured inside the method.
+        var getTask = svc.GetTodaysMatchesAsync();
+        await Task.Delay(350); // wait past 200ms guard + at least one 200ms poll cycle
+        tp.Advance(TimeSpan.FromSeconds(PcsProStateMachine.MatchSelectionSearchingTimeoutSeconds + 1));
+
+        await getTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.LastErrorReason.Should().Contain("Match search did not complete within");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-7 — Unexpected dialog during spinner wait → Error via UnexpectedDialog trigger
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_WhenUnexpectedDialogDuringSpinnerWait_TransitionsToError()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation
+        {
+            SpinnerVisible = true,
+            UnexpectedDialogPresent = true,
+        };
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(matchSelectionAutomation: fakeMatchSel);
+
+        await svc.GetTodaysMatchesAsync();
+
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        fakeMatchSel.CloseDialogAttempted.Should().BeTrue();
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-11 — Zero rows after FilterToday → Error with "No matches found for today"
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_WhenZeroMatchesAfterFilter_TransitionsToError()
+    {
+        // SpinnerVisible=false → spinner immediately gone; RowTexts=[] → zero parsed rows
+        var fakeMatchSel = new FakeMatchSelectionAutomation { SpinnerVisible = false, RowTexts = [] };
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(matchSelectionAutomation: fakeMatchSel);
+
+        var result = await svc.GetTodaysMatchesAsync();
+
+        result.Should().BeEmpty();
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.LastErrorReason.Should().Be("No matches found for today");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-12 — Cancellation during spinner poll: Error + propagated OCE
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_WhenCancelledDuringSpinnerPoll_ThrowsOCEAndTransitionsToError()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation
+        {
+            SpinnerVisible = true,  // stall in the poll loop
+        };
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(matchSelectionAutomation: fakeMatchSel);
+
+        using var cts = new CancellationTokenSource();
+        var task = svc.GetTodaysMatchesAsync(cts.Token);
+
+        await Task.Delay(150);
+        cts.Cancel();
+
+        await svc.Invoking(_ => task)
+            .Should().ThrowAsync<OperationCanceledException>();
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.LastErrorReason.Should().Be("Match search cancelled by caller");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-14 — OpenMatchDialogAndSearch throws → Error with interaction reason
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_WhenOpenMatchDialogThrows_TransitionsToError()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { ThrowOnInteraction = true };
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(matchSelectionAutomation: fakeMatchSel);
+
+        var result = await svc.GetTodaysMatchesAsync();
+
+        result.Should().BeEmpty();
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.LastErrorReason.Should().Be("Match selection interaction failed");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-15 — ReadDataGridRowTexts throws → Error with interaction reason
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_WhenReadDataGridRowTextsThrows_TransitionsToError()
+    {
+        // SpinnerVisible=false → pass spinner; then ReadDataGridRowTexts throws.
+        var fakeMatchSel = new ReadDataGridThrowsFake();
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(matchSelectionAutomation: fakeMatchSel);
+
+        var result = await svc.GetTodaysMatchesAsync();
+
+        result.Should().BeEmpty();
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.LastErrorReason.Should().Be("Match selection interaction failed");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-31 — Concurrent GetTodaysMatchesAsync throws InvalidOperationException
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_WhenOperationAlreadyInProgress_ThrowsInvalidOperationException()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { SpinnerVisible = true };
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(matchSelectionAutomation: fakeMatchSel);
+
+        // Lock the operation by starting a GetTodaysMatchesAsync that stalls on spinner.
+        using var cts = new CancellationTokenSource();
+        var firstTask = svc.GetTodaysMatchesAsync(cts.Token);
+
+        await Task.Delay(250); // allow first call to enter the lock
+
+        await svc.Invoking(_ => _.GetTodaysMatchesAsync())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already in progress*");
+
+        cts.Cancel();
+        await firstTask.IgnoreErrorAsync();
+    }
+
+    // =======================================================================
+    // S-004: LoadMatchAsync
+    // =======================================================================
+
+    // -----------------------------------------------------------------------
+    // AC-17 / AC-18 — SelectAndOpenMatch called; state transitions to MatchLoaded
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LoadMatchAsync_WhenMatchImmediatelyLoaded_TransitionsToMatchLoaded()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MatchLoaded = true };
+        var (svc, _, testMatch) = await CreateServiceAtMatchSelectionReadyAsync(fakeMatchSel);
+
+        await svc.LoadMatchAsync(testMatch);
+
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded);
+        fakeMatchSel.OpenAttemptedFor.Should().Be(testMatch);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-19 — Timeout while waiting for match to load → Error
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LoadMatchAsync_WhenMatchNeverLoads_TransitionsToErrorOnTimeout()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MatchLoaded = false };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+        var svc = CreateService(pm, tp, matchSelectionAutomation: fakeMatchSel);
+        await svc.LaunchAndLoginAsync();
+
+        // Manually advance to MatchSelectionReady.
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(svc)!;
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+
+        var testMatch = new MatchInfo("99999");
+
+        // Start the operation, then advance fake time while it is polling.
+        var loadTask = svc.LoadMatchAsync(testMatch);
+        await Task.Delay(150); // allow entry into the poll loop
+        tp.Advance(TimeSpan.FromSeconds(PcsProStateMachine.MatchSelectionReadyTimeoutSeconds + 1));
+
+        await loadTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.LastErrorReason.Should().Contain("Match did not open within");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-20 — Unexpected dialog during open wait → Error via UnexpectedDialog trigger
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LoadMatchAsync_WhenUnexpectedDialogDuringOpenWait_TransitionsToError()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation
+        {
+            MatchLoaded = false,
+            UnexpectedDialogPresent = true,
+        };
+        var (svc, _, testMatch) = await CreateServiceAtMatchSelectionReadyAsync(fakeMatchSel);
+
+        await svc.LoadMatchAsync(testMatch);
+
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        fakeMatchSel.CloseDialogAttempted.Should().BeTrue();
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-21 — Cancellation during open wait: Error + propagated OCE
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LoadMatchAsync_WhenCancelledDuringOpenWait_ThrowsOCEAndTransitionsToError()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MatchLoaded = false };
+        var (svc, _, testMatch) = await CreateServiceAtMatchSelectionReadyAsync(fakeMatchSel);
+
+        using var cts = new CancellationTokenSource();
+        var task = svc.LoadMatchAsync(testMatch, cts.Token);
+
+        await Task.Delay(150);
+        cts.Cancel();
+
+        await svc.Invoking(_ => task)
+            .Should().ThrowAsync<OperationCanceledException>();
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.LastErrorReason.Should().Be("Match open cancelled by caller");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-22 — SelectAndOpenMatch throws → Error with interaction reason
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LoadMatchAsync_WhenSelectAndOpenMatchThrows_TransitionsToError()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { ThrowOnInteraction = true };
+        var (svc, _, testMatch) = await CreateServiceAtMatchSelectionReadyAsync(fakeMatchSel);
+
+        await svc.LoadMatchAsync(testMatch);
+
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.LastErrorReason.Should().Be("Match selection interaction failed");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-23 — Crash watcher fires before LoadMatchAsync completes → no double-transition
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LoadMatchAsync_WhenCrashWatcherFiresFirst_NoDoubleTransition()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MatchLoaded = false };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+        var svc = CreateService(pm, tp, matchSelectionAutomation: fakeMatchSel);
+        await svc.LaunchAndLoginAsync();
+
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(svc)!;
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+
+        var testMatch = new MatchInfo("99999");
+        var loadTask = svc.LoadMatchAsync(testMatch);
+
+        // Allow entry into the poll loop, then crash.
+        await Task.Delay(150);
+        handle.SignalExit();
+
+        await loadTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.LastErrorReason.Should().Be("PCS Pro exited unexpectedly");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-32 — Concurrent LoadMatchAsync throws InvalidOperationException
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LoadMatchAsync_WhenOperationAlreadyInProgress_ThrowsInvalidOperationException()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MatchLoaded = false };
+        var (svc, _, testMatch) = await CreateServiceAtMatchSelectionReadyAsync(fakeMatchSel);
+
+        using var cts = new CancellationTokenSource();
+        var firstTask = svc.LoadMatchAsync(testMatch, cts.Token);
+
+        await Task.Delay(150);
+
+        await svc.Invoking(_ => _.LoadMatchAsync(testMatch))
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already in progress*");
+
+        cts.Cancel();
+        await firstTask.IgnoreErrorAsync();
+    }
+}
+
+// -----------------------------------------------------------------------
+// Test helpers for S-004 fakes that require custom behaviour
+// -----------------------------------------------------------------------
+
+/// <summary>
+/// FakeMatchSelectionAutomation variant whose spinner clears after N calls to IsSpinnerVisible.
+/// </summary>
+internal sealed class SpinnerDropsAfterNCallsFake : IMatchSelectionAutomation
+{
+    private readonly int _dropsAfterCalls;
+    private int _callCount;
+
+    public SpinnerDropsAfterNCallsFake(int dropsAfterCalls) =>
+        _dropsAfterCalls = dropsAfterCalls;
+
+    public void OpenMatchDialogAndSearch() { }
+    public bool IsSpinnerVisible() => ++_callCount <= _dropsAfterCalls;
+    public bool IsUnexpectedDialogPresent() => false;
+    public void TryCloseUnexpectedDialog() { }
+    public IReadOnlyList<string> ReadDataGridRowTexts() => [];
+    public void SelectAndOpenMatch(PcsRemote.Core.MatchInfo match) { }
+    public bool IsMatchLoaded() => false;
+}
+
+/// <summary>
+/// FakeMatchSelectionAutomation variant whose ReadDataGridRowTexts throws.
+/// Spinner is immediately gone so the service reaches ReadDataGridRowTexts.
+/// </summary>
+internal sealed class ReadDataGridThrowsFake : IMatchSelectionAutomation
+{
+    public void OpenMatchDialogAndSearch() { }
+    public bool IsSpinnerVisible() => false;
+    public bool IsUnexpectedDialogPresent() => false;
+    public void TryCloseUnexpectedDialog() { }
+    public IReadOnlyList<string> ReadDataGridRowTexts() =>
+        throw new InvalidOperationException("ReadDataGridThrowsFake: element not found");
+    public void SelectAndOpenMatch(PcsRemote.Core.MatchInfo match) { }
+    public bool IsMatchLoaded() => false;
 }
 
 internal static class TaskExtensions

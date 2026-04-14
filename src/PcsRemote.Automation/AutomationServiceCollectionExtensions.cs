@@ -29,6 +29,7 @@ public static class AutomationServiceCollectionExtensions
         services.AddSingleton<IProcessManager, SystemProcessManager>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ILoginAutomation, FlaUiLoginAutomation>();
+        services.AddSingleton<IMatchSelectionAutomation, FlaUiMatchSelectionAutomation>();
         services.AddSingleton<IPcsProAutomationService, PcsProAutomationService>();
         return services;
     }
