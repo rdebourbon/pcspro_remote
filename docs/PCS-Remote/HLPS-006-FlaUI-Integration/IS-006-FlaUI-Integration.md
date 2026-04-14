@@ -52,6 +52,8 @@ Steps are identified with stable IDs S-001 through S-007. IDs are never renumber
 
 ### S-003 — Login automation and 20-second login timeout
 
+**Status: DELIVERED — `c12d322`**
+
 **What changes:** `LaunchAndLoginAsync` gains its login phase: detect the login dialog, locate the password field and submit button by their AutomationId values (discovered via Inspect.exe, I-U-1), enter the password from configuration, click submit, and wait for the match selection dialog to appear within the 20-second login timeout. If the timeout expires, fire `Error` with a descriptive reason. Any unexpected dialog encountered during this phase (or any subsequent interactive phase) is handled uniformly: close the dialog if possible, then fire `Error` with a reason describing the dialog. All new code includes inline Serilog logging: element lookups at `Debug`, state transitions at `Information`, timeout and unexpected dialog at `Error`.
 
 **Why:** Login is the first interactive FlaUI step. Isolating it makes the specific AutomationId unknowns (I-U-1) testable in one focused step. Addresses HLPS-006 §2 login automation; targets I-SC-1, I-SC-10.
