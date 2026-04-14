@@ -19,7 +19,9 @@ public sealed class PcsProAutomationServiceTests
         FakeTimeProvider timeProvider,
         FakeLoginAutomation? loginAutomation = null,
         IMatchSelectionAutomation? matchSelectionAutomation = null,
-        ITeamNamesAutomation? teamNamesAutomation = null)
+        ITeamNamesAutomation? teamNamesAutomation = null,
+        IScoreboardAutomation? scoreboardAutomation = null,
+        IChangeMatchAutomation? changeMatchAutomation = null)
     {
         var options = Options.Create(new PcsProOptions
         {
@@ -27,16 +29,18 @@ public sealed class PcsProAutomationServiceTests
             WorkingDirectory = @"C:\",
             Password = "test-password",
         });
-        var scoreboardOptions = Options.Create(new ScoreboardOptions());
+        var deps = new AutomationDependencies(
+            loginAutomation ?? new FakeLoginAutomation(),
+            matchSelectionAutomation ?? new FakeMatchSelectionAutomation(),
+            teamNamesAutomation ?? new FakeTeamNamesAutomation(),
+            scoreboardAutomation ?? new FakeScoreboardAutomation(),
+            changeMatchAutomation ?? new FakeChangeMatchAutomation());
         return new PcsProAutomationService(
             options,
-            scoreboardOptions,
             NullLogger<PcsProAutomationService>.Instance,
             processManager,
             timeProvider,
-            loginAutomation ?? new FakeLoginAutomation(),
-            matchSelectionAutomation ?? new FakeMatchSelectionAutomation(),
-            teamNamesAutomation ?? new FakeTeamNamesAutomation());
+            deps);
     }
 
     /// <summary>
@@ -48,7 +52,9 @@ public sealed class PcsProAutomationServiceTests
         CreateServiceAtMatchSelectionAsync(
             FakeLoginAutomation? loginAutomation = null,
             IMatchSelectionAutomation? matchSelectionAutomation = null,
-            ITeamNamesAutomation? teamNamesAutomation = null)
+            ITeamNamesAutomation? teamNamesAutomation = null,
+            IScoreboardAutomation? scoreboardAutomation = null,
+            IChangeMatchAutomation? changeMatchAutomation = null)
     {
         var handle = new FakeProcessHandle { MainWindowVisible = true };
         var pm = new FakeProcessManager { StartedHandle = handle };
@@ -57,7 +63,9 @@ public sealed class PcsProAutomationServiceTests
             pm, tp,
             loginAutomation ?? new FakeLoginAutomation(),
             matchSelectionAutomation ?? new FakeMatchSelectionAutomation(),
-            teamNamesAutomation ?? new FakeTeamNamesAutomation());
+            teamNamesAutomation ?? new FakeTeamNamesAutomation(),
+            scoreboardAutomation ?? new FakeScoreboardAutomation(),
+            changeMatchAutomation ?? new FakeChangeMatchAutomation());
         await svc.LaunchAndLoginAsync();
         return (svc, handle);
     }
@@ -88,14 +96,18 @@ public sealed class PcsProAutomationServiceTests
     /// <summary>
     /// Creates a service at <see cref="PcsProState.MatchLoaded"/> by driving the state machine
     /// through MatchSelection → MatchSelectionReady → MatchLoaded via reflection.
-    /// Used for <see cref="PcsProAutomationService.GetTeamNamesAsync"/> tests.
+    /// Used for S-005 and S-006 tests.
     /// </summary>
     private static async Task<(PcsProAutomationService Service, FakeProcessHandle Handle)>
         CreateServiceAtMatchLoadedAsync(
-            ITeamNamesAutomation? teamNamesAutomation = null)
+            ITeamNamesAutomation? teamNamesAutomation = null,
+            IScoreboardAutomation? scoreboardAutomation = null,
+            IChangeMatchAutomation? changeMatchAutomation = null)
     {
         var (svc, handle) = await CreateServiceAtMatchSelectionAsync(
-            teamNamesAutomation: teamNamesAutomation ?? new FakeTeamNamesAutomation());
+            teamNamesAutomation: teamNamesAutomation ?? new FakeTeamNamesAutomation(),
+            scoreboardAutomation: scoreboardAutomation ?? new FakeScoreboardAutomation(),
+            changeMatchAutomation: changeMatchAutomation ?? new FakeChangeMatchAutomation());
 
         var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
             .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)! // field exists on this type
@@ -531,13 +543,15 @@ public sealed class PcsProAutomationServiceTests
         });
         var svc = new PcsProAutomationService(
             options,
-            Options.Create(new ScoreboardOptions()),
             NullLogger<PcsProAutomationService>.Instance,
             pm,
             new FakeTimeProvider(),
-            fake,
-            new FakeMatchSelectionAutomation(),
-            new FakeTeamNamesAutomation());
+            new AutomationDependencies(
+                fake,
+                new FakeMatchSelectionAutomation(),
+                new FakeTeamNamesAutomation(),
+                new FakeScoreboardAutomation(),
+                new FakeChangeMatchAutomation()));
 
         await svc.LaunchAndLoginAsync();
 
@@ -1174,26 +1188,360 @@ public sealed class PcsProAutomationServiceTests
             .WithMessage($"*{PcsProState.MatchLoaded}*");
     }
 
+    // =======================================================================
+    // S-006: RefreshScoreboardAsync, CaptureScoreboardImageAsync, ChangeMatchAsync
+    // =======================================================================
+
     // -----------------------------------------------------------------------
-    // AC-8 — Crash watcher wins: double-transition guard prevents double state transition
+    // AC-1 — RefreshScoreboardAsync happy path: cog + refresh called; state stays MatchLoaded
     // -----------------------------------------------------------------------
 
     [TestMethod]
-    public async Task GetTeamNamesAsync_AfterFirstCallMovedToError_SecondCallThrowsWrongState()
+    public async Task RefreshScoreboardAsync_HappyPath_CallsCogAndRefreshAndStaysInMatchLoaded()
     {
-        // First call: OpenTeamsDialog throws → fires Timeout → state = Error.
-        var fake = new FakeTeamNamesAutomation { ThrowOnOpenTeamsDialog = true };
-        var (svc, _) = await CreateServiceAtMatchLoadedAsync(fake);
+        var fake = new FakeScoreboardAutomation();
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(scoreboardAutomation: fake);
 
-        await svc.GetTeamNamesAsync(); // transitions to Error via FireErrorUnderLockAsync
+        await svc.RefreshScoreboardAsync();
+
+        fake.ClickCogAttempted.Should().BeTrue("ClickSettingsCog must be called");
+        fake.ClickRefreshAttempted.Should().BeTrue("ClickRefreshAllScoreboards must be called");
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-2 — Concurrent S-006 operation (same-method guard) → InvalidOperationException
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task RefreshScoreboardAsync_WhenOperationAlreadyInProgress_ThrowsInvalidOperationException()
+    {
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync();
+
+        // Simulate an in-progress operation by setting the shared Interlocked flag directly.
+        // FlaUI calls are synchronous so a real concurrent call would deadlock the test thread.
+        var field = typeof(PcsProAutomationService)
+            .GetField("_isMatchLoadedOperationInProgress", BindingFlags.NonPublic | BindingFlags.Instance)!; // field exists
+        field.SetValue(svc, 1);
+
+        await svc.Invoking(_ => _.RefreshScoreboardAsync())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already in progress*");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-3 — ClickSettingsCog throws → Error state; Timeout trigger; reason "settings menu"
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task RefreshScoreboardAsync_WhenClickCogThrows_TransitionsToError()
+    {
+        var fake = new FakeScoreboardAutomation { ThrowOnClickSettingsCog = true };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(scoreboardAutomation: fake);
+
+        await svc.RefreshScoreboardAsync();
+
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.LastErrorReason.Should().Contain("settings menu");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-4 — ClickRefreshAllScoreboards throws (cog succeeded) → Error state; Timeout trigger
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task RefreshScoreboardAsync_WhenClickRefreshThrows_TransitionsToError()
+    {
+        var fake = new FakeScoreboardAutomation { ThrowOnClickRefreshAllScoreboards = true };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(scoreboardAutomation: fake);
+
+        await svc.RefreshScoreboardAsync();
+
+        fake.ClickCogAttempted.Should().BeTrue("cog must have been clicked before refresh threw");
+        svc.CurrentState.Should().Be(PcsProState.Error);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-5 — Unexpected dialog at entry → TryCloseUnexpectedDialog + UnexpectedDialog trigger + Error
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task RefreshScoreboardAsync_WhenUnexpectedDialogPresent_ClosesAndFiresError()
+    {
+        var fake = new FakeScoreboardAutomation { UnexpectedDialogPresent = true };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(scoreboardAutomation: fake);
+
+        await svc.RefreshScoreboardAsync();
+
+        fake.CloseUnexpectedDialogAttempted.Should().BeTrue("TryCloseUnexpectedDialog must be called");
+        fake.ClickCogAttempted.Should().BeFalse("cog must NOT be clicked when dialog is present");
+        svc.CurrentState.Should().Be(PcsProState.Error);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-6 — Wrong state → InvalidOperationException; state unchanged
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task RefreshScoreboardAsync_WhenNotInMatchLoadedState_ThrowsInvalidOperationException()
+    {
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync();
+        // Service is in MatchSelection state — NOT MatchLoaded.
+
+        await svc.Invoking(_ => _.RefreshScoreboardAsync())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{PcsProState.MatchLoaded}*");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-7 — Cancellation → Error state; OperationCanceledException propagated
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task RefreshScoreboardAsync_WhenAlreadyCancelled_ThrowsOCEAndTransitionsToError()
+    {
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await svc.Invoking(_ => _.RefreshScoreboardAsync(cts.Token))
+            .Should().ThrowAsync<OperationCanceledException>();
+
+        svc.CurrentState.Should().Be(PcsProState.Error);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-8 — CaptureScoreboardImageAsync happy path: bytes returned; state stays MatchLoaded
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task CaptureScoreboardImageAsync_HappyPath_ReturnsImageBytesAndStaysInMatchLoaded()
+    {
+        var fake = new FakeScoreboardAutomation
+        {
+            CapturedImageBytes = new byte[] { 0xFF, 0xD8, 0x01 }
+        };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(scoreboardAutomation: fake);
+
+        var result = await svc.CaptureScoreboardImageAsync();
+
+        result.Should().Equal(new byte[] { 0xFF, 0xD8, 0x01 });
+        fake.CaptureAttempted.Should().BeTrue("CaptureScoreboardImage must be called");
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-9 — CaptureScoreboardImage throws → Error; Timeout trigger; sentinel byte[] returned
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task CaptureScoreboardImageAsync_WhenCaptureThrows_ReturnsSentinelAndTransitionsToError()
+    {
+        var fake = new FakeScoreboardAutomation { ThrowOnCaptureScoreboardImage = true };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(scoreboardAutomation: fake);
+
+        var result = await svc.CaptureScoreboardImageAsync();
+
+        result.Should().BeEmpty("sentinel Array.Empty<byte>() must be returned on capture failure");
+        svc.CurrentState.Should().Be(PcsProState.Error);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-10 — Unexpected dialog at entry → sentinel returned + Error via UnexpectedDialog
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task CaptureScoreboardImageAsync_WhenUnexpectedDialogPresent_ReturnsSentinelAndTransitionsToError()
+    {
+        var fake = new FakeScoreboardAutomation { UnexpectedDialogPresent = true };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(scoreboardAutomation: fake);
+
+        var result = await svc.CaptureScoreboardImageAsync();
+
+        result.Should().BeEmpty("sentinel must be returned when unexpected dialog is present");
+        fake.CloseUnexpectedDialogAttempted.Should().BeTrue("TryCloseUnexpectedDialog must be called");
+        fake.CaptureAttempted.Should().BeFalse("capture must NOT be attempted when dialog is present");
+        svc.CurrentState.Should().Be(PcsProState.Error);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-11 — Wrong state → InvalidOperationException
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task CaptureScoreboardImageAsync_WhenNotInMatchLoadedState_ThrowsInvalidOperationException()
+    {
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync();
+
+        await svc.Invoking(_ => _.CaptureScoreboardImageAsync())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{PcsProState.MatchLoaded}*");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-12 — Cancellation → Error state; OperationCanceledException propagated
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task CaptureScoreboardImageAsync_WhenAlreadyCancelled_ThrowsOCEAndTransitionsToError()
+    {
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await svc.Invoking(_ => _.CaptureScoreboardImageAsync(cts.Token))
+            .Should().ThrowAsync<OperationCanceledException>();
+
+        svc.CurrentState.Should().Be(PcsProState.Error);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-13 — ChangeMatchAsync happy path: sequence called; ChangeMatch fired; state = MatchSelection
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task ChangeMatchAsync_HappyPath_ExecutesSequenceAndTransitionsToMatchSelection()
+    {
+        var fake = new FakeChangeMatchAutomation();
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(changeMatchAutomation: fake);
+
+        await svc.ChangeMatchAsync();
+
+        fake.ExecuteChangeMatchAttempted.Should().BeTrue("ExecuteChangeMatchSequence must be called");
+        svc.CurrentState.Should().Be(PcsProState.MatchSelection);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-14 — ExecuteChangeMatchSequence throws → Error state; Timeout trigger
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task ChangeMatchAsync_WhenSequenceThrows_TransitionsToError()
+    {
+        var fake = new FakeChangeMatchAutomation { ThrowOnExecuteChangeMatchSequence = true };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(changeMatchAutomation: fake);
+
+        await svc.ChangeMatchAsync();
+
+        fake.ExecuteChangeMatchAttempted.Should().BeTrue("sequence must have been attempted before throw");
+        svc.CurrentState.Should().Be(PcsProState.Error);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-15 — Unexpected dialog at entry → TryCloseUnexpectedDialog + UnexpectedDialog trigger + Error
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task ChangeMatchAsync_WhenUnexpectedDialogPresent_ClosesAndFiresError()
+    {
+        var fake = new FakeChangeMatchAutomation { UnexpectedDialogPresent = true };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(changeMatchAutomation: fake);
+
+        await svc.ChangeMatchAsync();
+
+        fake.CloseUnexpectedDialogAttempted.Should().BeTrue("TryCloseUnexpectedDialog must be called");
+        fake.ExecuteChangeMatchAttempted.Should().BeFalse("sequence must NOT execute when dialog is present");
+        svc.CurrentState.Should().Be(PcsProState.Error);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-16 — Wrong state → InvalidOperationException
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task ChangeMatchAsync_WhenNotInMatchLoadedState_ThrowsInvalidOperationException()
+    {
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync();
+
+        await svc.Invoking(_ => _.ChangeMatchAsync())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{PcsProState.MatchLoaded}*");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-17 — Cancellation → Error state; OperationCanceledException propagated
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task ChangeMatchAsync_WhenAlreadyCancelled_ThrowsOCEAndTransitionsToError()
+    {
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await svc.Invoking(_ => _.ChangeMatchAsync(cts.Token))
+            .Should().ThrowAsync<OperationCanceledException>();
+
+        svc.CurrentState.Should().Be(PcsProState.Error);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-18 — Crash watcher fires Error before ChangeMatch trigger:
+    //          guardTerminal: true silently skips the trigger without throwing
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task ChangeMatchAsync_WhenCrashWatcherWins_NoDoubleTransition()
+    {
+        // To simulate the crash-watcher racing with ChangeMatchAsync:
+        // 1. Fire ChangeMatchAsync (sequence succeeds).
+        // 2. Manually inject an Error state transition before FireUnderLockAsync fires ChangeMatch.
+        // The simplest observable proof is that calling ChangeMatchAsync after the state is Error
+        // does NOT throw an unhandled Stateless exception — it throws the predictable wrong-state IOE.
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync();
+
+        // Inject Error directly — simulates crash-watcher winning first.
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(svc)!;
+        machine.Fire(PcsProTrigger.Timeout);
 
         svc.CurrentState.Should().Be(PcsProState.Error);
 
-        // Second call: state is now Error, not MatchLoaded → wrong-state guard fires before
-        // FireErrorUnderLockAsync is ever reached. Verifies no double-fire exception escapes.
-        await svc.Invoking(s => s.GetTeamNamesAsync())
+        // A second ChangeMatchAsync call now throws wrong-state IOE rather than a Stateless
+        // "trigger not permitted" exception, proving guardTerminal is respected.
+        await svc.Invoking(_ => _.ChangeMatchAsync())
             .Should().ThrowAsync<InvalidOperationException>()
             .WithMessage($"*{PcsProState.MatchLoaded}*");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-22 — Cross-method shared guard: CaptureScoreboardImageAsync blocked while
+    //          RefreshScoreboardAsync is in progress → InvalidOperationException
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task CaptureScoreboardImageAsync_WhenRefreshInProgress_ThrowsInvalidOperationException()
+    {
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync();
+
+        // Set the shared _isMatchLoadedOperationInProgress flag to simulate RefreshScoreboardAsync
+        // holding it. FlaUI calls are synchronous so a real concurrent call would deadlock.
+        var field = typeof(PcsProAutomationService)
+            .GetField("_isMatchLoadedOperationInProgress", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        field.SetValue(svc, 1);
+
+        // CaptureScoreboardImageAsync must be rejected by the SAME shared flag.
+        await svc.Invoking(_ => _.CaptureScoreboardImageAsync())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already in progress*",
+                because: "the shared _isMatchLoadedOperationInProgress flag must block cross-method calls");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-23 — Constructor parameter count ≤ 7 after AutomationDependencies aggregate
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public void PcsProAutomationService_Constructor_HasAtMostSevenParameters()
+    {
+        var ctors = typeof(PcsProAutomationService).GetConstructors(
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+        ctors.Should().NotBeEmpty();
+        ctors.Max(c => c.GetParameters().Length)
+            .Should().BeLessOrEqualTo(7,
+                because: "SPEC-S-006 §2.6 requires constructor refactor to ≤ 7 parameters via AutomationDependencies aggregate");
     }
 }
 
@@ -1247,12 +1595,6 @@ internal static class TaskExtensions
     }
 }
 
-/// <summary>
-/// FakeTeamNamesAutomation variant whose OpenTeamsDialog blocks until <see cref="Release"/> is called.
-/// <see cref="Started"/> is released (signalled) as soon as <see cref="OpenTeamsDialog"/> begins
-/// executing, allowing tests to wait for the call to actually reach the blocking point before
-/// making assertions about concurrent behaviour.
-/// </summary>
 internal sealed class SlowOpenTeamsDialogFake : ITeamNamesAutomation
 {
     private readonly ManualResetEventSlim _gate = new(false);

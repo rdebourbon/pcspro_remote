@@ -10,19 +10,20 @@ namespace PcsRemote.Automation;
 /// <summary>
 /// FlaUI-based implementation of <see cref="IPcsProAutomationService"/>.
 /// Implements process launch, main window detection, crash watching, stop (S-002),
-/// login automation (S-003), match selection (S-004), and team name extraction (S-005).
-/// Scoreboard and change-match are deferred to S-006 through S-007.
+/// login automation (S-003), match selection (S-004), team name extraction (S-005),
+/// and scoreboard refresh, capture, and change-match (S-006).
 /// </summary>
 internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsyncDisposable
 {
     private readonly PcsProOptions _options;
-    private readonly ScoreboardOptions _scoreboardOptions;
     private readonly ILogger<PcsProAutomationService> _logger;
     private readonly IProcessManager _processManager;
     private readonly TimeProvider _timeProvider;
     private readonly ILoginAutomation _loginAutomation;
     private readonly IMatchSelectionAutomation _matchSelectionAutomation;
     private readonly ITeamNamesAutomation _teamNamesAutomation;
+    private readonly IScoreboardAutomation _scoreboardAutomation;
+    private readonly IChangeMatchAutomation _changeMatchAutomation;
     private readonly PcsProStateMachine _stateMachine;
 
     /// <summary>
@@ -60,24 +61,29 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// </summary>
     private int _isTeamNamesOperationInProgress;
 
+    /// <summary>
+    /// 0 = idle, 1 = a match-loaded operation is in progress.
+    /// Shared by <c>RefreshScoreboardAsync</c>, <c>CaptureScoreboardImageAsync</c>, and
+    /// <c>ChangeMatchAsync</c> to prevent any two S-006 operations from running concurrently.
+    /// </summary>
+    private int _isMatchLoadedOperationInProgress;
+
     public PcsProAutomationService(
         IOptions<PcsProOptions> options,
-        IOptions<ScoreboardOptions> scoreboardOptions,
         ILogger<PcsProAutomationService> logger,
         IProcessManager processManager,
         TimeProvider timeProvider,
-        ILoginAutomation loginAutomation,
-        IMatchSelectionAutomation matchSelectionAutomation,
-        ITeamNamesAutomation teamNamesAutomation)
+        AutomationDependencies automationDependencies)
     {
         _options = options.Value;
-        _scoreboardOptions = scoreboardOptions.Value;
         _logger = logger;
         _processManager = processManager;
         _timeProvider = timeProvider;
-        _loginAutomation = loginAutomation;
-        _matchSelectionAutomation = matchSelectionAutomation;
-        _teamNamesAutomation = teamNamesAutomation;
+        _loginAutomation = automationDependencies.LoginAutomation;
+        _matchSelectionAutomation = automationDependencies.MatchSelectionAutomation;
+        _teamNamesAutomation = automationDependencies.TeamNamesAutomation;
+        _scoreboardAutomation = automationDependencies.ScoreboardAutomation;
+        _changeMatchAutomation = automationDependencies.ChangeMatchAutomation;
 
         _stateMachine = new PcsProStateMachine();
         _stateMachine.OnTransitioned(newState =>
@@ -970,16 +976,203 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     }
 
     /// <inheritdoc/>
-    public Task RefreshScoreboardAsync(CancellationToken ct = default) =>
-        throw new NotImplementedException($"{nameof(RefreshScoreboardAsync)} is not yet implemented.");
+    public async Task RefreshScoreboardAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("RefreshScoreboardAsync starting; current state {State}", CurrentState);
+
+        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
+            throw new InvalidOperationException(
+                "A match-loaded operation is already in progress.");
+
+        try
+        {
+            await RefreshScoreboardCoreAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+        }
+    }
+
+    private async Task RefreshScoreboardCoreAsync(CancellationToken ct)
+    {
+        if (_stateMachine.CurrentState != PcsProState.MatchLoaded)
+            throw new InvalidOperationException(
+                $"RefreshScoreboardAsync requires state {PcsProState.MatchLoaded} " +
+                $"but current state is {_stateMachine.CurrentState}.");
+
+        try
+        {
+            // §4.1.1 — Entry unexpected-dialog check.
+            if (_scoreboardAutomation.IsUnexpectedDialogPresent())
+            {
+                _logger.LogWarning("RefreshScoreboardAsync: unexpected dialog detected at entry");
+                _scoreboardAutomation.TryCloseUnexpectedDialog();
+                await FireErrorUnderLockAsync(PcsProTrigger.UnexpectedDialog, "Unexpected dialog blocked scoreboard refresh").ConfigureAwait(false);
+                return;
+            }
+
+            ct.ThrowIfCancellationRequested();
+
+            // §4.1.2 — Click settings cog.
+            try
+            {
+                _scoreboardAutomation.ClickSettingsCog();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "RefreshScoreboardAsync: failed to open settings menu");
+                await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "Failed to open settings menu").ConfigureAwait(false);
+                return;
+            }
+
+            // §4.1.3 — Click refresh menu item.
+            try
+            {
+                _scoreboardAutomation.ClickRefreshAllScoreboards();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "RefreshScoreboardAsync: failed to click Refresh All Scoreboards");
+                await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "Failed to click Refresh All Scoreboards").ConfigureAwait(false);
+                return;
+            }
+
+            _logger.LogInformation("RefreshScoreboardAsync complete");
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("RefreshScoreboardAsync cancelled");
+            await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "RefreshScoreboardAsync was cancelled").ConfigureAwait(false);
+            throw;
+        }
+    }
 
     /// <inheritdoc/>
-    public Task<byte[]> CaptureScoreboardImageAsync(CancellationToken ct = default) =>
-        throw new NotImplementedException($"{nameof(CaptureScoreboardImageAsync)} is not yet implemented.");
+    public async Task<byte[]> CaptureScoreboardImageAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("CaptureScoreboardImageAsync starting; current state {State}", CurrentState);
+
+        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
+            throw new InvalidOperationException(
+                "A match-loaded operation is already in progress.");
+
+        try
+        {
+            return await CaptureScoreboardImageCoreAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+        }
+    }
+
+    private async Task<byte[]> CaptureScoreboardImageCoreAsync(CancellationToken ct)
+    {
+        if (_stateMachine.CurrentState != PcsProState.MatchLoaded)
+            throw new InvalidOperationException(
+                $"CaptureScoreboardImageAsync requires state {PcsProState.MatchLoaded} " +
+                $"but current state is {_stateMachine.CurrentState}.");
+
+        try
+        {
+            // §4.2.1 — Entry unexpected-dialog check.
+            if (_scoreboardAutomation.IsUnexpectedDialogPresent())
+            {
+                _logger.LogWarning("CaptureScoreboardImageAsync: unexpected dialog detected at entry");
+                _scoreboardAutomation.TryCloseUnexpectedDialog();
+                await FireErrorUnderLockAsync(PcsProTrigger.UnexpectedDialog, "Unexpected dialog blocked scoreboard capture").ConfigureAwait(false);
+                return Array.Empty<byte>();
+            }
+
+            ct.ThrowIfCancellationRequested();
+
+            // §4.2.2 — Capture image.
+            byte[] bytes;
+            try
+            {
+                bytes = _scoreboardAutomation.CaptureScoreboardImage();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "CaptureScoreboardImageAsync: failed to capture scoreboard image");
+                await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "Failed to capture scoreboard image").ConfigureAwait(false);
+                return Array.Empty<byte>();
+            }
+
+            _logger.LogInformation("CaptureScoreboardImageAsync complete — {ByteCount} bytes", bytes.Length);
+            return bytes;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("CaptureScoreboardImageAsync cancelled");
+            await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "CaptureScoreboardImageAsync was cancelled").ConfigureAwait(false);
+            throw;
+        }
+    }
 
     /// <inheritdoc/>
-    public Task ChangeMatchAsync(CancellationToken ct = default) =>
-        throw new NotImplementedException($"{nameof(ChangeMatchAsync)} is not yet implemented.");
+    public async Task ChangeMatchAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("ChangeMatchAsync starting; current state {State}", CurrentState);
+
+        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
+            throw new InvalidOperationException(
+                "A match-loaded operation is already in progress.");
+
+        try
+        {
+            await ChangeMatchCoreAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+        }
+    }
+
+    private async Task ChangeMatchCoreAsync(CancellationToken ct)
+    {
+        if (_stateMachine.CurrentState != PcsProState.MatchLoaded)
+            throw new InvalidOperationException(
+                $"ChangeMatchAsync requires state {PcsProState.MatchLoaded} " +
+                $"but current state is {_stateMachine.CurrentState}.");
+
+        try
+        {
+            // §4.3.1 — Entry unexpected-dialog check.
+            if (_changeMatchAutomation.IsUnexpectedDialogPresent())
+            {
+                _logger.LogWarning("ChangeMatchAsync: unexpected dialog detected at entry");
+                _changeMatchAutomation.TryCloseUnexpectedDialog();
+                await FireErrorUnderLockAsync(PcsProTrigger.UnexpectedDialog, "Unexpected dialog blocked match change").ConfigureAwait(false);
+                return;
+            }
+
+            ct.ThrowIfCancellationRequested();
+
+            // §4.3.2 — Execute change-match sequence.
+            try
+            {
+                _changeMatchAutomation.ExecuteChangeMatchSequence();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "ChangeMatchAsync: change match sequence failed");
+                await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "Change match sequence failed").ConfigureAwait(false);
+                return;
+            }
+
+            // §4.3.3 — Fire state transition.
+            await FireUnderLockAsync(PcsProTrigger.ChangeMatch, guardTerminal: true).ConfigureAwait(false);
+            _logger.LogInformation("ChangeMatchAsync complete — state {State}", CurrentState);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("ChangeMatchAsync cancelled");
+            await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "ChangeMatchAsync was cancelled").ConfigureAwait(false);
+            throw;
+        }
+    }
 
     /// <inheritdoc/>
     public Task RetryAsync(CancellationToken ct = default) =>
