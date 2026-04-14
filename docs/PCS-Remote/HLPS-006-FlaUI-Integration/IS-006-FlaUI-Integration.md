@@ -94,6 +94,8 @@ Steps are identified with stable IDs S-001 through S-007. IDs are never renumber
 
 ### S-006 — Scoreboard refresh, PrintWindow capture, and `ChangeMatchAsync`
 
+**Status: DELIVERED — `7d2962a`**
+
 **What changes:** Three tightly related capabilities delivered together:
 
 1. **`RefreshScoreboardAsync`**: Locate the settings cog element by HelpText, click to open the popup menu, find "Refresh All Scoreboards" in the menu (with `GetAllTopLevelWindows()` fallback if the menu renders outside the main window tree — I-U-4). Addresses I-SC-5, I-SC-12.
