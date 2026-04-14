@@ -66,6 +66,8 @@ Steps are identified with stable IDs S-001 through S-007. IDs are never renumber
 
 ### S-004 — Match selection automation: search, DataGrid parsing, date filter, open match
 
+**Status: DELIVERED — `97e1530`**
+
 **What changes:** `GetTodaysMatchesAsync` and `LoadMatchAsync` are fully implemented. `GetTodaysMatchesAsync` opens the match dialog, triggers search, waits 200ms (race condition guard), polls the LoaderSpinner until cleared within the 30-second search timeout, reads DataGrid row text values, and parses each row into a match record (date, home team, away team, match type). Parsing is delegated to a pure helper class (I-U-5 text format resolved via Inspect.exe). Unit tests for the row-parsing helper and date filter logic are added to `PcsRemote.Automation.Tests`. Rows are filtered by `DateOnly.Today`. If zero rows remain after filtering, the service fires `Error` with "No matches found for today." `LoadMatchAsync` selects the chosen row in the DataGrid and clicks "Open Read-Only," waiting for `MatchLoaded` state within the 15-second open timeout. Any unexpected dialog encountered during this phase is handled uniformly: close if possible, fire `Error` with a descriptive reason. All new code includes inline Serilog logging: element lookups at `Debug`, state transitions at `Information`, timeout and error conditions at `Error`.
 
 **Why:** Match selection is the most complex interactive flow and the primary daily use case. The 200ms guard and spinner polling are critical for correctness. Parsing is unit-testable and therefore a key quality gate. Addresses HLPS-006 §2 match selection automation; targets I-SC-2, I-SC-3, I-SC-11, I-SC-17, I-SC-18.
