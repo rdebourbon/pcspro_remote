@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | IS-007-Deployment.md |
 | **Status** | DRAFT |
-| **Version** | 0.5 |
+| **Version** | 0.6 |
 | **Date** | 2026-04-14 |
 | **Governing HLPS** | HLPS-007-Deployment.md v0.5 (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.1 |
@@ -94,8 +94,10 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 
 - **Quick Start — First-Time Deployment Procedure**: A numbered end-to-end sequence so a newcomer does not need to synthesise the order from four separate documents:
   1. Run `scripts/publish.ps1` to produce the deployment artefact in `publish/`.
-  2. Edit `publish/appsettings.json`: set `PcsPro:ExecutablePath` to the full path of `cricket.exe`; set `PcsPro:WorkingDirectory` to the folder containing it; set `PcsPro:AutoLaunch` to `true` (the shipped file defaults to `false`); leave `PcsPro:Password` empty. **Note**: `publish/` is git-ignored — do not run `git clean` or re-run `publish.ps1` after this step, as either action will overwrite your changes.
-  3. Run `scripts/Deploy-PcsRemote.ps1` from an elevated PowerShell prompt (provide `-AppUser`, enter the PCS Pro password when prompted). If the script reports `.new` files, merge them before proceeding.
+  2. Edit `publish/appsettings.json`: set `PcsPro:ExecutablePath` to the full path of `cricket.exe`; set `PcsPro:WorkingDirectory` to the folder containing it; set `PcsPro:AutoLaunch` to `true` (the shipped file defaults to `false`); leave `PcsPro:Password` empty. **For this initial deployment only**: do not run `git clean` or re-run `publish.ps1` until `Deploy-PcsRemote.ps1` has completed — either action will overwrite the edits you just made.
+
+- **Update Deployments** (new software release): re-run `scripts/publish.ps1` to rebuild the artefact from the latest code, then re-run `scripts/Deploy-PcsRemote.ps1 -SkipPasswordUpdate`. The script detects any new configuration keys and produces `.new` files; merge those keys into the existing `appsettings.json`, then run `Start-ScheduledTask -TaskName PcsRemote` to restart the application.
+  3. Run `scripts/Deploy-PcsRemote.ps1` from an elevated PowerShell prompt (provide `-AppUser`, enter the PCS Pro password when prompted). If the script reports `.new` files: merge the new configuration keys into the existing files, then run `Start-ScheduledTask -TaskName PcsRemote` from an elevated PowerShell prompt on the garage PC, and verify the tray icon appears before proceeding to step 4.
   4. Execute the Smoke Test Checklist (`docs/guides/Smoke-Test-Checklist.md`).
 
 - **Prerequisites**: .NET 8 runtime not required (self-contained); Windows 10/11; Administrator account for deployment script.
@@ -130,23 +132,23 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 
 **What changes:** Create `docs/guides/Operational-Guide.md`. The guide is written for club volunteers with no IT background. Sections:
 
-1. **Before the match** — How to confirm the application is running (look for the tray icon; if absent, log on to the garage PC and wait 30 seconds for auto-start). If the tray icon still has not appeared, contact your IT contact — they can restart the application by running `Start-ScheduledTask -TaskName PcsRemote` from an elevated PowerShell prompt on the garage PC.
+1. **Before the match** — How to confirm the application is running (look for the tray icon; if absent, log on to the garage PC — the application starts automatically within a few seconds of logon via the ONLOGON trigger). If the tray icon still has not appeared, contact your IT contact — they can restart the application by running `Start-ScheduledTask -TaskName PcsRemote` from an elevated PowerShell prompt on the garage PC.
 2. **Accessing the control panel** — Open a browser on any device on the club Wi-Fi and navigate to `http://<garage-pc-ip>:<port>` where `<port>` is the configured Kestrel port (default `5000`; check `Kestrel:Endpoints:Http:Url` in `appsettings.json` if you are unsure). Instructions for finding the garage PC's IP address: on the garage PC, open Command Prompt and run `ipconfig`; look for the IPv4 address of the active network adapter. Recommendation: ask your IT contact to configure a static IP or DHCP reservation so the address never changes.
-3. **Status indicators** — Description of each state shown on the control panel and what action, if any, the volunteer should take:
-   - **Not Running**: PCS Pro is not yet started. With auto-launch configured, PCS Pro will launch automatically — wait 30–60 seconds and the state will progress to Launching then Login Screen automatically. If the state does not change after 60 seconds, check that the garage PC is logged on and contact your IT contact.
-   - **Launching**: PCS Pro is starting up. Wait; no action needed.
-   - **Login Screen**: PCS Pro is open and waiting for login. The application will log in automatically.
-   - **Match Selection**: The match selection screen is open. Use the control panel to search for and load today's match.
-   - **Match Selection — Searching**: The application is fetching the match list from PCS Pro. Wait a few seconds.
-   - **Match Selection — Ready**: The match list is loaded and ready to select from.
-   - **Match Loaded**: A match is loaded and live. The scoreboard is available.
+3. **Status indicators** — Description of each status shown in the header bar of the control panel and what action, if any, the volunteer should take:
+   - **PCS Pro not running**: PCS Pro has not started yet. With auto-launch configured, PCS Pro will launch automatically — wait up to 30 seconds and the status will progress to "PCS Pro starting…" automatically. If the status does not change after 30 seconds, check that the garage PC is logged on and contact your IT contact.
+   - **PCS Pro starting…**: PCS Pro is starting up. Wait; no action needed.
+   - **Logging in…**: PCS Pro is open and the application is logging in automatically. Wait.
+   - **Loading matches…**: The application is loading the match list from PCS Pro. Wait a few seconds.
+   - **Searching…**: The application is fetching today's matches. Wait.
+   - **Select a match**: The match list is loaded. If only one match is available, it is selected automatically. If multiple matches appear, click the card for today's match.
+   - **Match loaded**: A match is loaded and live. The scoreboard is available.
    - **Error**: Something went wrong. Check the log file (see §7) and report to your IT contact.
-4. **Loading a match** — Note: if `PcsPro:AutoLaunch` is set to `true` (recommended for production), PCS Pro starts automatically on logon and the control panel will already show Match Selection or later — skip to selecting a match. Full sequence from a cold start: wait for the state to reach Match Selection — Ready; the list of today's matches will appear as cards. If only one match is available, it is selected automatically. If multiple matches appear, click the card for today's match to load it.
+4. **Loading a match** — With AutoLaunch=true (recommended for production), PCS Pro starts automatically on logon and the control panel will already show "Loading matches…", "Searching…", or "Select a match" — skip to selecting a match. Full sequence from a cold start: wait for the status to show **Select a match**; if only one match is available it is selected automatically and the status advances to "Match loaded"; if multiple matches appear, click the card for today's match.
 5. **Manual mode** — Manual mode pauses all automation (PCS Pro is no longer controlled automatically). Use it when you need to operate PCS Pro directly without interference (e.g., correcting an error in the scorer). To enable: right-click the tray icon on the garage PC and click "Switch to Manual Mode" — the web control panel will display a "Manual mode — automation paused by local operator" banner. To disable: right-click the tray icon and click "Resume Automation" — the banner disappears. Note: manual mode can only be toggled from the garage PC (tray icon), not from the web control panel.
 6. **Updating the PCS Pro password** — "If the PCS Pro password changes, you will need to update it. Follow these steps: [cross-reference Configuration Guide §password-setting]." Note: this requires Administrator access on the garage PC.
-7. **Checking for errors** — How to locate today's log file (default: `C:\PcsRemote\logs\pcs-remote-20260414.log` — where the date changes daily; if your IT contact used a different deployment folder, substitute it for `C:\PcsRemote\`); what level of detail to share when reporting a problem.
-8. **Restarting the application** — Right-click the tray icon → Exit; then log off and log on again (the application restarts automatically within 30 seconds via Task Scheduler).
-9. **After a reboot** — If the garage PC has been restarted (e.g., after a power cut or Windows Update): log on to the garage PC if auto-logon is not configured; the application will start automatically within 30 seconds of logon.
+7. **Checking for errors** — How to locate today's log file (default: `C:\PcsRemote\logs\pcs-remote-YYYYMMDD.log` where YYYYMMDD is today's date, e.g., `pcs-remote-20260601.log` for 1 June 2026; if your IT contact used a different deployment folder, substitute it for `C:\PcsRemote\`); what level of detail to share when reporting a problem.
+8. **Restarting the application** — Right-click the tray icon → Exit; then log off and log on again (the application restarts automatically within a few seconds of logon via the ONLOGON Task Scheduler trigger). Note: the 30-second restart delay configured for crash recovery does not apply here; a clean exit and re-logon restarts the application immediately.
+9. **After a reboot** — If the garage PC has been restarted (e.g., after a power cut or Windows Update): log on to the garage PC if auto-logon is not configured; the application will start automatically within a few seconds of logon (ONLOGON trigger).
 10. **SmartScreen prompt** — If Windows shows a "Windows protected your PC" prompt when first running the application: click "More info" then "Run anyway." This is a one-time prompt for unsigned executables.
 11. **Updating PCS Pro path** — If PCS Pro is reinstalled or upgraded, the executable path in `appsettings.json` must be updated (cross-reference Configuration Guide §updating-pcs-pro-path).
 
@@ -175,8 +177,8 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 | 7 | HLPS-004 | Match list | Today's matches appear as match cards (or auto-load if exactly one match exists) | Verify date on garage PC; check PCS Pro data |
 | 8 | HLPS-006 | Match load | With multiple matches, click a match card; service reaches MatchLoaded state. With a single match, confirm auto-load fires without user action. | Check PCS Pro UI for dialogs; check log file |
 | 9 | HLPS-004 | Scoreboard preview | Scoreboard image appears and refreshes on demand | Check `Scoreboard:JpegQuality`; check PrintWindow availability |
-| 10 | HLPS-005 | Manual mode toggle | Right-click the tray icon on the garage PC → "Switch to Manual Mode"; confirm "Manual mode — automation paused" banner appears in the web control panel. Right-click → "Resume Automation"; confirm banner disappears. | Check ManualModeService wiring in DI; confirm tray icon renders context menu |
-| 11 | D-SC-3 | Task Scheduler restart mechanism | Kill `PcsRemote.TrayHost.exe` via Task Manager; application restarts within 60 seconds. Repeat three times in rapid succession (within 2 minutes) to verify the 999-attempt retry count is correctly configured. Note: Task Manager always exits with code 1 — this tests the Task Scheduler restart settings, not the S-001 exit code fix. For exit code fix verification: inspect `src/PcsRemote.TrayHost/Program.cs` catch block and confirm `return 1;` is present (code review). | Check Task Scheduler restart settings (delay ≤ 30s, count ≥ 999) |
+| 10 | HLPS-005 | Manual mode toggle | Right-click the tray icon on the garage PC → "Switch to Manual Mode"; confirm "Manual mode — automation paused by local operator" banner appears in the web control panel. Right-click → "Resume Automation"; confirm banner disappears. | Check ManualModeService wiring in DI; confirm tray icon renders context menu |
+| 11 | D-SC-3 | Task Scheduler restart mechanism | Kill `PcsRemote.TrayHost.exe` via Task Manager; application restarts within 60 seconds. Repeat three times in succession; each restart must occur within 60 seconds of the kill (with the configured 30s restart delay and normal startup time, each cycle completes in approximately 40 seconds). Note: Task Manager always exits with code 1 — this tests the Task Scheduler restart settings, not the S-001 exit code fix. For exit code fix verification: inspect `src/PcsRemote.TrayHost/Program.cs` catch block and confirm `return 1;` is present (code review). | Check Task Scheduler restart settings (delay ≤ 30s, count ≥ 999) |
 | 12 | D-SC-6 | Password change | Update `PcsPro__Password` env var; restart application; PCS Pro logs in successfully | Follow Configuration Guide §password-setting |
 | 13 | HLPS-004 | Scoreboard refresh | With a match loaded, click "Refresh Scoreboard"; a new image loads without errors | Check `CaptureScoreboardImageAsync` in FlaUI service; check log file |
 
@@ -275,4 +277,18 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 | R4-L2 | S-005 item 13 D-SC-7 misattribution — checklist as whole satisfies D-SC-7, not one item | LOW | Opus | Accepted — area corrected to HLPS-004; D-SC-7 note added to S-005 "Why" |
 | R4-L3 | BSTR not freed with ZeroFreeBSTR after SecureString conversion | LOW | Opus | Accepted — ZeroFreeBSTR in try/finally added to S-002 step 7 |
 | R4-I1 | VM test described as per-deployment; impractical | INFO | Opus | Accepted — moved to one-time initial rollout note in item 2 |
+
+### R5 Review (v0.5 → v0.6)
+
+**Models**: Claude Opus 4.6 · Claude Sonnet 4.6 · **Result**: NEEDS REVISION (7 findings, all accepted)
+
+| ID | Finding | Severity | Source | Disposition |
+|---|---|---|---|---|
+| R5-M1 | S-004 §3 status indicator headings use enum names not matching actual `PcsProStatusIndicator.razor` UI labels | MEDIUM | Opus | Accepted — all 8 status headings replaced with exact UI label strings from source |
+| R5-M2 | S-003 Quick Start step 3 omits `Start-ScheduledTask` instruction after `.new` file merge — app stays stopped | MEDIUM | Sonnet | Accepted — explicit start instruction and tray icon verification added to step 3 |
+| R5-L1 | S-005 item 10 ManualModeBanner text truncated (missing "by local operator") | LOW | Opus | Accepted — full banner text restored |
+| R5-L2 | S-005 item 11 "within 2 minutes" contradicts "60s per cycle × 3" (180s > 120s) | LOW | Sonnet | Accepted — 2-minute window removed; per-cycle 60s criterion clarified with ~40s expected time |
+| R5-L3 | S-004 §1/§8/§9 "30 seconds via Task Scheduler" attributes ONLOGON trigger startup to crash-restart delay | LOW | Sonnet | Accepted — corrected to "within a few seconds of logon (ONLOGON trigger)" throughout |
+| R5-L4 | S-004 §7 log filename example hardcoded to document date (20260414); will not exist on any other deployment day | LOW | Sonnet | Accepted — replaced with `pcs-remote-YYYYMMDD.log` format pattern with illustrative example |
+| R5-L5 | S-003 Quick Start note prohibiting `publish.ps1` re-runs has no update-deployment counterpart | LOW | Sonnet | Accepted — note scoped to initial deployment; Update Deployments procedure added |
 
