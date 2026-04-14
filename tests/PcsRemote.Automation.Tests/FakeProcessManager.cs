@@ -15,8 +15,18 @@ internal sealed class FakeProcessManager : IProcessManager
     /// </summary>
     public List<FakeProcessHandle> ExistingProcesses { get; } = new();
 
-    /// <summary>Handle returned by <see cref="Start"/>. Must be set before calling <see cref="Start"/>.</summary>
+    /// <summary>Handle returned by <see cref="Start"/> when <see cref="StartedHandleQueue"/> is empty. Must be set before calling <see cref="Start"/>.</summary>
     public FakeProcessHandle? StartedHandle { get; set; }
+
+    /// <summary>
+    /// Queue of handles returned by sequential <see cref="Start"/> calls. When non-empty,
+    /// handles are dequeued in order. Falls back to <see cref="StartedHandle"/> when the
+    /// queue is empty. Supports multi-start scenarios such as <see cref="IPcsProAutomationService.RetryAsync"/>.
+    /// </summary>
+    public Queue<FakeProcessHandle> StartedHandleQueue { get; } = new();
+
+    /// <summary>Number of times <see cref="Start"/> has been called.</summary>
+    public int StartCallCount { get; private set; }
 
     /// <summary>When true, <see cref="Start"/> throws <see cref="System.ComponentModel.Win32Exception"/>.</summary>
     public bool ShouldThrowOnStart { get; set; }
@@ -30,8 +40,11 @@ internal sealed class FakeProcessManager : IProcessManager
     public IProcessHandle Start(ProcessStartInfo startInfo)
     {
         CapturedStartInfo = startInfo;
+        StartCallCount++;
         if (ShouldThrowOnStart)
             throw new System.ComponentModel.Win32Exception(2, "The system cannot find the file specified.");
+        if (StartedHandleQueue.Count > 0)
+            return StartedHandleQueue.Dequeue();
         return StartedHandle
             ?? throw new InvalidOperationException("FakeProcessManager.StartedHandle was not configured.");
     }

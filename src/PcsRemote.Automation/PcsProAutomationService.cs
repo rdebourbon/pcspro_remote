@@ -1175,6 +1175,78 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     }
 
     /// <inheritdoc/>
-    public Task RetryAsync(CancellationToken ct = default) =>
-        throw new NotImplementedException($"{nameof(RetryAsync)} is not yet implemented.");
+    public async Task RetryAsync(CancellationToken ct = default)
+    {
+        // Step 1: Log entry.
+        _logger.LogInformation("RetryAsync called; current state {State}", CurrentState);
+
+        // Step 2: State guard — only valid from Error.
+        if (CurrentState != PcsProState.Error)
+            throw new InvalidOperationException(
+                $"RetryAsync called from {CurrentState} — only valid from Error state.");
+
+        // Step 3: Fire Retry trigger under lock (Error → NotRunning), clear last error reason.
+        await _operationLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            _stateMachine.Fire(PcsProTrigger.Retry);
+            _lastErrorReason = null;
+        }
+        finally
+        {
+            _operationLock.Release();
+        }
+
+        // Step 4: Flush state events — subscribers observe NotRunning before process teardown.
+        FlushStateChangedEvents();
+
+        // Step 5: Cancel and await crash watcher.
+        if (_crashWatcherCts is not null)
+        {
+            _logger.LogDebug("RetryAsync cancelling crash watcher");
+            _crashWatcherCts.Cancel();
+            if (_crashWatcherTask is not null)
+                await _crashWatcherTask.ConfigureAwait(false);
+            _crashWatcherCts.Dispose();
+            _crashWatcherCts = null;
+            _crashWatcherTask = null;
+        }
+
+        // Step 6: Kill lingering process — standalone timeout CTS only (not linked with ct).
+        //         Caller cancellation does not shorten the 5-second graceful close window.
+        if (_process is not null && !_process.HasExited)
+        {
+            _process.CloseMainWindow();
+
+            using var timeoutCts = new CancellationTokenSource(
+                TimeSpan.FromSeconds(PcsProStateMachine.GracefulCloseTimeoutSeconds));
+            try
+            {
+                await _process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogDebug("Graceful close wait ended — proceeding to force-kill if needed");
+            }
+
+            if (!_process.HasExited)
+            {
+                _process.Kill();
+                _logger.LogWarning("Force-killed cricket.exe {ProcessId}", _process.Id);
+            }
+        }
+
+        // Step 7: Dispose process.
+        _process?.Dispose();
+        _process = null;
+
+        // Step 7.5: Guard cancellation — earliest safe point; state=NotRunning, _process=null.
+        ct.ThrowIfCancellationRequested();
+
+        // Step 8: Relaunch.
+        await LaunchAndLoginAsync(ct).ConfigureAwait(false);
+
+        // Step 9: Log completion.
+        _logger.LogInformation("RetryAsync complete; current state {State}", CurrentState);
+    }
 }

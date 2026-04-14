@@ -119,6 +119,46 @@ public sealed class PcsProAutomationServiceTests
         return (svc, handle);
     }
 
+    /// <summary>
+    /// Creates a service at <see cref="PcsProState.Error"/> by driving the state machine
+    /// through MatchSelection → Error via reflection. The crash watcher is still running
+    /// (blocked on <see cref="FakeProcessHandle.WaitForExitAsync"/>).
+    /// Used for S-007 RetryAsync tests.
+    /// </summary>
+    private static async Task<(PcsProAutomationService Service, FakeProcessHandle Handle, FakeProcessManager ProcessManager, FakeTimeProvider TimeProvider)>
+        CreateServiceAtErrorAsync(
+            FakeLoginAutomation? loginAutomation = null,
+            IMatchSelectionAutomation? matchSelectionAutomation = null,
+            ITeamNamesAutomation? teamNamesAutomation = null,
+            IScoreboardAutomation? scoreboardAutomation = null,
+            IChangeMatchAutomation? changeMatchAutomation = null)
+    {
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle }; // uses StartedHandle fallback for initial launch
+        var tp = new FakeTimeProvider();
+        var svc = CreateService(
+            pm, tp,
+            loginAutomation ?? new FakeLoginAutomation(),
+            matchSelectionAutomation ?? new FakeMatchSelectionAutomation(),
+            teamNamesAutomation ?? new FakeTeamNamesAutomation(),
+            scoreboardAutomation ?? new FakeScoreboardAutomation(),
+            changeMatchAutomation ?? new FakeChangeMatchAutomation());
+        await svc.LaunchAndLoginAsync();
+
+        // Drive state machine directly: MatchSelection → Error (Timeout trigger).
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)! // field exists on this type
+            .GetValue(svc)!; // constructor always assigns a non-null PcsProStateMachine
+        machine.Fire(PcsProTrigger.Timeout);
+
+        // Set _lastErrorReason via reflection so AC-1 clearing verification is meaningful.
+        typeof(PcsProAutomationService)
+            .GetField("_lastErrorReason", BindingFlags.NonPublic | BindingFlags.Instance)! // field exists on this type
+            .SetValue(svc, "Simulated crash for test");
+
+        return (svc, handle, pm, tp);
+    }
+
     // -----------------------------------------------------------------------
     // AC-1 — State machine wiring: CurrentState reflects state machine
     // -----------------------------------------------------------------------
@@ -1542,6 +1582,139 @@ public sealed class PcsProAutomationServiceTests
         ctors.Max(c => c.GetParameters().Length)
             .Should().BeLessOrEqualTo(7,
                 because: "SPEC-S-006 §2.6 requires constructor refactor to ≤ 7 parameters via AutomationDependencies aggregate");
+    }
+
+    // -----------------------------------------------------------------------
+    // S-007 RetryAsync tests
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // AC-1 / AC-2 — Happy path: Error → RetryAsync → MatchSelection; Start called twice
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task RetryAsync_FromErrorState_RelaunchesAndReachesMatchSelection()
+    {
+        var (svc, _, pm, _) = await CreateServiceAtErrorAsync();
+
+        // Provide a second handle with a visible window for the post-retry launch.
+        pm.StartedHandleQueue.Enqueue(new FakeProcessHandle { MainWindowVisible = true });
+
+        await svc.RetryAsync();
+
+        svc.CurrentState.Should().Be(PcsProState.MatchSelection);
+        pm.StartCallCount.Should().Be(2, because: "original launch + retry launch = 2 Start calls");
+        svc.LastErrorReason.Should().BeNull("RetryAsync must clear _lastErrorReason");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-3 — Wrong state: NotRunning → InvalidOperationException
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task RetryAsync_FromNotRunning_ThrowsInvalidOperationException()
+    {
+        var svc = CreateService(new FakeProcessManager(), new FakeTimeProvider());
+
+        await svc.Invoking(_ => _.RetryAsync())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{PcsProState.NotRunning}*");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-4 — Wrong state: MatchSelection → InvalidOperationException
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task RetryAsync_FromMatchSelection_ThrowsInvalidOperationException()
+    {
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync();
+
+        await svc.Invoking(_ => _.RetryAsync())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{PcsProState.MatchSelection}*");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-5 — Wrong state: MatchLoaded → InvalidOperationException
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task RetryAsync_FromMatchLoaded_ThrowsInvalidOperationException()
+    {
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync();
+
+        await svc.Invoking(_ => _.RetryAsync())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{PcsProState.MatchLoaded}*");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-6 — Crash watcher is replaced (new non-null CTS after retry)
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task RetryAsync_CrashWatcherIsReplacedAfterRetry()
+    {
+        var (svc, _, pm, _) = await CreateServiceAtErrorAsync();
+        pm.StartedHandleQueue.Enqueue(new FakeProcessHandle { MainWindowVisible = true });
+
+        // Capture original CTS instance before retry.
+        var originalCts = typeof(PcsProAutomationService)
+            .GetField("_crashWatcherCts", BindingFlags.NonPublic | BindingFlags.Instance)! // field exists on this type
+            .GetValue(svc);
+
+        await svc.RetryAsync();
+
+        var newCts = typeof(PcsProAutomationService)
+            .GetField("_crashWatcherCts", BindingFlags.NonPublic | BindingFlags.Instance)! // field exists on this type
+            .GetValue(svc);
+
+        newCts.Should().NotBeNull("LaunchAndLoginAsync must install a new crash watcher CTS");
+        newCts.Should().NotBeSameAs(originalCts, "new CTS must be a different instance from the original");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-7 — Pre-cancelled token: OperationCanceledException; state = NotRunning
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task RetryAsync_CancelledToken_ThrowsOperationCanceledException()
+    {
+        var (svc, _, pm, _) = await CreateServiceAtErrorAsync();
+        // Empty queue is a safety backstop — step 7.5 should throw before any second Start call.
+
+        await svc.Invoking(_ => _.RetryAsync(new CancellationToken(canceled: true)))
+            .Should().ThrowAsync<OperationCanceledException>();
+
+        svc.CurrentState.Should().Be(PcsProState.NotRunning,
+            because: "step 7.5 ct.ThrowIfCancellationRequested() fires after teardown, before relaunch");
+        pm.StartCallCount.Should().Be(1,
+            because: "only the original launch; retry was cancelled before a second Start call");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-8 — Launch failure (window never appears → timeout): ends in Error; no exception
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task RetryAsync_LaunchFailure_ServiceEndsInErrorState()
+    {
+        var (svc, _, pm, tp) = await CreateServiceAtErrorAsync();
+
+        // Second process has no visible window → polling will time out.
+        pm.StartedHandleQueue.Enqueue(new FakeProcessHandle { MainWindowVisible = false });
+
+        var retryTask = svc.RetryAsync();               // don't await — let teardown complete
+        await Task.Delay(100);                          // let teardown complete and polling loop enter
+        tp.Advance(TimeSpan.FromSeconds(
+            PcsProStateMachine.LaunchingTimeoutSeconds + 1));
+
+        await retryTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        svc.CurrentState.Should().Be(PcsProState.Error,
+            because: "window polling timed out; Timeout trigger fires Error");
+        pm.StartCallCount.Should().Be(2, because: "retry did start a second process");
     }
 }
 
