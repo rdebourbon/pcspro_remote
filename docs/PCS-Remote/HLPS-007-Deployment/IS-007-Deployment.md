@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | IS-007-Deployment.md |
 | **Status** | DRAFT |
-| **Version** | 0.6 |
+| **Version** | 0.7 |
 | **Date** | 2026-04-14 |
 | **Governing HLPS** | HLPS-007-Deployment.md v0.5 (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.1 |
@@ -67,7 +67,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 1. **Elevation guard**: Checks that it is running as Administrator; exits with a clear error message if not (`#Requires -RunAsAdministrator`).
 2. **Parameters**: Accepts `-DeployDir` (default `C:\PcsRemote\`), `-AppUser` (the Windows account name for the Task Scheduler trigger — prompted if not supplied), `-Port` (TCP port for the **Windows Firewall rule only** — default `5000`; note: changing the Kestrel bind port also requires editing `Kestrel:Endpoints:Http:Url` in `appsettings.json` before running this script — see S-003), and `-SkipPasswordUpdate` (switch; if specified, the password prompt in step 7 is skipped — use for code-only re-deployments where the PCS Pro password has not changed).
 3. **Stop running instance**: Before copying any files, the script stops the Task Scheduler task (`Stop-ScheduledTask -TaskName PcsRemote -ErrorAction SilentlyContinue`) and then waits up to 10 seconds for `PcsRemote.TrayHost.exe` to exit (polling `Get-Process` every 500 ms). This prevents `Access Denied` errors caused by file locks on the executable and DLLs during re-deployment. If the process has not exited after 10 seconds, the script issues a forced kill using `Stop-Process -Id <pid> -Force` and waits an additional 5 seconds. If the process is still alive after the forced kill, the script aborts with a clear error message: "Cannot stop PcsRemote.TrayHost.exe (PID `<pid>`). Close it manually and re-run the script." The script must not proceed to file copy if the process is still running.
-4. **Artefact copy**: Copies all files from the `publish/` artefact set to `$DeployDir`. The `appsettings*.json` family of files (`appsettings.json`, `appsettings.Development.json`, any environment-specific variants) is treated as configuration: if any of these files already exist in `$DeployDir` (re-deployment), the script compares the SHA256 hash of the incoming file against the existing file using `Get-FileHash`. If the hashes differ, the existing file is preserved and the new version is placed alongside it with a `.new` suffix (e.g., `appsettings.json.new`) so the operator can diff them for new keys. If the hashes are identical, the existing file is silently overwritten (no `.new` file created, auto-start not suppressed). The script prints a warning message listing any `.new` files created, instructing the operator to review them and merge any new configuration keys manually before restarting.
+4. **Artefact copy**: Copies all files from the `publish/` artefact set to `$DeployDir`. Configuration files are treated as follows: `appsettings.Development.json` is always silently overwritten (it is never loaded in production — see S-003; preserving it adds no operator value and would silently block restart on code-only redeployments). All other `appsettings*.json` files (`appsettings.json` and any environment-specific variants) are treated as production configuration: if any of these files already exist in `$DeployDir` (re-deployment), the script compares the SHA256 hash of the incoming file against the existing file using `Get-FileHash`. If the hashes differ, the existing file is preserved and the new version is placed alongside it with a `.new` suffix (e.g., `appsettings.json.new`) so the operator can diff them for new keys. If the hashes are identical, the existing file is silently overwritten (no `.new` file created, auto-start not suppressed). The script prints a warning message listing any `.new` files created, instructing the operator to review them and merge any new configuration keys manually before restarting.
 5. **Task Scheduler (idempotent)**: Unregisters any existing task named `PcsRemote` before registering a new one, ensuring re-deployments are clean. Task definition:
    - Trigger: `ONLOGON` for the specified `-AppUser` account
    - Action: `$DeployDir\PcsRemote.TrayHost.exe`
@@ -84,7 +84,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 
 **Dependencies:** S-001 (publish artefact set must exist in `publish/`).
 
-**Verification intent:** Running the script from an elevated PowerShell prompt on the development machine (or a test VM) completes without errors. Re-running it a second time completes without errors (idempotency). Running it without elevation prints a clear error and exits. The Task Scheduler task appears in Task Scheduler with correct settings: correct user, `Start in`, restart settings. The Windows Firewall rule `PcsRemote-HTTP` appears inbound TCP port `$Port` (default 5000; confirm against the value passed to the script). `[System.Environment]::GetEnvironmentVariable("PcsPro__Password", "Machine")` returns the entered password. No password text is visible in the script output or in any log file. Running with `-SkipPasswordUpdate` completes without prompting for a password. Stop-before-copy behaviour: (a) launch the exe manually, wait for the 10-second graceful timeout to elapse — the script must force-kill the process and continue to file copy; (b) if you can arrange for the process to survive the `Stop-Process -Force` call (e.g., by protecting it with a debugger), the script must abort with a clear message.
+**Verification intent:** Running the script from an elevated PowerShell prompt on the development machine (or a test VM) completes without errors. Re-running it a second time completes without errors (idempotency). Running it without elevation prints a clear error and exits. The Task Scheduler task appears in Task Scheduler with correct settings: correct user, `Start in`, restart settings. The Windows Firewall rule `PcsRemote-HTTP` appears inbound TCP port `$Port` (default 5000; confirm against the value passed to the script). `PcsPro__Password` is set in the System environment — verify with `[System.Environment]::GetEnvironmentVariable("PcsPro__Password","Machine") -ne $null -and [System.Environment]::GetEnvironmentVariable("PcsPro__Password","Machine") -ne ""` (do **not** print the value itself). No password text is visible in the script output or in any log file. Running with `-SkipPasswordUpdate` completes without prompting for a password. Stop-before-copy behaviour: (a) launch the exe manually, wait for the 10-second graceful timeout to elapse — the script must force-kill the process and continue to file copy; (b) if you can arrange for the process to survive the `Stop-Process -Force` call (e.g., by protecting it with a debugger), the script must abort with a clear message.
 
 ---
 
@@ -98,7 +98,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
   3. Run `scripts/Deploy-PcsRemote.ps1` from an elevated PowerShell prompt (provide `-AppUser`, enter the PCS Pro password when prompted). If the script reports `.new` files: merge the new configuration keys into the existing files, then run `Start-ScheduledTask -TaskName PcsRemote` from an elevated PowerShell prompt on the garage PC, and verify the tray icon appears before proceeding to step 4.
   4. Execute the Smoke Test Checklist (`docs/guides/Smoke-Test-Checklist.md`).
 
-- **Update Deployments** (new software release): re-run `scripts/publish.ps1` to rebuild the artefact from the latest code, then re-run `scripts/Deploy-PcsRemote.ps1 -SkipPasswordUpdate`. The script detects any new configuration keys and produces `.new` files; merge those keys into the existing `appsettings.json`, then run `Start-ScheduledTask -TaskName PcsRemote` to restart the application.
+- **Update Deployments** (new software release): re-run `scripts/publish.ps1` to rebuild the artefact from the latest code, then re-run `scripts/Deploy-PcsRemote.ps1 -SkipPasswordUpdate`. The script detects configuration file changes by comparing SHA256 hashes and produces `.new` files for any `appsettings.json` (or variant) whose content has changed; compare each `.new` file against the existing one and merge any new or changed keys into the live file, then run `Start-ScheduledTask -TaskName PcsRemote` to restart the application.
 
 - **Prerequisites**: .NET 8 runtime not required (self-contained); Windows 10/11; Administrator account for deployment script.
 - **`appsettings.json` settings** (all production-relevant keys):
@@ -109,6 +109,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
   - `Kestrel:Endpoints:Http:Url` — bind address and port (default `http://0.0.0.0:5000`); change the port number here if 5000 conflicts with another application.
   - `Scoreboard:JpegQuality` — JPEG compression quality for scoreboard images (1–100; default `85`, suitable for LAN use; lower values reduce image size at the cost of quality).
   - `Logging:LogLevel:Default` — log verbosity (default `Information`; use `Debug` only for troubleshooting as it increases file size significantly).
+  - **Log files**: written to `<DeployDir>\logs\pcs-remote-YYYYMMDD.log` (e.g., `C:\PcsRemote\logs\pcs-remote-20260601.log` with the default deploy directory); one file per day, 7-day rolling retention. Note: retention limit (`retainedFileCountLimit: 7`) is hardcoded in `Program.cs` and is not configurable via `appsettings.json`.
   - `AllowedHosts` — host header filtering (default `"*"` is correct for LAN deployment; do not restrict without understanding the implications).
   - Note on `PcsPro:Mock` subsection — development/test delay and probability settings; leave unchanged in production.
   - Note on `appsettings.Development.json` — this companion file is present in the deployment directory but is never loaded in production; do not set `DOTNET_ENVIRONMENT` or `ASPNETCORE_ENVIRONMENT` to `Development` on the garage PC — either variable causes the Development config to load, silently enabling mock mode and disabling real PCS Pro automation.
@@ -118,7 +119,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
   - Why not `appsettings.json`: storing credentials in a plain-text config file is insecure. The environment variable is stored in the Windows registry (HKLM) and is not human-readable without Administrator access.
 - **Updating the PCS Pro executable path** after reinstall or upgrade: edit `appsettings.json` — update `PcsPro:ExecutablePath` and `PcsPro:WorkingDirectory` — then restart the application.
 - **Switching between mock and real mode**: change `PcsPro:UseMock` in `appsettings.json`; restart the application.
-- **Changing the HTTP port**: change `Kestrel:Endpoints:Http:Url` in `appsettings.json`; update the Windows Firewall rule to use the new port; restart the application.
+- **Changing the HTTP port**: change `Kestrel:Endpoints:Http:Url` in `appsettings.json`; re-run `scripts/Deploy-PcsRemote.ps1 -SkipPasswordUpdate -Port <new-port>` to update the Windows Firewall rule to the new port; restart the application.
 
 **Why:** Volunteers and future developers need a single authoritative reference for all configuration decisions. Accurately documenting all keys (including the `UseMock`/`Mock` distinction and the `Development.json` note) prevents misconfiguration. Addresses D-SC-4, D-SC-6.
 
@@ -184,9 +185,9 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 
 **Why:** A structured checklist that any developer or club IT contact can follow ensures that every deployment is validated against all Phase 1 capabilities. It also provides a regression baseline for future deployments. The checklist as a whole satisfies D-SC-7 (smoke test covers all Phase 1 functional areas); no individual item covers D-SC-7 alone.
 
-**Dependencies:** S-001–S-004 (all prior deliverables must exist before the checklist can be executed meaningfully). Blocking unknown D-U-8 (PCS Pro install path) must be resolved before items 6–10 can pass.
+**Dependencies:** S-001–S-004 (all prior deliverables must exist before the checklist can be executed meaningfully). Blocking unknown D-U-8 (PCS Pro install path) must be resolved before items 6–9, 12, and 13 can pass.
 
-**Verification intent:** Execute checklist on garage PC after first deployment; all 13 items pass. **Executor**: the developer performing the first deployment. **Sign-off**: each checklist item is marked pass/fail and the result is recorded in the delivery record above before the step is marked Delivered. Items 6–10 and 13 require D-U-8 (PCS Pro install path) to be resolved first.
+**Verification intent:** Execute checklist on garage PC after first deployment; all 13 items pass. **Executor**: the developer performing the first deployment. **Sign-off**: each checklist item is marked pass/fail and the result is recorded in the delivery record above before the step is marked Delivered. Items 6–9, 12, and 13 require D-U-8 (PCS Pro install path) to be resolved first.
 
 ---
 
@@ -292,3 +293,17 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 | R5-L4 | S-004 §7 log filename example hardcoded to document date (20260414); will not exist on any other deployment day | LOW | Sonnet | Accepted — replaced with `pcs-remote-YYYYMMDD.log` format pattern with illustrative example |
 | R5-L5 | S-003 Quick Start note prohibiting `publish.ps1` re-runs has no update-deployment counterpart | LOW | Sonnet | Accepted — note scoped to initial deployment; Update Deployments procedure added |
 
+### R6 Review (v0.6 → v0.7)
+
+**Models**: GPT-5.4 · Claude Opus 4.6 · **Result**: NEEDS REVISION (6 findings accepted, 2 dismissed)
+
+| ID | Finding | Severity | Source | Disposition |
+|---|---|---|---|---|
+| R6-M1 | S-002 verification intent checks `GetEnvironmentVariable("PcsPro__Password")` — prints the password while also saying "No credential in output" | MEDIUM | GPT | Accepted — replaced with non-printing existence check (`-ne $null -and -ne ""`) |
+| R6-M2 | S-003 port-change procedure says "update the Windows Firewall rule" without specifying the mechanism | MEDIUM | GPT | Accepted — replaced with explicit "re-run `Deploy-PcsRemote.ps1 -SkipPasswordUpdate -Port <new-port>`" instruction |
+| R6-M3 | S-002 step 4 includes `appsettings.Development.json` in merge-blocking glob — never loaded in production; can block auto-restart on code-only redeployments | MEDIUM | GPT | Accepted — `appsettings.Development.json` excluded from merge-blocking; always silently overwritten |
+| R6-M4 | S-005 D-U-8 dependency incorrect: item 10 (manual mode, no PCS Pro needed) included; item 12 (password change, requires PCS Pro login) excluded | MEDIUM | Opus | Accepted — corrected to "items 6–9, 12, and 13" in both Dependencies and Verification intent |
+| R6-M5 | S-003 missing log file location and 7-day retention required by governing HLPS-007 §2 | MEDIUM | Opus | Accepted — log path pattern and retention note added to S-003 settings list |
+| R6-I1 | S-003 Update Deployments says "detects new keys" — script detects whole-file hash change, not individual keys | INFO | Opus | Accepted — reworded to "detects configuration file changes by comparing SHA256 hashes" |
+| — | R6-GPT-L1: S-004 §7 log path assumes default deploy dir | LOW | GPT | Dismissed — line 149 already says "if your IT contact used a different deployment folder, substitute it for `C:\PcsRemote\`" |
+| — | R6-Opus-L1: S-001 code snippet uses K&R brace style | LOW | Opus | Dismissed — lines 38–46 already use Allman style; reviewer saw condensed summary, not source |
