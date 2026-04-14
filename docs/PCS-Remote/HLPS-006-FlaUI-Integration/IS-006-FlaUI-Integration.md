@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | **Document** | IS-006-FlaUI-Integration.md |
-| **Status** | APPROVED — Pending user approval |
-| **Version** | 0.4 |
+| **Status** | COMPLETE |
+| **Version** | 0.5 |
 | **Date** | 2026-04-12 |
 | **Governing HLPS** | HLPS-006-FlaUI-Integration.md v0.2 (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.0 |
@@ -144,3 +144,15 @@ Any unexpected dialog encountered during any of these three flows is handled uni
 | R1 | 2026-04-12 | Claude Opus 4.6, GPT-5.4, Claude Sonnet 4.6 | NEEDS REVIEW — 3 HIGH, 3 MEDIUM, 2 LOW |
 | R1 fixes | 2026-04-12 | Orchestrator | 8 findings accepted, all applied |
 | R2 | 2026-04-12 | Claude Opus 4.6, GPT-5.4 | APPROVED — 5 advisories applied (A-003/A-004/A-005); A-001/A-002 noted as HLPS-level terminology |
+
+## Delivery Record
+
+| Step | Commit | Status |
+|---|---|---|
+| S-001 | squash-merged | DELIVERED |
+| S-002 | `258f23a` | DELIVERED |
+| S-003 | `c12d322` | DELIVERED |
+| S-004 | `97e1530` | DELIVERED |
+| S-005 | `3d06ea9` | DELIVERED |
+| S-006 | `7d2962a` | DELIVERED |
+| S-007 | `97eb072` | DELIVERED |
