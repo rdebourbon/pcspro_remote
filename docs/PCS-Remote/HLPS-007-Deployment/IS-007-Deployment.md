@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | IS-007-Deployment.md |
 | **Status** | DRAFT |
-| **Version** | 0.3 |
+| **Version** | 0.4 |
 | **Date** | 2026-04-14 |
 | **Governing HLPS** | HLPS-007-Deployment.md v0.5 (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.1 |
@@ -76,7 +76,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
    - On failure: restart after 30 seconds, up to 999 attempts
    - Settings: `ExecutionTimeLimit = PT0S` (no timeout), `MultipleInstances = IgnoreNew`
 6. **Windows Firewall rule (idempotent)**: Removes any existing rule named `PcsRemote-HTTP` then creates a new inbound TCP rule for port `$Port` (`New-NetFirewallRule`).
-7. **PCS Pro password**: If `-SkipPasswordUpdate` is not specified, checks whether `PcsPro__Password` is already set in the System environment. If already set, prints a prompt: "Password is already configured. Update it? [y/N]" and only proceeds if the operator answers `y`. If not yet set, prompts unconditionally via `Read-Host -AsSecureString`. Converts to plain text using `[System.Runtime.InteropServices.Marshal]::PtrToStringBSTR` and `SecureStringToBSTR` only for the duration of the `SetEnvironmentVariable` call; sets the System-scoped environment variable `PcsPro__Password` via `[System.Environment]::SetEnvironmentVariable`. Note: .NET managed strings are immutable and cannot be zeroed in memory; the `SecureString` itself provides a degree of protection in memory, but once converted to a plain string for the registry call, normal GC rules apply. The script must not write any credential to disk or to the console output.
+7. **PCS Pro password**: If `-SkipPasswordUpdate` is not specified, checks whether `PcsPro__Password` is already set in the System environment. If already set, prints a prompt: "Password is already configured. Update it? [y/N]" and only proceeds if the operator answers `y`. If not yet set, prompts unconditionally via `Read-Host -AsSecureString`. **Guard**: if `-SkipPasswordUpdate` is specified but `PcsPro__Password` is not set in the System environment, the script must print a warning before proceeding: "⚠ -SkipPasswordUpdate specified but PcsPro__Password is not set. If real mode is enabled (PcsPro:UseMock=false), PCS Pro login will fail. Set the password manually or re-run without -SkipPasswordUpdate." Converts to plain text using `[System.Runtime.InteropServices.Marshal]::PtrToStringBSTR` and `SecureStringToBSTR` only for the duration of the `SetEnvironmentVariable` call; sets the System-scoped environment variable `PcsPro__Password` via `[System.Environment]::SetEnvironmentVariable`. Note: .NET managed strings are immutable and cannot be zeroed in memory; the `SecureString` itself provides a degree of protection in memory, but once converted to a plain string for the registry call, normal GC rules apply. The script must not write any credential to disk or to the console output.
 8. **Restart after deployment**: If no `.new` configuration files were created in step 4 (first-time deployment or re-deployment with no new keys), starts the Task Scheduler task immediately (`Start-ScheduledTask -TaskName PcsRemote`). If `.new` files exist, does **not** start the task — instead prints a prominent warning: "⚠ Configuration merge required. Review the following .new files, merge any new keys into the existing configuration, then run: `Start-ScheduledTask -TaskName PcsRemote`." This prevents the application starting with incomplete configuration after a release that introduces required new keys.
 9. **Summary**: Prints a deployment summary listing all actions taken and their outcomes, including any `.new` configuration files that require review.
 
@@ -94,7 +94,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 
 - **Quick Start — First-Time Deployment Procedure**: A numbered end-to-end sequence so a newcomer does not need to synthesise the order from four separate documents:
   1. Run `scripts/publish.ps1` to produce the deployment artefact in `publish/`.
-  2. Edit `publish/appsettings.json`: set `PcsPro:ExecutablePath` to the full path of `cricket.exe`; set `PcsPro:WorkingDirectory` to the folder containing it; set `PcsPro:AutoLaunch` to `true` (the shipped file defaults to `false`); leave `PcsPro:Password` empty.
+  2. Edit `publish/appsettings.json`: set `PcsPro:ExecutablePath` to the full path of `cricket.exe`; set `PcsPro:WorkingDirectory` to the folder containing it; set `PcsPro:AutoLaunch` to `true` (the shipped file defaults to `false`); leave `PcsPro:Password` empty. **Note**: `publish/` is git-ignored — do not run `git clean` or re-run `publish.ps1` after this step, as either action will overwrite your changes.
   3. Run `scripts/Deploy-PcsRemote.ps1` from an elevated PowerShell prompt (provide `-AppUser`, enter the PCS Pro password when prompted). If the script reports `.new` files, merge them before proceeding.
   4. Execute the Smoke Test Checklist (`docs/guides/Smoke-Test-Checklist.md`).
 
@@ -130,7 +130,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 
 **What changes:** Create `docs/guides/Operational-Guide.md`. The guide is written for club volunteers with no IT background. Sections:
 
-1. **Before the match** — How to confirm the application is running (look for the tray icon; if absent, log on to the garage PC and wait 30 seconds for auto-start). If it still has not appeared, open an elevated PowerShell prompt and run `Start-ScheduledTask -TaskName PcsRemote`. Do not double-click the executable directly — starting from outside the deployment folder can place log files in an unexpected location.
+1. **Before the match** — How to confirm the application is running (look for the tray icon; if absent, log on to the garage PC and wait 30 seconds for auto-start). If the tray icon still has not appeared, contact your IT contact — they can restart the application by running `Start-ScheduledTask -TaskName PcsRemote` from an elevated PowerShell prompt on the garage PC.
 2. **Accessing the control panel** — Open a browser on any device on the club Wi-Fi and navigate to `http://<garage-pc-ip>:5000`. Instructions for finding the garage PC's IP address: on the garage PC, open Command Prompt and run `ipconfig`; look for the IPv4 address of the active network adapter. Recommendation: ask your IT contact to configure a static IP or DHCP reservation so the address never changes.
 3. **Status indicators** — Description of each state shown on the control panel and what action, if any, the volunteer should take:
    - **Not Running**: PCS Pro is not yet started. Click "Launch PCS Pro" to start it.
@@ -141,11 +141,11 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
    - **Match Selection — Ready**: The match list is loaded and ready to select from.
    - **Match Loaded**: A match is loaded and live. The scoreboard is available.
    - **Error**: Something went wrong. Check the log file (see §7) and report to your IT contact.
-4. **Loading a match** — Step-by-step: click "Launch PCS Pro", wait for match list, select today's match, click "Load".
+4. **Loading a match** — Note: if `PcsPro:AutoLaunch` is set to `true` (recommended for production), PCS Pro starts automatically on logon and the control panel will already show Match Selection or later — skip to selecting a match. Full sequence from a cold start: click "Launch PCS Pro", wait for match list, select today's match, click "Load".
 5. **Manual mode** — When to use manual mode; how to toggle it; what it changes.
 6. **Updating the PCS Pro password** — "If the PCS Pro password changes, you will need to update it. Follow these steps: [cross-reference Configuration Guide §password-setting]." Note: this requires Administrator access on the garage PC.
 7. **Checking for errors** — How to locate today's log file (default: `C:\PcsRemote\logs\pcs-remote-20260414.log` — where the date changes daily; if your IT contact used a different deployment folder, substitute it for `C:\PcsRemote\`); what level of detail to share when reporting a problem.
-8. **Restarting the application** — Right-click the tray icon → Exit; then log off and log on again (or double-click the executable to restart immediately).
+8. **Restarting the application** — Right-click the tray icon → Exit; then log off and log on again (the application restarts automatically within 30 seconds via Task Scheduler).
 9. **After a reboot** — If the garage PC has been restarted (e.g., after a power cut or Windows Update): log on to the garage PC if auto-logon is not configured; the application will start automatically within 30 seconds of logon.
 10. **SmartScreen prompt** — If Windows shows a "Windows protected your PC" prompt when first running the application: click "More info" then "Run anyway." This is a one-time prompt for unsigned executables.
 11. **Updating PCS Pro path** — If PCS Pro is reinstalled or upgraded, the executable path in `appsettings.json` must be updated (cross-reference Configuration Guide §updating-pcs-pro-path).
@@ -167,7 +167,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 | # | Area | Test | Pass condition | Failure action |
 |---|---|---|---|---|
 | 1 | Deployment | Application artefact set complete | All expected files present in deploy directory | Re-run `scripts/publish.ps1` and `scripts/Deploy-PcsRemote.ps1` |
-| 2 | D-SC-1 | Self-contained artefact verification | Inspect `publish\PcsRemote.TrayHost.runtimeconfig.json` — confirm `"type": "selfContained"` is `true`; confirm `coreclr.dll` is present in the `publish/` folder. Optionally test on a clean Windows 10/11 VM with no .NET runtime installed. | Re-run `scripts/publish.ps1` and confirm the `--self-contained` flag is present |
+| 2 | D-SC-1 | Self-contained artefact verification | Confirm `coreclr.dll` and `PcsRemote.TrayHost.exe` are both present in the `publish/` folder (proves the CLR is bundled). Optionally test on a clean Windows 10/11 VM with no .NET runtime installed. | Re-run `scripts/publish.ps1` and confirm the `--self-contained` flag is present |
 | 3 | D-SC-2 | Task Scheduler auto-start | Application tray icon appears within 30s of logon | Check Task Scheduler task status and "Start in" setting |
 | 4 | D-SC-8 / HLPS-003 | LAN browser access | Control panel loads at `http://<garage-pc-ip>:5000` from a separate device | Check firewall rule; verify correct IP address |
 | 5 | HLPS-003 | SignalR connection | Status indicator updates in real time (no spinner stuck) | Check browser console for WebSocket errors |
@@ -176,7 +176,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 | 8 | HLPS-006 | Match load | Select a match and click Load; service reaches MatchLoaded state | Check PCS Pro UI for dialogs; check log file |
 | 9 | HLPS-004 | Scoreboard preview | Scoreboard image appears and refreshes on demand | Check `Scoreboard:JpegQuality`; check PrintWindow availability |
 | 10 | HLPS-005 | Manual mode toggle | Manual mode can be enabled and disabled from the control panel | Check ManualModeService wiring in DI |
-| 11 | D-SC-3 | Task Scheduler restart mechanism | Kill `PcsRemote.TrayHost.exe` via Task Manager; application restarts within 60 seconds. Note: Task Manager always exits with code 1 — this tests the Task Scheduler restart settings, not the S-001 exit code fix. For exit code fix verification: inspect `src/PcsRemote.TrayHost/Program.cs` catch block and confirm `return 1;` is present (code review). | Check Task Scheduler restart settings (delay ≤ 30s, count ≥ 999) |
+| 11 | D-SC-3 | Task Scheduler restart mechanism | Kill `PcsRemote.TrayHost.exe` via Task Manager; application restarts within 60 seconds. Repeat three times in rapid succession (within 2 minutes) to verify the 999-attempt retry count is correctly configured. Note: Task Manager always exits with code 1 — this tests the Task Scheduler restart settings, not the S-001 exit code fix. For exit code fix verification: inspect `src/PcsRemote.TrayHost/Program.cs` catch block and confirm `return 1;` is present (code review). | Check Task Scheduler restart settings (delay ≤ 30s, count ≥ 999) |
 | 12 | D-SC-6 | Password change | Update `PcsPro__Password` env var; restart application; PCS Pro logs in successfully | Follow Configuration Guide §password-setting |
 | 13 | D-SC-7 / HLPS-004 | Scoreboard refresh | With a match loaded, click "Refresh Scoreboard"; a new image loads without errors | Check `CaptureScoreboardImageAsync` in FlaUI service; check log file |
 
@@ -241,3 +241,18 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 | R2-L3 | `JpegQuality` default value not stated | LOW | Opus | Accepted — actual default (85) added |
 | R2-L4 | S-003 describes code default for `AutoLaunch` but shipped file sets `false` | LOW | Sonnet | Accepted — explicit note added: set to `true` for production |
 | R2-L5 | S-005 item 2 D-SC-1 test unexecutable on development machine | LOW | Sonnet | Accepted — replaced with `runtimeconfig.json` inspection guidance |
+
+### R3 Review (v0.3 → v0.4)
+
+**Models**: Claude Opus 4.6 · Claude Sonnet 4.6 · **Result**: NEEDS REVISION (7 findings, all accepted)
+
+| ID | Finding | Severity | Source | Disposition |
+|---|---|---|---|---|
+| R3-H1 | S-004 §8 "double-click the executable to restart immediately" contradicts §1 "Do not double-click" | HIGH | Both | Accepted — parenthetical removed; replaced with Task Scheduler auto-restart language |
+| R3-M1 | S-005 item 2 `"type": "selfContained"` is not a valid .NET 8 `runtimeconfig.json` field | MEDIUM | Opus | Accepted — clause removed; pass condition now tests only `coreclr.dll` presence |
+| R3-M2 | S-004 §1 elevated PS recovery instruction inaccessible to club volunteers | MEDIUM | Sonnet | Accepted — replaced with "contact your IT contact to restart the application" escalation |
+| R3-M3 | `-SkipPasswordUpdate` on first deploy leaves `PcsPro__Password` unset silently | LOW/MEDIUM | Both | Accepted — warning added to S-002 step 7 |
+| R3-L1 | `publish/` edits lost on `git clean -fdx` — no warning in Quick Start | LOW | Both | Accepted — one-line callout added after Quick Start step 2 |
+| R3-L2 | Smoke item 11 single kill insufficient to verify D-SC-3 reliably | LOW | Sonnet | Accepted — "Repeat three times in rapid succession" added |
+| R3-L3 | S-004 §4 assumes PCS Pro not yet running (contradicts AutoLaunch: true in production) | INFO | Opus | Accepted — leading sentence added directing operator to skip to match selection if already running |
+
