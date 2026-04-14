@@ -80,6 +80,8 @@ Steps are identified with stable IDs S-001 through S-007. IDs are never renumber
 
 ### S-005 — Team name extraction
 
+**Status: DELIVERED — `3d06ea9`**
+
 **What changes:** `GetTeamNamesAsync` is fully implemented: navigate to the Scoring menu, open the Match Details/Teams dialog, read home and away team names from the relevant ComboBox or text elements (I-U-2, I-U-3 resolved via Inspect.exe), close the dialog, and return the pair as a result. The ValuePattern/SelectedItem/Name resolution strategy (I-U-3) is discovered and implemented. Any unexpected dialog encountered during this phase is handled uniformly: close if possible, fire `Error` with a descriptive reason. All new code includes inline Serilog logging: element lookups at `Debug`, state transitions at `Information`, errors at `Error`.
 
 **Why:** Team names feed the web UI displayand are read once per match load. Isolating this step keeps the ComboBox pattern discovery (I-U-3) scoped and testable independently of the more complex match selection flow. Addresses HLPS-006 §2 team name extraction; targets I-SC-4.
