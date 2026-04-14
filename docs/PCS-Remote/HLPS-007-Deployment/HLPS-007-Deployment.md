@@ -3,11 +3,11 @@
 | Field | Value |
 |---|---|
 | **Document** | HLPS-007-Deployment.md |
-| **Status** | NEEDS R2 REVIEW |
-| **Version** | 0.3 |
+| **Status** | IN REVIEW |
+| **Version** | 0.4 |
 | **Date** | 2026-04-14 |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.1 |
-| **Dependencies** | HLPS-005 (system tray integrated), HLPS-006 (real automation working) |
+| **Dependencies** | HLPS-003 (control panel), HLPS-004 (scoreboard), HLPS-005 (system tray integrated), HLPS-006 (real automation working) |
 
 ---
 
@@ -27,22 +27,24 @@ This HLPS delivers production-ready deployment: a self-contained publish, Task S
 
 ### In Scope
 
-- **Self-contained portable publish**: `dotnet publish -r win-x64 --self-contained` producing a portable deployment artefact set (executable + required companion files including `appsettings.json`) with no .NET runtime dependency on the garage PC.
+- **Self-contained portable publish**: `dotnet publish src/PcsRemote.TrayHost/PcsRemote.TrayHost.csproj -c Release -r win-x64 --self-contained` producing a portable deployment artefact set (executable + required companion files including `appsettings.json`) with no .NET runtime dependency on the garage PC.
 - **Task Scheduler configuration**: PowerShell script or documented steps to create a scheduled task that:
   - Triggers at logon of the designated deployment user account (not "any user" — prevents multiple instances on shared or auto-logon PCs)
-  - Sets "Start in" (working directory) to the deployment directory — required for relative log paths
+  - Sets "Start in" (working directory) to the deployment directory — required for correct resolution of all relative paths (log files, configuration, static content)
   - Starts the application minimised (tray icon visible, no console window)
   - Restarts on failure with a short delay (≤ 30 seconds) and a high retry count (≥ 999) to approximate indefinite recovery
   - Runs in the interactive session (not Session 0)
-- **Windows Firewall rule**: Deployment script or documented steps to create an inbound TCP rule allowing connections on the configured HTTP port (default 5000), enabling LAN access from tablets, laptops, and other devices
+- **Windows Firewall rule**: Deployment script or documented steps to create or replace (idempotent) an inbound TCP rule allowing connections on the configured HTTP port (default 5000), enabling LAN access from tablets, laptops, and other devices
 - **Configuration documentation**: Clear guide covering all `appsettings.json` settings:
   - `PcsPro:AutoLaunch` — whether PCS Pro is launched automatically on service start
   - `PcsPro:ExecutablePath` and `PcsPro:WorkingDirectory` — path to cricket.exe installation (required for real mode)
-  - `PcsPro:Password` — how to set via environment variable (e.g., `PCSREMOTE_PcsPro__Password` as a System-scoped variable); User Secrets is a development-only mechanism and must not be used in production
+  - `PcsPro:Password` — how to set via the System-scoped environment variable `PcsPro__Password` (double-underscore hierarchy separator — no application prefix); User Secrets is a development-only mechanism and must not be used in production
   - `PcsPro:UseMock` — how to switch between mock and real mode
   - `Kestrel:Endpoints:Http:Url` — network port and bind address (default `http://0.0.0.0:5000`)
   - `Scoreboard:JpegQuality` — image compression setting
-  - Log file location (`logs/` subdirectory of deployment directory) and 7-day retention policy
+  - Log file location (`logs/` subdirectory of deployment directory), log level, and 7-day retention policy
+  - `AllowedHosts` — host filtering (default `"*"` is appropriate for LAN deployment; note if restricting to specific hostnames)
+  - Note on `PcsPro:Mock` section — development/test settings; not relevant for production deployment
 - **Operational guide**: Step-by-step document for club volunteers covering:
   - How to access the control panel from a browser (including the application's IP address or hostname)
   - What each status indicator means
@@ -52,7 +54,7 @@ This HLPS delivers production-ready deployment: a self-contained publish, Task S
   - How to restart the application if needed
   - What to expect after a reboot (auto-logon or manual login requirement — resolution depends on D-U-5)
   - What to do if a Windows SmartScreen prompt appears on first run
-- **Deployment script**: PowerShell script (required, not optional) automating: copy publish artefacts to deployment directory, create/update Task Scheduler task, create Windows Firewall rule, set System-scoped environment variables
+- **Deployment script**: PowerShell script (required, not optional) automating: copy publish artefacts to deployment directory, create/update Task Scheduler task, create or replace Windows Firewall rule, set System-scoped environment variables (at minimum: `PcsPro__Password` for PCS Pro credentials — see configuration documentation)
 - **Smoke test checklist**: Manual verification steps to run after deployment covering: application starts at logon, control panel reachable from a separate LAN device, PCS Pro launches in real mode, match selection works, scoreboard visible, manual mode toggle works, crash recovery restarts the process
 
 ### Out of Scope
@@ -69,7 +71,7 @@ This HLPS delivers production-ready deployment: a self-contained publish, Task S
 
 | ID | Criterion | Verification |
 |---|---|---|
-| D-SC-1 | Application publishes as a self-contained, portable artefact set for `win-x64` | `dotnet publish -r win-x64 --self-contained` succeeds; copy output to a clean directory on a machine without .NET installed; application starts correctly |
+| D-SC-1 | Application publishes as a self-contained, portable artefact set for `win-x64` | `dotnet publish src/PcsRemote.TrayHost/PcsRemote.TrayHost.csproj -c Release -r win-x64 --self-contained` succeeds; copy output to a clean directory on a machine without .NET installed; application starts correctly |
 | D-SC-2 | Task Scheduler starts application at logon of the designated user in the interactive session | Logoff/logon cycle on garage PC; application appears in system tray without manual intervention |
 | D-SC-3 | Application restarts automatically after crash within 60 seconds; recovery continues after multiple sequential crashes | Kill process; verify restart within ≤ 60 seconds; kill three times in succession; verify it continues to restart |
 | D-SC-4 | Configuration guide is complete and accurate | A person who has not previously configured the system can complete a fresh configuration from scratch using only the guide, without agent assistance, within 30 minutes |
@@ -90,6 +92,8 @@ This HLPS delivers production-ready deployment: a self-contained publish, Task S
 | D-U-4 | Windows Firewall policy — is it managed by group policy, or local? Can the deployment script create inbound rules without admin escalation? | User | No — script will attempt rule creation; if blocked, manual steps are documented |
 | D-U-5 | Auto-logon configuration — is the garage PC configured for auto-logon? If not, the application will not start after a reboot until a user logs in. The club must decide whether to enable auto-logon or document the manual logon requirement in the operational guide. | User | No — both paths are handled; blocking only for the "fully unattended after reboot" use case |
 | D-U-6 | Antivirus / Windows Defender SmartScreen — will a locally-built self-contained executable be flagged on first run? | User | No — dismissal steps documented in operational guide; if AV quarantines the file, an exclusion path must be added |
+| D-U-7 | Garage PC network addressing — does the garage PC have a static IP, DHCP reservation, or dynamic DHCP? A dynamic address can change after a router reboot, rendering any hardcoded IP in the operational guide stale. Recommendation: configure a DHCP reservation or static IP before deployment. | User | No — operational guide will include a "how to find the current IP" step (e.g., `ipconfig`); static IP or DHCP reservation is strongly recommended |
+| D-U-8 | PCS Pro installation directory on garage PC — needed to configure `PcsPro:ExecutablePath` and `PcsPro:WorkingDirectory`; typical default is `C:\Program Files (x86)\PCS Pro\` but must be confirmed. | User | Yes — required for real-mode smoke test (D-SC-7); must be resolved before deployment |
 
 ---
 
@@ -99,6 +103,8 @@ This HLPS delivers production-ready deployment: a self-contained publish, Task S
 |---|---|---|---|
 | R1 | 2026-04-14 | Claude Opus 4.6, Claude Sonnet 4.6 | NEEDS REVISION — 3 HIGH, 8 MEDIUM, 4 LOW |
 | R1 fixes | 2026-04-14 | Orchestrator | All 15 findings triaged and applied — see triage table below |
+| R2 | 2026-04-14 | Claude Opus 4.6, Claude Sonnet 4.6 | NEEDS REVISION — 2 HIGH, 6 MEDIUM, 3 LOW; all R1 findings RESOLVED |
+| R2 fixes | 2026-04-14 | Orchestrator | All 11 findings triaged and applied — see triage table below |
 
 ### R1 Triage Summary
 
@@ -119,4 +125,18 @@ This HLPS delivers production-ready deployment: a self-contained publish, Task S
 | Deployment script marked "Optional" (Sonnet LOW) | Accepted — "Optional" removed; script is a required deliverable |
 | SmartScreen risk unmentioned (Opus LOW) | Accepted — SmartScreen note added to operational guide scope and D-U-6 added |
 | Context version stale (Sonnet LOW) | Accepted — Updated to v1.1 |
+
+### R2 Triage Summary
+
+| Finding | Decision |
+|---|---|
+| Env var prefix `PCSREMOTE_` incorrect — no prefix in app host builder (both) | Accepted — corrected to `PcsPro__Password` (no prefix); explanation of double-underscore separator added |
+| Publish command missing target project and `-c Release` (Opus HIGH) | Accepted — full command `dotnet publish src/PcsRemote.TrayHost/... -c Release -r win-x64 --self-contained` applied in scope and D-SC-1 |
+| Deployment script env vars not enumerated (Opus MEDIUM) | Accepted — `PcsPro__Password` explicitly named in deployment script scope item |
+| Dependencies missing HLPS-003, HLPS-004 (Opus MEDIUM) | Accepted — added to Dependencies header |
+| Logging/AllowedHosts/PcsPro:Mock undocumented (Opus LOW) | Accepted — log level and AllowedHosts added; PcsPro:Mock noted as dev-only |
+| Firewall rule not idempotent on re-run (Sonnet MEDIUM) | Accepted — changed to "create or replace (idempotent)" in scope and deployment script |
+| Garage PC IP discoverability unregistered (Sonnet MEDIUM) | Accepted — D-U-7 added; operational guide scope to include IP discovery step |
+| PCS Pro installation path unregistered (Sonnet MEDIUM) | Accepted — D-U-8 added; marked Blocking: Yes for real-mode smoke test |
+| "Start in" rationale too narrow (Sonnet LOW) | Accepted — broadened to "all relative paths (log files, configuration, static content)" |
 
