@@ -4,11 +4,11 @@
 |---|---|
 | **Document** | IS-007-Deployment.md |
 | **Status** | DRAFT |
-| **Version** | 0.4 |
+| **Version** | 0.5 |
 | **Date** | 2026-04-14 |
 | **Governing HLPS** | HLPS-007-Deployment.md v0.5 (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.1 |
-| **Prerequisites** | IS-006 delivered (real FlaUI automation working, all 438 tests passing). |
+| **Prerequisites** | IS-006 delivered (real FlaUI automation working, all 443 tests passing). |
 
 ---
 
@@ -56,7 +56,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 
 **Dependencies:** None within IS-007.
 
-**Verification intent:** `src/PcsRemote.TrayHost/Program.cs` catch block now returns non-zero exit code. All 438 existing tests pass. `dotnet publish` succeeds with zero errors. `publish/PcsRemote.TrayHost.exe` exists. `scripts/publish.ps1` runs cleanly and prints the artefact list.
+**Verification intent:** `src/PcsRemote.TrayHost/Program.cs` catch block now returns non-zero exit code. All 443 existing tests pass. `dotnet publish` succeeds with zero errors. `publish/PcsRemote.TrayHost.exe` exists. `scripts/publish.ps1` runs cleanly and prints the artefact list.
 
 ---
 
@@ -67,7 +67,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 1. **Elevation guard**: Checks that it is running as Administrator; exits with a clear error message if not (`#Requires -RunAsAdministrator`).
 2. **Parameters**: Accepts `-DeployDir` (default `C:\PcsRemote\`), `-AppUser` (the Windows account name for the Task Scheduler trigger — prompted if not supplied), `-Port` (TCP port for the **Windows Firewall rule only** — default `5000`; note: changing the Kestrel bind port also requires editing `Kestrel:Endpoints:Http:Url` in `appsettings.json` before running this script — see S-003), and `-SkipPasswordUpdate` (switch; if specified, the password prompt in step 7 is skipped — use for code-only re-deployments where the PCS Pro password has not changed).
 3. **Stop running instance**: Before copying any files, the script stops the Task Scheduler task (`Stop-ScheduledTask -TaskName PcsRemote -ErrorAction SilentlyContinue`) and then waits up to 10 seconds for `PcsRemote.TrayHost.exe` to exit (polling `Get-Process` every 500 ms). This prevents `Access Denied` errors caused by file locks on the executable and DLLs during re-deployment. If the process has not exited after 10 seconds, the script issues a forced kill using `Stop-Process -Id <pid> -Force` and waits an additional 5 seconds. If the process is still alive after the forced kill, the script aborts with a clear error message: "Cannot stop PcsRemote.TrayHost.exe (PID `<pid>`). Close it manually and re-run the script." The script must not proceed to file copy if the process is still running.
-4. **Artefact copy**: Copies all files from the `publish/` artefact set to `$DeployDir`. The `appsettings*.json` family of files (`appsettings.json`, `appsettings.Development.json`, any environment-specific variants) is treated as configuration: if any of these files already exist in `$DeployDir` (re-deployment), the existing files are preserved and the new versions are placed alongside them with a `.new` suffix (e.g., `appsettings.json.new`) so the operator can diff them for new keys. The script prints a warning message listing any `.new` files created, instructing the operator to review them and merge any new configuration keys manually before restarting.
+4. **Artefact copy**: Copies all files from the `publish/` artefact set to `$DeployDir`. The `appsettings*.json` family of files (`appsettings.json`, `appsettings.Development.json`, any environment-specific variants) is treated as configuration: if any of these files already exist in `$DeployDir` (re-deployment), the script compares the SHA256 hash of the incoming file against the existing file using `Get-FileHash`. If the hashes differ, the existing file is preserved and the new version is placed alongside it with a `.new` suffix (e.g., `appsettings.json.new`) so the operator can diff them for new keys. If the hashes are identical, the existing file is silently overwritten (no `.new` file created, auto-start not suppressed). The script prints a warning message listing any `.new` files created, instructing the operator to review them and merge any new configuration keys manually before restarting.
 5. **Task Scheduler (idempotent)**: Unregisters any existing task named `PcsRemote` before registering a new one, ensuring re-deployments are clean. Task definition:
    - Trigger: `ONLOGON` for the specified `-AppUser` account
    - Action: `$DeployDir\PcsRemote.TrayHost.exe`
@@ -76,7 +76,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
    - On failure: restart after 30 seconds, up to 999 attempts
    - Settings: `ExecutionTimeLimit = PT0S` (no timeout), `MultipleInstances = IgnoreNew`
 6. **Windows Firewall rule (idempotent)**: Removes any existing rule named `PcsRemote-HTTP` then creates a new inbound TCP rule for port `$Port` (`New-NetFirewallRule`).
-7. **PCS Pro password**: If `-SkipPasswordUpdate` is not specified, checks whether `PcsPro__Password` is already set in the System environment. If already set, prints a prompt: "Password is already configured. Update it? [y/N]" and only proceeds if the operator answers `y`. If not yet set, prompts unconditionally via `Read-Host -AsSecureString`. **Guard**: if `-SkipPasswordUpdate` is specified but `PcsPro__Password` is not set in the System environment, the script must print a warning before proceeding: "⚠ -SkipPasswordUpdate specified but PcsPro__Password is not set. If real mode is enabled (PcsPro:UseMock=false), PCS Pro login will fail. Set the password manually or re-run without -SkipPasswordUpdate." Converts to plain text using `[System.Runtime.InteropServices.Marshal]::PtrToStringBSTR` and `SecureStringToBSTR` only for the duration of the `SetEnvironmentVariable` call; sets the System-scoped environment variable `PcsPro__Password` via `[System.Environment]::SetEnvironmentVariable`. Note: .NET managed strings are immutable and cannot be zeroed in memory; the `SecureString` itself provides a degree of protection in memory, but once converted to a plain string for the registry call, normal GC rules apply. The script must not write any credential to disk or to the console output.
+7. **PCS Pro password**: If `-SkipPasswordUpdate` is not specified, checks whether `PcsPro__Password` is already set in the System environment. If already set, prints a prompt: "Password is already configured. Update it? [y/N]" and only proceeds if the operator answers `y`. If not yet set, prompts unconditionally via `Read-Host -AsSecureString`. **Guard**: if `-SkipPasswordUpdate` is specified but `PcsPro__Password` is not set in the System environment, the script must print a warning before proceeding: "⚠ -SkipPasswordUpdate specified but PcsPro__Password is not set. If real mode is enabled (PcsPro:UseMock=false), PCS Pro login will fail. Set the password manually or re-run without -SkipPasswordUpdate." Converts to plain text using `[System.Runtime.InteropServices.Marshal]::PtrToStringBSTR` and `SecureStringToBSTR` only for the duration of the `SetEnvironmentVariable` call; immediately after the `SetEnvironmentVariable` call, frees the BSTR via `[System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)` in a `try/finally` block; sets the System-scoped environment variable `PcsPro__Password` via `[System.Environment]::SetEnvironmentVariable`. Note: .NET managed strings are immutable and cannot be zeroed in memory; the `SecureString` itself provides a degree of protection in memory, but once converted to a plain string for the registry call, normal GC rules apply. Freeing the BSTR promptly with `ZeroFreeBSTR` minimises the window during which the plaintext is held in unmanaged memory. The script must not write any credential to disk or to the console output.
 8. **Restart after deployment**: If no `.new` configuration files were created in step 4 (first-time deployment or re-deployment with no new keys), starts the Task Scheduler task immediately (`Start-ScheduledTask -TaskName PcsRemote`). If `.new` files exist, does **not** start the task — instead prints a prominent warning: "⚠ Configuration merge required. Review the following .new files, merge any new keys into the existing configuration, then run: `Start-ScheduledTask -TaskName PcsRemote`." This prevents the application starting with incomplete configuration after a release that introduces required new keys.
 9. **Summary**: Prints a deployment summary listing all actions taken and their outcomes, including any `.new` configuration files that require review.
 
@@ -84,7 +84,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 
 **Dependencies:** S-001 (publish artefact set must exist in `publish/`).
 
-**Verification intent:** Running the script from an elevated PowerShell prompt on the development machine (or a test VM) completes without errors. Re-running it a second time completes without errors (idempotency). Running it without elevation prints a clear error and exits. The Task Scheduler task appears in Task Scheduler with correct settings: correct user, `Start in`, restart settings. The Windows Firewall rule `PcsRemote-HTTP` appears inbound TCP port `$Port` (default 5000; confirm against the value passed to the script). `[System.Environment]::GetEnvironmentVariable("PcsPro__Password", "Machine")` returns the entered password. No password text is visible in the script output or in any log file. Running with `-SkipPasswordUpdate` completes without prompting for a password. Killing `PcsRemote.TrayHost.exe` with `Stop-Process -Force` during the stop-before-copy step causes the script to abort with a clear message (test by launching the exe manually and refusing to close it within 10 seconds).
+**Verification intent:** Running the script from an elevated PowerShell prompt on the development machine (or a test VM) completes without errors. Re-running it a second time completes without errors (idempotency). Running it without elevation prints a clear error and exits. The Task Scheduler task appears in Task Scheduler with correct settings: correct user, `Start in`, restart settings. The Windows Firewall rule `PcsRemote-HTTP` appears inbound TCP port `$Port` (default 5000; confirm against the value passed to the script). `[System.Environment]::GetEnvironmentVariable("PcsPro__Password", "Machine")` returns the entered password. No password text is visible in the script output or in any log file. Running with `-SkipPasswordUpdate` completes without prompting for a password. Stop-before-copy behaviour: (a) launch the exe manually, wait for the 10-second graceful timeout to elapse — the script must force-kill the process and continue to file copy; (b) if you can arrange for the process to survive the `Stop-Process -Force` call (e.g., by protecting it with a debugger), the script must abort with a clear message.
 
 ---
 
@@ -109,7 +109,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
   - `Logging:LogLevel:Default` — log verbosity (default `Information`; use `Debug` only for troubleshooting as it increases file size significantly).
   - `AllowedHosts` — host header filtering (default `"*"` is correct for LAN deployment; do not restrict without understanding the implications).
   - Note on `PcsPro:Mock` subsection — development/test delay and probability settings; leave unchanged in production.
-  - Note on `appsettings.Development.json` — this companion file is present in the deployment directory but is never loaded in production; do not set `DOTNET_ENVIRONMENT=Development` on the garage PC.
+  - Note on `appsettings.Development.json` — this companion file is present in the deployment directory but is never loaded in production; do not set `DOTNET_ENVIRONMENT` or `ASPNETCORE_ENVIRONMENT` to `Development` on the garage PC — either variable causes the Development config to load, silently enabling mock mode and disabling real PCS Pro automation.
 - **Setting the PCS Pro password** (via `PcsPro__Password` System-scoped environment variable):
   - **Important**: The `PcsPro:Password` key in `appsettings.json` must be left empty (`""`). Do not enter the password there — it is stored in plain text and will be ignored in favour of the environment variable. Entering it in `appsettings.json` is a security risk.
   - The deployment script sets this interactively. Manual steps if needed: open an elevated PowerShell prompt; run `[System.Environment]::SetEnvironmentVariable("PcsPro__Password","<password>","Machine")`; restart the application or the Task Scheduler task for the change to take effect.
@@ -131,9 +131,9 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 **What changes:** Create `docs/guides/Operational-Guide.md`. The guide is written for club volunteers with no IT background. Sections:
 
 1. **Before the match** — How to confirm the application is running (look for the tray icon; if absent, log on to the garage PC and wait 30 seconds for auto-start). If the tray icon still has not appeared, contact your IT contact — they can restart the application by running `Start-ScheduledTask -TaskName PcsRemote` from an elevated PowerShell prompt on the garage PC.
-2. **Accessing the control panel** — Open a browser on any device on the club Wi-Fi and navigate to `http://<garage-pc-ip>:5000`. Instructions for finding the garage PC's IP address: on the garage PC, open Command Prompt and run `ipconfig`; look for the IPv4 address of the active network adapter. Recommendation: ask your IT contact to configure a static IP or DHCP reservation so the address never changes.
+2. **Accessing the control panel** — Open a browser on any device on the club Wi-Fi and navigate to `http://<garage-pc-ip>:<port>` where `<port>` is the configured Kestrel port (default `5000`; check `Kestrel:Endpoints:Http:Url` in `appsettings.json` if you are unsure). Instructions for finding the garage PC's IP address: on the garage PC, open Command Prompt and run `ipconfig`; look for the IPv4 address of the active network adapter. Recommendation: ask your IT contact to configure a static IP or DHCP reservation so the address never changes.
 3. **Status indicators** — Description of each state shown on the control panel and what action, if any, the volunteer should take:
-   - **Not Running**: PCS Pro is not yet started. Click "Launch PCS Pro" to start it.
+   - **Not Running**: PCS Pro is not yet started. With auto-launch configured, PCS Pro will launch automatically — wait 30–60 seconds and the state will progress to Launching then Login Screen automatically. If the state does not change after 60 seconds, check that the garage PC is logged on and contact your IT contact.
    - **Launching**: PCS Pro is starting up. Wait; no action needed.
    - **Login Screen**: PCS Pro is open and waiting for login. The application will log in automatically.
    - **Match Selection**: The match selection screen is open. Use the control panel to search for and load today's match.
@@ -141,8 +141,8 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
    - **Match Selection — Ready**: The match list is loaded and ready to select from.
    - **Match Loaded**: A match is loaded and live. The scoreboard is available.
    - **Error**: Something went wrong. Check the log file (see §7) and report to your IT contact.
-4. **Loading a match** — Note: if `PcsPro:AutoLaunch` is set to `true` (recommended for production), PCS Pro starts automatically on logon and the control panel will already show Match Selection or later — skip to selecting a match. Full sequence from a cold start: click "Launch PCS Pro", wait for match list, select today's match, click "Load".
-5. **Manual mode** — When to use manual mode; how to toggle it; what it changes.
+4. **Loading a match** — Note: if `PcsPro:AutoLaunch` is set to `true` (recommended for production), PCS Pro starts automatically on logon and the control panel will already show Match Selection or later — skip to selecting a match. Full sequence from a cold start: wait for the state to reach Match Selection — Ready; the list of today's matches will appear as cards. If only one match is available, it is selected automatically. If multiple matches appear, click the card for today's match to load it.
+5. **Manual mode** — Manual mode pauses all automation (PCS Pro is no longer controlled automatically). Use it when you need to operate PCS Pro directly without interference (e.g., correcting an error in the scorer). To enable: right-click the tray icon on the garage PC and click "Switch to Manual Mode" — the web control panel will display a "Manual mode — automation paused by local operator" banner. To disable: right-click the tray icon and click "Resume Automation" — the banner disappears. Note: manual mode can only be toggled from the garage PC (tray icon), not from the web control panel.
 6. **Updating the PCS Pro password** — "If the PCS Pro password changes, you will need to update it. Follow these steps: [cross-reference Configuration Guide §password-setting]." Note: this requires Administrator access on the garage PC.
 7. **Checking for errors** — How to locate today's log file (default: `C:\PcsRemote\logs\pcs-remote-20260414.log` — where the date changes daily; if your IT contact used a different deployment folder, substitute it for `C:\PcsRemote\`); what level of detail to share when reporting a problem.
 8. **Restarting the application** — Right-click the tray icon → Exit; then log off and log on again (the application restarts automatically within 30 seconds via Task Scheduler).
@@ -166,21 +166,21 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 
 | # | Area | Test | Pass condition | Failure action |
 |---|---|---|---|---|
-| 1 | Deployment | Application artefact set complete | All expected files present in deploy directory | Re-run `scripts/publish.ps1` and `scripts/Deploy-PcsRemote.ps1` |
-| 2 | D-SC-1 | Self-contained artefact verification | Confirm `coreclr.dll` and `PcsRemote.TrayHost.exe` are both present in the `publish/` folder (proves the CLR is bundled). Optionally test on a clean Windows 10/11 VM with no .NET runtime installed. | Re-run `scripts/publish.ps1` and confirm the `--self-contained` flag is present |
+| 1 | Deployment | Application artefact set complete | All expected files present in deploy directory | Re-publish from developer machine (`scripts/publish.ps1`) and redeploy (`scripts/Deploy-PcsRemote.ps1`) |
+| 2 | D-SC-1 | Self-contained artefact verification | Confirm `coreclr.dll` and `PcsRemote.TrayHost.exe` are both present in the deployment directory (`$DeployDir`, default `C:\PcsRemote\`) — proves the CLR is bundled. (One-time initial rollout only: optionally verify on a clean Windows 10/11 VM with no .NET runtime installed — not required for subsequent deployments.) | Re-run `scripts/publish.ps1` on a developer machine and redeploy |
 | 3 | D-SC-2 | Task Scheduler auto-start | Application tray icon appears within 30s of logon | Check Task Scheduler task status and "Start in" setting |
-| 4 | D-SC-8 / HLPS-003 | LAN browser access | Control panel loads at `http://<garage-pc-ip>:5000` from a separate device | Check firewall rule; verify correct IP address |
+| 4 | D-SC-8 / HLPS-003 | LAN browser access | Control panel loads at `http://<garage-pc-ip>:<configured-port>` (default port 5000) from a separate device | Check firewall rule; verify correct IP address and port |
 | 5 | HLPS-003 | SignalR connection | Status indicator updates in real time (no spinner stuck) | Check browser console for WebSocket errors |
-| 6 | HLPS-006 | PCS Pro launch in real mode | PCS Pro (cricket.exe) launches and service reaches `MatchSelectionReady` state | Check `PcsPro:UseMock=false`, `ExecutablePath`, and `PcsPro__Password` |
-| 7 | HLPS-004 | Match list | Today's matches appear in match cards | Verify date on garage PC; check PCS Pro data |
-| 8 | HLPS-006 | Match load | Select a match and click Load; service reaches MatchLoaded state | Check PCS Pro UI for dialogs; check log file |
+| 6 | HLPS-006 | PCS Pro launch in real mode | PCS Pro (cricket.exe) launches and service reaches `MatchSelectionReady` state (or `MatchLoaded` directly if only one match exists — auto-select fires automatically) | Check `PcsPro:UseMock=false`, `ExecutablePath`, and `PcsPro__Password` |
+| 7 | HLPS-004 | Match list | Today's matches appear as match cards (or auto-load if exactly one match exists) | Verify date on garage PC; check PCS Pro data |
+| 8 | HLPS-006 | Match load | With multiple matches, click a match card; service reaches MatchLoaded state. With a single match, confirm auto-load fires without user action. | Check PCS Pro UI for dialogs; check log file |
 | 9 | HLPS-004 | Scoreboard preview | Scoreboard image appears and refreshes on demand | Check `Scoreboard:JpegQuality`; check PrintWindow availability |
-| 10 | HLPS-005 | Manual mode toggle | Manual mode can be enabled and disabled from the control panel | Check ManualModeService wiring in DI |
+| 10 | HLPS-005 | Manual mode toggle | Right-click the tray icon on the garage PC → "Switch to Manual Mode"; confirm "Manual mode — automation paused" banner appears in the web control panel. Right-click → "Resume Automation"; confirm banner disappears. | Check ManualModeService wiring in DI; confirm tray icon renders context menu |
 | 11 | D-SC-3 | Task Scheduler restart mechanism | Kill `PcsRemote.TrayHost.exe` via Task Manager; application restarts within 60 seconds. Repeat three times in rapid succession (within 2 minutes) to verify the 999-attempt retry count is correctly configured. Note: Task Manager always exits with code 1 — this tests the Task Scheduler restart settings, not the S-001 exit code fix. For exit code fix verification: inspect `src/PcsRemote.TrayHost/Program.cs` catch block and confirm `return 1;` is present (code review). | Check Task Scheduler restart settings (delay ≤ 30s, count ≥ 999) |
 | 12 | D-SC-6 | Password change | Update `PcsPro__Password` env var; restart application; PCS Pro logs in successfully | Follow Configuration Guide §password-setting |
-| 13 | D-SC-7 / HLPS-004 | Scoreboard refresh | With a match loaded, click "Refresh Scoreboard"; a new image loads without errors | Check `CaptureScoreboardImageAsync` in FlaUI service; check log file |
+| 13 | HLPS-004 | Scoreboard refresh | With a match loaded, click "Refresh Scoreboard"; a new image loads without errors | Check `CaptureScoreboardImageAsync` in FlaUI service; check log file |
 
-**Why:** A structured checklist that any developer or club IT contact can follow ensures that every deployment is validated against all Phase 1 capabilities. It also provides a regression baseline for future deployments. Addresses D-SC-7.
+**Why:** A structured checklist that any developer or club IT contact can follow ensures that every deployment is validated against all Phase 1 capabilities. It also provides a regression baseline for future deployments. The checklist as a whole satisfies D-SC-7 (smoke test covers all Phase 1 functional areas); no individual item covers D-SC-7 alone.
 
 **Dependencies:** S-001–S-004 (all prior deliverables must exist before the checklist can be executed meaningfully). Blocking unknown D-U-8 (PCS Pro install path) must be resolved before items 6–10 can pass.
 
@@ -255,4 +255,24 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 | R3-L1 | `publish/` edits lost on `git clean -fdx` — no warning in Quick Start | LOW | Both | Accepted — one-line callout added after Quick Start step 2 |
 | R3-L2 | Smoke item 11 single kill insufficient to verify D-SC-3 reliably | LOW | Sonnet | Accepted — "Repeat three times in rapid succession" added |
 | R3-L3 | S-004 §4 assumes PCS Pro not yet running (contradicts AutoLaunch: true in production) | INFO | Opus | Accepted — leading sentence added directing operator to skip to match selection if already running |
+
+### R4 Review (v0.4 → v0.5)
+
+**Models**: Claude Opus 4.6 · GPT-5.4 · **Result**: NEEDS REVISION (13 findings, all accepted)
+
+| ID | Finding | Severity | Source | Disposition |
+|---|---|---|---|---|
+| R4-H1 | S-004 §3/§4: "Launch PCS Pro" button and "Load" button do not exist in the web UI | HIGH | GPT | Accepted — §3 "Not Running" rewritten (auto-launch waits, no button); §4 rewritten (click match card, auto-select with one match) |
+| R4-H2 | S-004 §5 / S-005 item 10: manual mode toggle is tray-only, not web control panel | HIGH | GPT | Accepted — §5 rewritten to describe tray toggle; item 10 updated to test tray icon + web banner |
+| R4-M1 | .new config files created on every redeploy → auto-start always suppressed even when config unchanged | MEDIUM | Both | Accepted — content-hash (Get-FileHash SHA256) comparison added; .new files and auto-start suppression only when file differs |
+| R4-M2 | S-002 verification conflates force-kill-succeeds path and force-kill-fails-abort path | MEDIUM | GPT | Accepted — verification split into two explicit cases |
+| R4-M3 | S-004 §2 and S-005 item 4 hardcode port 5000 contrary to configurable-port design | MEDIUM | GPT | Accepted — replaced with `<configured-port>` (default 5000) with cross-reference |
+| R4-M4 | S-005 items 6-8: auto-select with single match means MatchSelectionReady may be skipped | MEDIUM | GPT | Accepted — items 6-8 updated to note auto-select path as valid outcome |
+| R4-M5 | S-005 item 2 pass condition checks `publish/` folder; on garage PC should check deploy dir | MEDIUM | Opus | Accepted — changed to `$DeployDir` (default `C:\PcsRemote\`) |
+| R4-M6 | S-003 development config warning omits `ASPNETCORE_ENVIRONMENT` | MEDIUM | Opus | Accepted — both environment variable names now listed with consequences |
+| R4-H3 | Test count states 438; actual runtime count (verified) is 443 | MEDIUM | Opus | Accepted — corrected to 443 in Prerequisites and S-001 verification intent |
+| R4-L1 | S-005 items 1-2 failure actions assume repo and SDK present on garage PC | LOW | GPT | Accepted — rewritten to "re-publish on developer machine and redeploy" |
+| R4-L2 | S-005 item 13 D-SC-7 misattribution — checklist as whole satisfies D-SC-7, not one item | LOW | Opus | Accepted — area corrected to HLPS-004; D-SC-7 note added to S-005 "Why" |
+| R4-L3 | BSTR not freed with ZeroFreeBSTR after SecureString conversion | LOW | Opus | Accepted — ZeroFreeBSTR in try/finally added to S-002 step 7 |
+| R4-I1 | VM test described as per-deployment; impractical | INFO | Opus | Accepted — moved to one-time initial rollout note in item 2 |
 
