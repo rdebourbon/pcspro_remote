@@ -28,6 +28,7 @@ public static class AutomationServiceCollectionExtensions
         services.Configure<ScoreboardOptions>(configuration.GetSection("Scoreboard"));
         services.AddSingleton<IProcessManager, SystemProcessManager>();
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<ILoginAutomation, FlaUiLoginAutomation>();
         services.AddSingleton<IPcsProAutomationService, PcsProAutomationService>();
         return services;
     }

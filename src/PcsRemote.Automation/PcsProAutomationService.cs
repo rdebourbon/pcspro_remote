@@ -9,9 +9,9 @@ namespace PcsRemote.Automation;
 
 /// <summary>
 /// FlaUI-based implementation of <see cref="IPcsProAutomationService"/>.
-/// Implements process launch, main window detection, crash watching, and stop (S-002).
-/// Login automation is deferred to S-003; match-selection, scoreboard, and change-match
-/// are deferred to S-004 through S-007.
+/// Implements process launch, main window detection, crash watching, stop (S-002),
+/// and login automation (S-003).
+/// Match-selection, scoreboard, and change-match are deferred to S-004 through S-007.
 /// </summary>
 internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsyncDisposable
 {
@@ -20,6 +20,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     private readonly ILogger<PcsProAutomationService> _logger;
     private readonly IProcessManager _processManager;
     private readonly TimeProvider _timeProvider;
+    private readonly ILoginAutomation _loginAutomation;
     private readonly PcsProStateMachine _stateMachine;
 
     /// <summary>
@@ -48,13 +49,15 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         IOptions<ScoreboardOptions> scoreboardOptions,
         ILogger<PcsProAutomationService> logger,
         IProcessManager processManager,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ILoginAutomation loginAutomation)
     {
         _options = options.Value;
         _scoreboardOptions = scoreboardOptions.Value;
         _logger = logger;
         _processManager = processManager;
         _timeProvider = timeProvider;
+        _loginAutomation = loginAutomation;
 
         _stateMachine = new PcsProStateMachine();
         _stateMachine.OnTransitioned(newState =>
@@ -104,6 +107,15 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         // Start crash watcher (AC-8, AC-9). Pass the local process reference to avoid
         // a null-ref race if StopAsync nulls _process while the watcher is running.
         StartCrashWatcher(process);
+
+        // S-003: Login phase — enter credentials and wait for match selection dialog.
+        if (!await PerformLoginAsync(ct).ConfigureAwait(false))
+            return;
+
+        // Fire CredentialsEntered (LoginScreen → MatchSelection) (S-003 AC-1).
+        // guardTerminal: crash watcher or StopAsync may have transitioned to Error/NotRunning
+        // between PerformLoginAsync returning and this lock acquisition.
+        await FireUnderLockAsync(PcsProTrigger.CredentialsEntered, guardTerminal: true).ConfigureAwait(false);
 
         _logger.LogInformation(
             "LaunchAndLoginAsync complete — service in {State}", CurrentState);
@@ -311,11 +323,23 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// Acquires <see cref="_operationLock"/>, fires <paramref name="trigger"/>,
     /// releases the lock, then raises any pending <see cref="StateChanged"/> events.
     /// </summary>
-    private async Task FireUnderLockAsync(PcsProTrigger trigger)
+    /// <param name="guardTerminal">
+    /// When <see langword="true"/>, silently returns if the state machine is already in a
+    /// terminal state (<see cref="PcsProState.Error"/> or <see cref="PcsProState.NotRunning"/>).
+    /// Use this for triggers that race with the crash watcher or <see cref="StopAsync"/>
+    /// (e.g. <see cref="PcsProTrigger.CredentialsEntered"/> after login completes).
+    /// </param>
+    private async Task FireUnderLockAsync(PcsProTrigger trigger, bool guardTerminal = false)
     {
         await _operationLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
+            if (guardTerminal &&
+                _stateMachine.CurrentState is PcsProState.Error or PcsProState.NotRunning)
+            {
+                return;
+            }
+
             _stateMachine.Fire(trigger);
         }
         finally
@@ -334,6 +358,12 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         await _operationLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
+            // Double-transition guard: crash watcher or a concurrent caller may already have
+            // moved the state machine to Error or NotRunning. Stateless (no valid trigger from
+            // those states) — silently return rather than throw InvalidOperationException.
+            if (_stateMachine.CurrentState is PcsProState.Error or PcsProState.NotRunning)
+                return;
+
             _lastErrorReason = errorReason;
             _stateMachine.Fire(trigger);
         }
@@ -421,7 +451,159 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         FlushStateChangedEvents();
     }
 
-    // ---- S-003 through S-007 (not yet implemented) -----------------------
+    // ---- S-003: Login automation ----------------------------------------
+
+    /// <summary>
+    /// Polls for login dialog visibility, submits credentials, and waits for match
+    /// selection to appear. Returns <see langword="false"/> if the login phase ends in an
+    /// error state (unexpected dialog, timeout, cancellation, or interaction exception).
+    /// </summary>
+    private async Task<bool> PerformLoginAsync(CancellationToken ct)
+    {
+        const int PollIntervalMs = 200;
+        var startTime = _timeProvider.GetTimestamp();
+        bool submitted = false;
+
+        while (true)
+        {
+            if (IsInTerminalState())
+                return false;
+
+            if (await HandleUnexpectedDialogAsync().ConfigureAwait(false))
+                return false;
+
+            var submitResult = await TrySubmitCredentialsAsync(submitted).ConfigureAwait(false);
+            if (submitResult == LoginSubmitResult.Failed)
+                return false;
+            if (submitResult == LoginSubmitResult.Submitted)
+            {
+                submitted = true;
+                continue; // skip delay — check match selection immediately
+            }
+
+            if (submitted && _loginAutomation.IsMatchSelectionVisible())
+            {
+                _logger.LogDebug("PerformLoginAsync: match selection dialog detected — login accepted");
+                return true;
+            }
+
+            if (await CheckLoginTimeoutAsync(startTime, submitted).ConfigureAwait(false))
+                return false;
+
+            await DelayOrCancelAsync(PollIntervalMs, ct).ConfigureAwait(false);
+        }
+    }
+
+    private enum LoginSubmitResult { NotReady, Submitted, Failed }
+
+    /// <summary>
+    /// Returns <see langword="true"/> if the state machine has already transitioned to a
+    /// terminal state (crash watcher fired ahead of the login phase).
+    /// </summary>
+    private bool IsInTerminalState()
+    {
+        if (_stateMachine.CurrentState is not (PcsProState.Error or PcsProState.NotRunning))
+            return false;
+
+        _logger.LogDebug(
+            "PerformLoginAsync: detected {State} — crash watcher fired first",
+            _stateMachine.CurrentState);
+        return true;
+    }
+
+    /// <summary>
+    /// Checks for an unexpected dialog. If found, attempts close and fires the
+    /// <see cref="PcsProTrigger.UnexpectedDialog"/> trigger.
+    /// Returns <see langword="true"/> when the login phase should abort.
+    /// </summary>
+    private async Task<bool> HandleUnexpectedDialogAsync()
+    {
+        if (!_loginAutomation.IsUnexpectedDialogPresent())
+            return false;
+
+        _logger.LogWarning("PerformLoginAsync: unexpected dialog detected during login phase");
+        _loginAutomation.TryCloseUnexpectedDialog();
+        await FireErrorUnderLockAsync(
+            PcsProTrigger.UnexpectedDialog,
+            "An unexpected dialog appeared during login").ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Attempts to enter the password and click submit when the login dialog is visible
+    /// and credentials have not yet been submitted.
+    /// Returns <see cref="LoginSubmitResult.Submitted"/> on success,
+    /// <see cref="LoginSubmitResult.Failed"/> on interaction exception (error already fired),
+    /// or <see cref="LoginSubmitResult.NotReady"/> when the dialog is not yet visible.
+    /// </summary>
+    private async Task<LoginSubmitResult> TrySubmitCredentialsAsync(bool alreadySubmitted)
+    {
+        if (alreadySubmitted || !_loginAutomation.IsLoginDialogVisible())
+            return LoginSubmitResult.NotReady;
+
+        try
+        {
+            _loginAutomation.EnterPassword(_options.Password);
+            _loginAutomation.ClickSubmit();
+            _logger.LogDebug("PerformLoginAsync: credentials submitted");
+            return LoginSubmitResult.Submitted;
+        }
+        // FlaUI can throw COMException, ElementNotAvailableException, and other diverse types.
+        // Spec §3.8 explicitly mandates catching all exceptions from credential interaction.
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PerformLoginAsync: interaction error entering credentials");
+            await FireErrorUnderLockAsync(
+                PcsProTrigger.Timeout,
+                "Login interaction failed").ConfigureAwait(false);
+            return LoginSubmitResult.Failed;
+        }
+    }
+
+    /// <summary>
+    /// Checks whether the login phase has exceeded its timeout.
+    /// Fires <see cref="PcsProTrigger.Timeout"/> if elapsed.
+    /// Returns <see langword="true"/> when the login phase should abort.
+    /// </summary>
+    private async Task<bool> CheckLoginTimeoutAsync(long startTimestamp, bool submitted)
+    {
+        if (_timeProvider.GetElapsedTime(startTimestamp).TotalSeconds
+            < PcsProStateMachine.LoginScreenTimeoutSeconds)
+        {
+            return false;
+        }
+
+        var reason = submitted
+            ? "Match selection dialog did not appear within the timeout after submitting credentials"
+            : $"Login screen did not appear within {PcsProStateMachine.LoginScreenTimeoutSeconds} seconds";
+
+        _logger.LogWarning("PerformLoginAsync: timeout — {Reason}", reason);
+        await FireErrorUnderLockAsync(PcsProTrigger.Timeout, reason).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Awaits the poll delay. On <see cref="OperationCanceledException"/> fires
+    /// <see cref="PcsProTrigger.Timeout"/> and re-throws so that
+    /// <see cref="LaunchAndLoginAsync"/> propagates the cancellation to the caller.
+    /// </summary>
+    private async Task DelayOrCancelAsync(int delayMs, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(delayMs, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("PerformLoginAsync: cancelled during poll delay");
+            await FireErrorUnderLockAsync(
+                PcsProTrigger.Timeout,
+                "Login phase cancelled by caller").ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    // ---- S-004 through S-007 (not yet implemented) -----------------------
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default) =>
