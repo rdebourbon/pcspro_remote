@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | SPEC-S-004-MatchSelection.md |
 | **Status** | IN REVIEW |
-| **Version** | 0.2 |
+| **Version** | 0.3 |
 | **Date** | 2026-04-14 |
 | **Step** | IS-006 S-004 |
 | **Governing HLPS** | HLPS-006-FlaUI-Integration.md v0.2 (APPROVED) |
@@ -71,7 +71,7 @@ Provides the raw FlaUI primitives for both `GetTodaysMatchesAsync` and `LoadMatc
 | `IsSpinnerVisible()` | Returns true when the loading spinner element is visible. AutomationId placeholder. Does not throw. |
 | `IsUnexpectedDialogPresent()` | Returns true when an unexpected dialog is detected. Does not throw. |
 | `TryCloseUnexpectedDialog()` | Attempts to dismiss the unexpected dialog. Does not throw. |
-| `ReadDataGridRowTexts()` | Returns the text content of each DataGrid row as a list of strings. AutomationId placeholder. **Interaction method — may throw.** Returns empty list on failure by convention (service-level catch handles exceptions). |
+| `ReadDataGridRowTexts()` | Returns the text content of each DataGrid row as a list of strings. AutomationId placeholder. **Interaction method — may throw.** An empty list means a successful read with zero rows; any FlaUI failure throws and is caught by the service-level handler (§4.6). |
 | `SelectAndOpenMatch(MatchInfo match)` | Locates the DataGrid row corresponding to the given match (using `MatchId`) and clicks "Open Read-Only." AutomationId placeholders. **Interaction method — may throw.** |
 | `IsMatchLoaded()` | Returns true when the match has loaded (dialog closed / match view visible). Does not throw. |
 
@@ -97,13 +97,13 @@ Configurable test double:
 | `UnexpectedDialogPresent` | `false` | Controls `IsUnexpectedDialogPresent()` |
 | `MatchLoaded` | `true` | Controls `IsMatchLoaded()` |
 | `RowTexts` | one well-formed today-dated row | Returned by `ReadDataGridRowTexts()` |
-| `ThrowOnInteraction` | `false` | Causes `OpenMatchDialogAndSearch` / `SelectAndOpenMatch` to throw |
+| `ThrowOnInteraction` | `false` | Causes `OpenMatchDialogAndSearch`, `SelectAndOpenMatch`, and `ReadDataGridRowTexts` to throw |
 
 Captures: `SearchTriggered` (bool), `OpenAttemptedFor` (MatchInfo?), `CloseDialogAttempted` (bool).
 
 ### 3.5 `MatchRowParserTests` (new test class, `PcsRemote.Automation.Tests`)
 
-Standalone test class exercising `MatchRowParser` independently of the service (AC-22–AC-25).
+Standalone test class exercising `MatchRowParser` independently of the service (AC-24–AC-27).
 
 ---
 
@@ -168,8 +168,8 @@ Method may only be called when `CurrentState == MatchSelectionReady`. The caller
 
 ### 5.2 Phase — Select and open
 
-1. Call `_matchSelectionAutomation.SelectAndOpenMatch(match)`.
-2. Record `startTimestamp` for timeout tracking.
+1. Record `startTimestamp` for the 15-second open timeout.
+2. Call `_matchSelectionAutomation.SelectAndOpenMatch(match)`. If this throws, fall through to the interaction exception handler (§5.5).
 
 ### 5.3 Phase — Wait for match loaded
 
@@ -243,7 +243,7 @@ Commits should be small and follow the same pattern as S-003:
 | AC-9 | Rows that fail to parse are skipped (not thrown), and a `Warning` is logged per skipped row |
 | AC-10 | Only `MatchInfo` records where `MatchDate` equals the `today` value derived from `_timeProvider` are returned |
 | AC-11 | When zero rows remain after today's date filter, service transitions to `Error` with reason `"No matches found for today"` |
-| AC-12 | CancellationToken cancellation during spinner wait fires `Error` and propagates `OperationCanceledException` to the caller |
+| AC-12 | CancellationToken cancellation during any delay phase (including the 200ms post-SearchTriggered guard and the spinner poll) fires `Error` and propagates `OperationCanceledException` to the caller |
 | AC-13 | If crash watcher has moved the service to `Error/NotRunning` before the method completes, the method returns empty list without attempting a second state transition |
 | AC-14 | When `OpenMatchDialogAndSearch` throws, service transitions to `Error` with reason `"Match selection interaction failed"` |
 | AC-15 | When `ReadDataGridRowTexts` throws, service transitions to `Error` with reason `"Match selection interaction failed"` |
@@ -252,30 +252,34 @@ Commits should be small and follow the same pattern as S-003:
 
 | ID | Criterion |
 |---|---|
-| AC-16 | When called from `MatchSelectionReady` state, `SelectAndOpenMatch` is called with the provided `MatchInfo` |
-| AC-17 | When `IsMatchLoaded()` returns true within the 15s timeout, `MatchOpened` is fired (with `guardTerminal: true`) and service transitions to `MatchLoaded` |
-| AC-18 | When 15s timeout elapses before match loads, service transitions to `Error` with a descriptive reason |
-| AC-19 | When unexpected dialog appears during open wait, service transitions to `Error` via `UnexpectedDialog` trigger |
-| AC-20 | CancellationToken cancellation during open wait fires `Error` and propagates `OperationCanceledException` to the caller |
-| AC-21 | When `SelectAndOpenMatch` throws, service transitions to `Error` with reason `"Match selection interaction failed"` |
+| AC-16 | `startTimestamp` is recorded before `SelectAndOpenMatch(match)` is called, and the 15s timeout is measured from that point |
+| AC-17 | When called from `MatchSelectionReady` state, `SelectAndOpenMatch` is called with the provided `MatchInfo` |
+| AC-18 | When `IsMatchLoaded()` returns true within the 15s timeout, `MatchOpened` is fired (with `guardTerminal: true`) and service transitions to `MatchLoaded` |
+| AC-19 | When 15s timeout elapses before match loads, service transitions to `Error` with a descriptive reason |
+| AC-20 | When unexpected dialog appears during open wait, service transitions to `Error` via `UnexpectedDialog` trigger |
+| AC-21 | CancellationToken cancellation during open wait fires `Error` and propagates `OperationCanceledException` to the caller |
+| AC-22 | When `SelectAndOpenMatch` throws, service transitions to `Error` with reason `"Match selection interaction failed"` |
+| AC-23 | If crash watcher has moved the service to `Error/NotRunning` before `LoadMatchAsync` completes, the method returns without attempting a second state transition |
 
 ### `MatchRowParser`
 
 | ID | Criterion |
 |---|---|
-| AC-22 | `TryParse` returns `true` and populates all `MatchInfo` fields for a well-formed row text |
-| AC-23 | `TryParse` returns `false` (and does not throw) for malformed or empty row text |
-| AC-24 | `FilterToday(matches, today)` returns only entries where `MatchDate` equals the provided `today` value |
-| AC-25 | `FilterToday` returns an empty list when no entries match today (does not throw) |
+| AC-24 | `TryParse` returns `true` and populates all `MatchInfo` fields for a well-formed row text |
+| AC-25 | `TryParse` returns `false` (and does not throw) for malformed or empty row text |
+| AC-26 | `FilterToday(matches, today)` returns only entries where `MatchDate` equals the provided `today` value |
+| AC-27 | `FilterToday` returns an empty list when no entries match today (does not throw) |
 
 ### General
 
 | ID | Criterion |
 |---|---|
-| AC-26 | `FlaUiMatchSelectionAutomation` probe methods (`IsSpinnerVisible`, `IsUnexpectedDialogPresent`, `IsMatchLoaded`) do not throw — return `false` or empty list |
-| AC-27 | `FlaUiMatchSelectionAutomation` interaction methods (`OpenMatchDialogAndSearch`, `SelectAndOpenMatch`) throw `NotImplementedException` referencing garage PC session |
-| AC-28 | `IMatchSelectionAutomation` is registered in DI as `FlaUiMatchSelectionAutomation` singleton |
-| AC-29 | All existing tests continue to pass |
+| AC-28 | `FlaUiMatchSelectionAutomation` probe methods (`IsSpinnerVisible`, `IsUnexpectedDialogPresent`, `IsMatchLoaded`) do not throw — return `false` or empty list |
+| AC-29 | `FlaUiMatchSelectionAutomation` interaction methods (`OpenMatchDialogAndSearch`, `SelectAndOpenMatch`) throw `NotImplementedException` referencing garage PC session |
+| AC-30 | `IMatchSelectionAutomation` is registered in DI as `FlaUiMatchSelectionAutomation` singleton |
+| AC-31 | When another lifecycle operation is in progress, `GetTodaysMatchesAsync` throws `InvalidOperationException` |
+| AC-32 | When another lifecycle operation is in progress, `LoadMatchAsync` throws `InvalidOperationException` |
+| AC-33 | All existing tests continue to pass |
 
 ---
 
@@ -284,3 +288,4 @@ Commits should be small and follow the same pattern as S-003:
 | Round | Date | Reviewers | Outcome | Issues Addressed |
 |---|---|---|---|---|
 | R1 | 2026-04-14 | Claude Opus 4.6, GPT-5.4 | NEEDS REVIEW | O1–O7, G1–G6 triaged; HIGH findings accepted and applied in v0.2 |
+| R2 | 2026-04-14 | Claude Opus 4.6, GPT-5.4 | NEEDS REVIEW | R2-1 (HIGH) accepted; R2-2 through R2-7 triaged and applied in v0.3; R2-8 rejected (settled decision §2.4); R2-9 deferred to Delivery |
