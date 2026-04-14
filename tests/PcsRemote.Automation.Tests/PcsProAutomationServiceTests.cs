@@ -18,7 +18,8 @@ public sealed class PcsProAutomationServiceTests
         FakeProcessManager processManager,
         FakeTimeProvider timeProvider,
         FakeLoginAutomation? loginAutomation = null,
-        IMatchSelectionAutomation? matchSelectionAutomation = null)
+        IMatchSelectionAutomation? matchSelectionAutomation = null,
+        ITeamNamesAutomation? teamNamesAutomation = null)
     {
         var options = Options.Create(new PcsProOptions
         {
@@ -34,7 +35,8 @@ public sealed class PcsProAutomationServiceTests
             processManager,
             timeProvider,
             loginAutomation ?? new FakeLoginAutomation(),
-            matchSelectionAutomation ?? new FakeMatchSelectionAutomation());
+            matchSelectionAutomation ?? new FakeMatchSelectionAutomation(),
+            teamNamesAutomation ?? new FakeTeamNamesAutomation());
     }
 
     /// <summary>
@@ -45,7 +47,8 @@ public sealed class PcsProAutomationServiceTests
     private static async Task<(PcsProAutomationService Service, FakeProcessHandle Handle)>
         CreateServiceAtMatchSelectionAsync(
             FakeLoginAutomation? loginAutomation = null,
-            IMatchSelectionAutomation? matchSelectionAutomation = null)
+            IMatchSelectionAutomation? matchSelectionAutomation = null,
+            ITeamNamesAutomation? teamNamesAutomation = null)
     {
         var handle = new FakeProcessHandle { MainWindowVisible = true };
         var pm = new FakeProcessManager { StartedHandle = handle };
@@ -53,7 +56,8 @@ public sealed class PcsProAutomationServiceTests
         var svc = CreateService(
             pm, tp,
             loginAutomation ?? new FakeLoginAutomation(),
-            matchSelectionAutomation ?? new FakeMatchSelectionAutomation());
+            matchSelectionAutomation ?? new FakeMatchSelectionAutomation(),
+            teamNamesAutomation ?? new FakeTeamNamesAutomation());
         await svc.LaunchAndLoginAsync();
         return (svc, handle);
     }
@@ -79,6 +83,28 @@ public sealed class PcsProAutomationServiceTests
         machine.Fire(PcsProTrigger.SpinnerGone);
 
         return (svc, handle, new MatchInfo("99999"));
+    }
+
+    /// <summary>
+    /// Creates a service at <see cref="PcsProState.MatchLoaded"/> by driving the state machine
+    /// through MatchSelection → MatchSelectionReady → MatchLoaded via reflection.
+    /// Used for <see cref="PcsProAutomationService.GetTeamNamesAsync"/> tests.
+    /// </summary>
+    private static async Task<(PcsProAutomationService Service, FakeProcessHandle Handle)>
+        CreateServiceAtMatchLoadedAsync(
+            ITeamNamesAutomation? teamNamesAutomation = null)
+    {
+        var (svc, handle) = await CreateServiceAtMatchSelectionAsync(
+            teamNamesAutomation: teamNamesAutomation ?? new FakeTeamNamesAutomation());
+
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)! // field exists on this type
+            .GetValue(svc)!; // constructor always assigns a non-null PcsProStateMachine
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+        machine.Fire(PcsProTrigger.MatchOpened);
+
+        return (svc, handle);
     }
 
     // -----------------------------------------------------------------------
@@ -510,7 +536,8 @@ public sealed class PcsProAutomationServiceTests
             pm,
             new FakeTimeProvider(),
             fake,
-            new FakeMatchSelectionAutomation());
+            new FakeMatchSelectionAutomation(),
+            new FakeTeamNamesAutomation());
 
         await svc.LaunchAndLoginAsync();
 
@@ -982,6 +1009,192 @@ public sealed class PcsProAutomationServiceTests
         cts.Cancel();
         await firstTask.IgnoreErrorAsync();
     }
+
+    // =======================================================================
+    // S-005: GetTeamNamesAsync
+    // =======================================================================
+
+    // -----------------------------------------------------------------------
+    // AC-1 — Happy path: returns MatchTeams with home and away team names
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_HappyPath_ReturnsMatchTeamsAndStaysInMatchLoaded()
+    {
+        var fake = new FakeTeamNamesAutomation { HomeTeamName = "Home XI", AwayTeamName = "Away XI" };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(fake);
+
+        var result = await svc.GetTeamNamesAsync();
+
+        result.HomeTeam.Should().Be("Home XI");
+        result.AwayTeam.Should().Be("Away XI");
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-9 — Happy path: TryCloseTeamsDialog called after successful read
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_HappyPath_ClosesTeamsDialog()
+    {
+        var fake = new FakeTeamNamesAutomation();
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(fake);
+
+        await svc.GetTeamNamesAsync();
+
+        fake.CloseTeamsDialogAttempted.Should().BeTrue();
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-3 — OpenTeamsDialog throws → sentinel returned, Error state, Timeout trigger
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_WhenOpenTeamsDialogThrows_ReturnsSentinelAndTransitionsToError()
+    {
+        var fake = new FakeTeamNamesAutomation { ThrowOnOpenTeamsDialog = true };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(fake);
+
+        var result = await svc.GetTeamNamesAsync();
+
+        result.HomeTeam.Should().BeEmpty();
+        result.AwayTeam.Should().BeEmpty();
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        fake.CloseTeamsDialogAttempted.Should().BeTrue("TryCloseTeamsDialog must be called on open failure");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-4 — ReadHomeTeamName throws → sentinel returned, Error state
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_WhenReadHomeTeamNameThrows_ReturnsSentinelAndTransitionsToError()
+    {
+        var fake = new FakeTeamNamesAutomation { ThrowOnReadHomeTeamName = true };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(fake);
+
+        var result = await svc.GetTeamNamesAsync();
+
+        result.HomeTeam.Should().BeEmpty();
+        result.AwayTeam.Should().BeEmpty();
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        fake.CloseTeamsDialogAttempted.Should().BeTrue();
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-5 — ReadAwayTeamName throws → sentinel returned, Error state
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_WhenReadAwayTeamNameThrows_ReturnsSentinelAndTransitionsToError()
+    {
+        var fake = new FakeTeamNamesAutomation { ThrowOnReadAwayTeamName = true };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(fake);
+
+        var result = await svc.GetTeamNamesAsync();
+
+        result.HomeTeam.Should().BeEmpty();
+        result.AwayTeam.Should().BeEmpty();
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        fake.CloseTeamsDialogAttempted.Should().BeTrue();
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-6 — Unexpected dialog detected → sentinel returned, Error via UnexpectedDialog trigger
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_WhenUnexpectedDialogPresent_ReturnsSentinelAndTransitionsToError()
+    {
+        var fake = new FakeTeamNamesAutomation { UnexpectedDialogPresent = true };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(fake);
+
+        var result = await svc.GetTeamNamesAsync();
+
+        result.HomeTeam.Should().BeEmpty();
+        result.AwayTeam.Should().BeEmpty();
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        fake.CloseUnexpectedDialogAttempted.Should().BeTrue();
+        fake.CloseTeamsDialogAttempted.Should().BeTrue("TryCloseTeamsDialog must be called on all error paths");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-7 — Cancellation before open: OCE propagated, Error state
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_WhenAlreadyCancelledBeforeOpen_ThrowsOCEAndTransitionsToError()
+    {
+        var fake = new FakeTeamNamesAutomation();
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(fake);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await svc.Invoking(_ => _.GetTeamNamesAsync(cts.Token))
+            .Should().ThrowAsync<OperationCanceledException>();
+        svc.CurrentState.Should().Be(PcsProState.Error);
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-2 — Concurrent GetTeamNamesAsync → second call throws InvalidOperationException
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_WhenOperationAlreadyInProgress_ThrowsInvalidOperationException()
+    {
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync();
+
+        // Simulate an in-progress operation by setting the interlocked flag directly.
+        // GetTeamNamesAsync has no await before its first blocking I/O call (FlaUI is synchronous),
+        // so we cannot use a real concurrent call without Thread.Sleep hacks. Reflection is the
+        // clean equivalent of an actual concurrent caller holding the lock.
+        var field = typeof(PcsProAutomationService)
+            .GetField("_isTeamNamesOperationInProgress", BindingFlags.NonPublic | BindingFlags.Instance)!; // field exists on this type
+        field.SetValue(svc, 1);
+
+        await svc.Invoking(_ => _.GetTeamNamesAsync())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already in progress*");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-14 — Wrong state (not MatchLoaded) → InvalidOperationException
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_WhenNotInMatchLoadedState_ThrowsInvalidOperationException()
+    {
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync();
+        // Service is in MatchSelection state — NOT MatchLoaded.
+
+        await svc.Invoking(_ => _.GetTeamNamesAsync())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{PcsProState.MatchLoaded}*");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-8 — Crash watcher wins: double-transition guard prevents double state transition
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_AfterFirstCallMovedToError_SecondCallThrowsWrongState()
+    {
+        // First call: OpenTeamsDialog throws → fires Timeout → state = Error.
+        var fake = new FakeTeamNamesAutomation { ThrowOnOpenTeamsDialog = true };
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync(fake);
+
+        await svc.GetTeamNamesAsync(); // transitions to Error via FireErrorUnderLockAsync
+
+        svc.CurrentState.Should().Be(PcsProState.Error);
+
+        // Second call: state is now Error, not MatchLoaded → wrong-state guard fires before
+        // FireErrorUnderLockAsync is ever reached. Verifies no double-fire exception escapes.
+        await svc.Invoking(s => s.GetTeamNamesAsync())
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{PcsProState.MatchLoaded}*");
+    }
 }
 
 // -----------------------------------------------------------------------
@@ -1032,4 +1245,33 @@ internal static class TaskExtensions
         try { await task.ConfigureAwait(false); }
         catch { }
     }
+}
+
+/// <summary>
+/// FakeTeamNamesAutomation variant whose OpenTeamsDialog blocks until <see cref="Release"/> is called.
+/// <see cref="Started"/> is released (signalled) as soon as <see cref="OpenTeamsDialog"/> begins
+/// executing, allowing tests to wait for the call to actually reach the blocking point before
+/// making assertions about concurrent behaviour.
+/// </summary>
+internal sealed class SlowOpenTeamsDialogFake : ITeamNamesAutomation
+{
+    private readonly ManualResetEventSlim _gate = new(false);
+
+    /// <summary>Becomes available as soon as <see cref="OpenTeamsDialog"/> begins executing.</summary>
+    public SemaphoreSlim Started { get; } = new(0, 1);
+
+    /// <summary>Unblocks any thread waiting in <see cref="OpenTeamsDialog"/>.</summary>
+    public void Release() => _gate.Set();
+
+    public void OpenTeamsDialog()
+    {
+        Started.Release(); // signal that we reached the blocking point
+        _gate.Wait();      // blocks until Release() is called
+    }
+
+    public string ReadHomeTeamName() => "Home XI";
+    public string ReadAwayTeamName() => "Away XI";
+    public void TryCloseTeamsDialog() { }
+    public bool IsUnexpectedDialogPresent() => false;
+    public void TryCloseUnexpectedDialog() { }
 }

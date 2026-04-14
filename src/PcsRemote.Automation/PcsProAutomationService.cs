@@ -10,8 +10,8 @@ namespace PcsRemote.Automation;
 /// <summary>
 /// FlaUI-based implementation of <see cref="IPcsProAutomationService"/>.
 /// Implements process launch, main window detection, crash watching, stop (S-002),
-/// and login automation (S-003).
-/// Match-selection, scoreboard, and change-match are deferred to S-004 through S-007.
+/// login automation (S-003), match selection (S-004), and team name extraction (S-005).
+/// Scoreboard and change-match are deferred to S-006 through S-007.
 /// </summary>
 internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsyncDisposable
 {
@@ -22,6 +22,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     private readonly TimeProvider _timeProvider;
     private readonly ILoginAutomation _loginAutomation;
     private readonly IMatchSelectionAutomation _matchSelectionAutomation;
+    private readonly ITeamNamesAutomation _teamNamesAutomation;
     private readonly PcsProStateMachine _stateMachine;
 
     /// <summary>
@@ -53,6 +54,12 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// </summary>
     private int _isMatchSelectionOperationInProgress;
 
+    /// <summary>
+    /// 0 = idle, 1 = a team-names operation is in progress.
+    /// Used by GetTeamNamesAsync to prevent concurrent calls.
+    /// </summary>
+    private int _isTeamNamesOperationInProgress;
+
     public PcsProAutomationService(
         IOptions<PcsProOptions> options,
         IOptions<ScoreboardOptions> scoreboardOptions,
@@ -60,7 +67,8 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         IProcessManager processManager,
         TimeProvider timeProvider,
         ILoginAutomation loginAutomation,
-        IMatchSelectionAutomation matchSelectionAutomation)
+        IMatchSelectionAutomation matchSelectionAutomation,
+        ITeamNamesAutomation teamNamesAutomation)
     {
         _options = options.Value;
         _scoreboardOptions = scoreboardOptions.Value;
@@ -69,6 +77,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         _timeProvider = timeProvider;
         _loginAutomation = loginAutomation;
         _matchSelectionAutomation = matchSelectionAutomation;
+        _teamNamesAutomation = teamNamesAutomation;
 
         _stateMachine = new PcsProStateMachine();
         _stateMachine.OnTransitioned(newState =>
@@ -873,8 +882,92 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     }
 
     /// <inheritdoc/>
-    public Task<MatchTeams> GetTeamNamesAsync(CancellationToken ct = default) =>
-        throw new NotImplementedException($"{nameof(GetTeamNamesAsync)} is not yet implemented.");
+    public async Task<MatchTeams> GetTeamNamesAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("GetTeamNamesAsync starting; current state {State}", CurrentState);
+
+        if (Interlocked.CompareExchange(ref _isTeamNamesOperationInProgress, 1, 0) != 0)
+            throw new InvalidOperationException(
+                "A GetTeamNamesAsync operation is already in progress.");
+
+        try
+        {
+            return await GetTeamNamesCoreAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isTeamNamesOperationInProgress, 0);
+        }
+    }
+
+    private async Task<MatchTeams> GetTeamNamesCoreAsync(CancellationToken ct)
+    {
+        if (_stateMachine.CurrentState != PcsProState.MatchLoaded)
+            throw new InvalidOperationException(
+                $"GetTeamNamesAsync requires state {PcsProState.MatchLoaded} " +
+                $"but current state is {_stateMachine.CurrentState}.");
+
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // §4.2 — Open the teams dialog.
+            try
+            {
+                _teamNamesAutomation.OpenTeamsDialog();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "GetTeamNamesAsync: failed to open teams dialog");
+                _teamNamesAutomation.TryCloseTeamsDialog();
+                await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "Teams dialog failed to open").ConfigureAwait(false);
+                return new MatchTeams(string.Empty, string.Empty);
+            }
+
+            ct.ThrowIfCancellationRequested();
+
+            // §4.3 — Check for an unexpected dialog before reading.
+            if (_teamNamesAutomation.IsUnexpectedDialogPresent())
+            {
+                _logger.LogWarning("GetTeamNamesAsync: unexpected dialog detected after opening teams dialog");
+                _teamNamesAutomation.TryCloseUnexpectedDialog();
+                _teamNamesAutomation.TryCloseTeamsDialog();
+                await FireErrorUnderLockAsync(PcsProTrigger.UnexpectedDialog, "Unexpected dialog blocked team name extraction").ConfigureAwait(false);
+                return new MatchTeams(string.Empty, string.Empty);
+            }
+
+            // §4.4 — Read home and away team names.
+            string homeTeam;
+            string awayTeam;
+            try
+            {
+                homeTeam = _teamNamesAutomation.ReadHomeTeamName();
+                awayTeam = _teamNamesAutomation.ReadAwayTeamName();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "GetTeamNamesAsync: failed to read team names");
+                _teamNamesAutomation.TryCloseTeamsDialog();
+                await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "Team names could not be read").ConfigureAwait(false);
+                return new MatchTeams(string.Empty, string.Empty);
+            }
+
+            // §4.5 — Close the dialog and return on success.
+            _teamNamesAutomation.TryCloseTeamsDialog();
+            _logger.LogInformation(
+                "GetTeamNamesAsync succeeded — HomeTeam={HomeTeam} AwayTeam={AwayTeam}",
+                homeTeam, awayTeam);
+            return new MatchTeams(homeTeam, awayTeam);
+        }
+        catch (OperationCanceledException)
+        {
+            // §4.6 — Cancellation: best-effort cleanup, log at Warning, re-throw.
+            _logger.LogWarning("GetTeamNamesAsync cancelled");
+            _teamNamesAutomation.TryCloseTeamsDialog();
+            await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "GetTeamNamesAsync was cancelled").ConfigureAwait(false);
+            throw;
+        }
+    }
 
     /// <inheritdoc/>
     public Task RefreshScoreboardAsync(CancellationToken ct = default) =>

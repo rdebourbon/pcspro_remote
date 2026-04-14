@@ -30,6 +30,7 @@ public static class AutomationServiceCollectionExtensions
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ILoginAutomation, FlaUiLoginAutomation>();
         services.AddSingleton<IMatchSelectionAutomation, FlaUiMatchSelectionAutomation>();
+        services.AddSingleton<ITeamNamesAutomation, FlaUiTeamNamesAutomation>();
         services.AddSingleton<IPcsProAutomationService, PcsProAutomationService>();
         return services;
     }
