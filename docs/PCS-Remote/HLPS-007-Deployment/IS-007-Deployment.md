@@ -221,6 +221,8 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 | R1-L2 | `AutoLaunch` default-when-absent undocumented | LOW | Opus | Accepted — `GetValue` default documented in S-003 |
 | R1-L3 | Log file path pattern slightly misleading | LOW | Opus | Accepted — concrete dated example added to S-004 |
 | R1-L4 | S-001 test-suite requirement made accurate | LOW | Sonnet | Accepted — tests now relevant (code change added); requirement retained |
+| R1-L5 | S-001 forward reference to S-002 script before it exists | LOW | Sonnet | Accepted — artefact list recorded in `scripts/publish.ps1` instead |
+
 ### R2 Review (v0.2 → v0.3)
 
 | # | Finding | Severity | Source | Disposition |
