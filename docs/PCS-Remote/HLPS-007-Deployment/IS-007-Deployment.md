@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | IS-007-Deployment.md |
 | **Status** | DRAFT |
-| **Version** | 0.8 |
+| **Version** | 0.9 |
 | **Date** | 2026-04-14 |
 | **Governing HLPS** | HLPS-007-Deployment.md v0.5 (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.1 |
@@ -20,7 +20,7 @@ This sequence delivers production-ready deployment: one targeted production code
 
 Steps are ordered so that the production code fix is made and the publish artefact is verified first (S-001), the deployment automation is scripted and tested second (S-002), and the human-facing documentation is written last (S-003 through S-005) so it accurately describes the final configuration.
 
-Blocking unknown D-U-8 (PCS Pro installation directory) must be resolved before S-005 can be executed on the garage PC. All other unknowns are non-blocking and are addressed within their respective steps.
+Blocking unknown D-U-8 (PCS Pro installation directory) must be resolved before the real-mode smoke test items in S-005 (items 6–9, 12, and 13) can pass on the garage PC. Deployment-mechanic items (1–5, 10, and 11) can be verified independently without D-U-8. All other unknowns are non-blocking and are addressed within their respective steps.
 
 Steps are identified with stable IDs S-001 through S-005. IDs are never renumbered.
 
@@ -108,15 +108,22 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
   - `PcsPro:UseMock` — boolean; `false` for production (real PCS Pro automation); `true` for testing with the mock service. Note: this is a top-level key distinct from the `PcsPro:Mock` subsection (development/test parameters not relevant to production).
   - `Kestrel:Endpoints:Http:Url` — bind address and port (default `http://0.0.0.0:5000`); change the port number here if 5000 conflicts with another application.
   - `Scoreboard:JpegQuality` — JPEG compression quality for scoreboard images (1–100; default `85`, suitable for LAN use; lower values reduce image size at the cost of quality).
-  - `Logging:LogLevel:Default` — log verbosity (default `Information`; use `Debug` only for troubleshooting as it increases file size significantly).
+  - `Logging:LogLevel:Default` — **this key has no effect.** Both `TrayHost/Program.cs` and `Web/Program.cs` configure Serilog with a hardcoded inline definition (no `ReadFrom.Configuration()` call); Serilog replaces the M.E.Logging pipeline and does not consult `Logging:LogLevel`. Log verbosity is fixed at `Information` minimum level. To enable verbose logging for troubleshooting, the Serilog configuration in `Program.cs` must be edited to add `.MinimumLevel.Debug()` and redeployed.
   - **Log files**: written to `<DeployDir>\logs\pcs-remote-YYYYMMDD.log` (e.g., `C:\PcsRemote\logs\pcs-remote-20260601.log` with the default deploy directory); one file per day, 7-day rolling retention. Note: retention limit (`retainedFileCountLimit: 7`) is hardcoded in `Program.cs` and is not configurable via `appsettings.json`.
   - `AllowedHosts` — host header filtering (default `"*"` is correct for LAN deployment; do not restrict without understanding the implications).
   - Note on `PcsPro:Mock` subsection — development/test delay and probability settings; leave unchanged in production.
   - Note on `appsettings.Development.json` — this companion file is present in the deployment directory but is never loaded in production; do not set `DOTNET_ENVIRONMENT` or `ASPNETCORE_ENVIRONMENT` to `Development` on the garage PC — either variable causes the Development config to load, silently enabling mock mode and disabling real PCS Pro automation.
 - **Setting the PCS Pro password** (via `PcsPro__Password` System-scoped environment variable):
   - **Important**: Leave the `PcsPro:Password` key in `appsettings.json` empty (`""`). Do not enter the password there — it is stored in plain text and is a security risk. When `PcsPro__Password` is set as a System environment variable, it overrides the `appsettings.json` value; if the environment variable is absent, the JSON value would be used as a fallback — which is why the JSON value must always be left empty.
-  - The deployment script sets this interactively. Manual steps if needed: open an elevated PowerShell prompt; run `[System.Environment]::SetEnvironmentVariable("PcsPro__Password","<password>","Machine")`; restart the application or the Task Scheduler task for the change to take effect.
-  - Why not `appsettings.json`: storing credentials in a plain-text config file is insecure. The environment variable is stored in the Windows registry (HKLM) and is not human-readable without Administrator access.
+  - The deployment script sets this interactively. If you need to set it manually without re-running the full deployment script, use `Read-Host` to avoid the password appearing in shell history:
+    ```powershell
+    $pwd = Read-Host -AsSecureString "PCS Pro password"
+    $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR(
+                 [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($pwd))
+    [System.Environment]::SetEnvironmentVariable("PcsPro__Password", $plain, "Machine")
+    $plain = $null
+    ```
+    Restart the application or the Task Scheduler task for the change to take effect.
 - **Updating the PCS Pro executable path** after reinstall or upgrade: edit `appsettings.json` — update `PcsPro:ExecutablePath` and `PcsPro:WorkingDirectory` — then restart the application.
 - **Switching between mock and real mode**: change `PcsPro:UseMock` in `appsettings.json`; restart the application.
 - **Changing the HTTP port**: change `Kestrel:Endpoints:Http:Url` in `appsettings.json`; re-run `scripts/Deploy-PcsRemote.ps1 -SkipPasswordUpdate -Port <new-port>` to update the Windows Firewall rule to the new port; restart the application.
@@ -173,7 +180,7 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 | 2 | D-SC-1 | Self-contained artefact verification | Confirm `coreclr.dll` and `PcsRemote.TrayHost.exe` are both present in the deployment directory (`$DeployDir`, default `C:\PcsRemote\`) — proves the CLR is bundled. (One-time initial rollout only: optionally verify on a clean Windows 10/11 VM with no .NET runtime installed — not required for subsequent deployments.) | Re-run `scripts/publish.ps1` on a developer machine and redeploy |
 | 3 | D-SC-2 | Task Scheduler auto-start | Application tray icon appears within 30s of logon | Check Task Scheduler task status and "Start in" setting |
 | 4 | D-SC-8 / HLPS-003 | LAN browser access | Control panel loads at `http://<garage-pc-ip>:<configured-port>` (default port 5000) from a separate device | Check firewall rule; verify correct IP address and port |
-| 5 | HLPS-003 | SignalR connection | Status indicator updates in real time (no spinner stuck) | Check browser console for WebSocket errors |
+| 5 | HLPS-003 | SignalR connection | With the control panel open in a browser, observe that the status indicator updates automatically (without a manual page refresh) as PCS Pro progresses through startup states during item 6 — confirms the WebSocket/SignalR hub is live | Check browser console for WebSocket errors |
 | 6 | HLPS-006 | PCS Pro launch in real mode | PCS Pro (cricket.exe) launches and service reaches `MatchSelectionReady` state (or `MatchLoaded` directly if only one match exists — auto-select fires automatically) | Check `PcsPro:UseMock=false`, `ExecutablePath`, and `PcsPro__Password` |
 | 7 | HLPS-004 | Match list | Today's matches appear as match cards (or auto-load if exactly one match exists) | Verify date on garage PC; check PCS Pro data |
 | 8 | HLPS-006 | Match load | With multiple matches, click a match card; service reaches MatchLoaded state. With a single match, confirm auto-load fires without user action. | Check PCS Pro UI for dialogs; check log file |
@@ -320,3 +327,17 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 | R7-L2 | S-005 items 6–9 and 13 require live match data — no prerequisite note; smoke test on non-match days would fail spuriously | MEDIUM→LOW | GPT | Accepted — match data prerequisite added to S-005 Dependencies |
 | R7-L3 | S-004 step 4 has no recovery path for loading the wrong match | LOW | Opus | Accepted — "Change Match" button guidance added to step 4 |
 | R7-I1 | S-005 item 11 "Kill via Task Manager" ambiguous — "End task" may send WM_CLOSE (exit code 0); "End process" reliably uses TerminateProcess (exit code 1) | INFO | Opus | Accepted — clarified to "Details tab → End process" |
+
+### R8 Review (v0.8 → v0.9)
+
+**Models**: GPT-5.4 · Claude Opus 4.6 · **Result**: NEEDS REVISION (GPT) / APPROVED with caveats (Opus) — 4 findings accepted, 3 dismissed
+
+| ID | Finding | Severity | Source | Disposition |
+|---|---|---|---|---|
+| R8-M1 | `Logging:LogLevel:Default` listed as configurable but is inert — both `Program.cs` files use Serilog with hardcoded inline config (no `ReadFrom.Configuration()`); the key has zero effect | MEDIUM | Opus | Accepted (confirmed in source) — replaced with accurate note; log verbosity is hardcoded `Information`; `MinimumLevel.Debug()` in `Program.cs` required for verbose logging |
+| R8-L1 | Overview says D-U-8 blocks all of S-005; items 1–5, 10, 11 don't require PCS Pro install path | LOW | Opus | Accepted — Overview narrowed to "real-mode smoke test items 6–9, 12, 13"; deployment-mechanic items noted as verifiable independently |
+| R8-L2 | S-003 manual password fallback uses inline plaintext `SetEnvironmentVariable` — leaks to shell history | LOW | GPT | Accepted — replaced with secure `Read-Host -AsSecureString` + `SecureStringToBSTR` snippet |
+| R8-I1 | S-005 item 5 SignalR test has no concrete trigger or observable action | INFO | GPT | Accepted — clarified to observe automatic status updates during item 6 PCS Pro startup (no page refresh) |
+| — | R8-GPT-H1: Machine env var not seen by Task Scheduler service after SetEnvironmentVariable | HIGH | GPT | Dismissed — Task Scheduler uses `CreateEnvironmentBlock` which reads Machine env from registry at task launch; freshly launched task instances see the updated variable immediately |
+| — | R8-GPT-M1: No cleanup of publish/ or $DeployDir leaves stale artefacts | MEDIUM | GPT | Dismissed — IS is not a script implementation spec; `dotnet publish` output is deterministic for a single-project self-contained app |
+| — | R8-GPT-M3: D-U-8 blocks S-003 Quick Start (requires ExecutablePath) | MEDIUM | GPT | Dismissed — S-003 is a documentation deliverable; guide can be written with placeholder path; D-U-8 blocks execution on garage PC, not document creation |
