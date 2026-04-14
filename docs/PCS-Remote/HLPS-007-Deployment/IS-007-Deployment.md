@@ -95,10 +95,10 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 - **Quick Start — First-Time Deployment Procedure**: A numbered end-to-end sequence so a newcomer does not need to synthesise the order from four separate documents:
   1. Run `scripts/publish.ps1` to produce the deployment artefact in `publish/`.
   2. Edit `publish/appsettings.json`: set `PcsPro:ExecutablePath` to the full path of `cricket.exe`; set `PcsPro:WorkingDirectory` to the folder containing it; set `PcsPro:AutoLaunch` to `true` (the shipped file defaults to `false`); leave `PcsPro:Password` empty. **For this initial deployment only**: do not run `git clean` or re-run `publish.ps1` until `Deploy-PcsRemote.ps1` has completed — either action will overwrite the edits you just made.
-
-- **Update Deployments** (new software release): re-run `scripts/publish.ps1` to rebuild the artefact from the latest code, then re-run `scripts/Deploy-PcsRemote.ps1 -SkipPasswordUpdate`. The script detects any new configuration keys and produces `.new` files; merge those keys into the existing `appsettings.json`, then run `Start-ScheduledTask -TaskName PcsRemote` to restart the application.
   3. Run `scripts/Deploy-PcsRemote.ps1` from an elevated PowerShell prompt (provide `-AppUser`, enter the PCS Pro password when prompted). If the script reports `.new` files: merge the new configuration keys into the existing files, then run `Start-ScheduledTask -TaskName PcsRemote` from an elevated PowerShell prompt on the garage PC, and verify the tray icon appears before proceeding to step 4.
   4. Execute the Smoke Test Checklist (`docs/guides/Smoke-Test-Checklist.md`).
+
+- **Update Deployments** (new software release): re-run `scripts/publish.ps1` to rebuild the artefact from the latest code, then re-run `scripts/Deploy-PcsRemote.ps1 -SkipPasswordUpdate`. The script detects any new configuration keys and produces `.new` files; merge those keys into the existing `appsettings.json`, then run `Start-ScheduledTask -TaskName PcsRemote` to restart the application.
 
 - **Prerequisites**: .NET 8 runtime not required (self-contained); Windows 10/11; Administrator account for deployment script.
 - **`appsettings.json` settings** (all production-relevant keys):
