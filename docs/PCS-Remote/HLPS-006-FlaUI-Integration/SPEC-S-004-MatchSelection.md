@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Document** | SPEC-S-004-MatchSelection.md |
-| **Status** | IN REVIEW |
+| **Status** | APPROVED — Pending user approval |
 | **Version** | 0.3 |
 | **Date** | 2026-04-14 |
 | **Step** | IS-006 S-004 |
@@ -288,4 +288,4 @@ Commits should be small and follow the same pattern as S-003:
 | Round | Date | Reviewers | Outcome | Issues Addressed |
 |---|---|---|---|---|
 | R1 | 2026-04-14 | Claude Opus 4.6, GPT-5.4 | NEEDS REVIEW | O1–O7, G1–G6 triaged; HIGH findings accepted and applied in v0.2 |
-| R2 | 2026-04-14 | Claude Opus 4.6, GPT-5.4 | NEEDS REVIEW | R2-1 (HIGH) accepted; R2-2 through R2-7 triaged and applied in v0.3; R2-8 rejected (settled decision §2.4); R2-9 deferred to Delivery |
+| R3 | 2026-04-14 | Claude Opus 4.6, GPT-5.4 | APPROVED | Opus: zero findings. GPT: 1 MEDIUM (R2-7 regression on §4.2 step 4 cancellation text) — dispositioned DEFER to Delivery; AC-12 + §4.3 give sufficient implementer guidance. |
