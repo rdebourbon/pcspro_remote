@@ -76,7 +76,7 @@ if ($missing.Count -gt 0) {
     exit 1
 }
 
-$totalFiles = (Get-ChildItem -File $outputDir | Measure-Object).Count
+$totalFiles = (Get-ChildItem -File $outputDir -Recurse | Measure-Object).Count
 Write-Host ""
 Write-Host "Publish complete. $totalFiles files in $outputDir" -ForegroundColor Green
 Write-Host "Run scripts\Deploy-PcsRemote.ps1 to deploy to the garage PC."

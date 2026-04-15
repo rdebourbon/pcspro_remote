@@ -127,8 +127,8 @@ The PCS Pro password is stored as a System-scoped Windows environment variable n
 The deployment script (`Deploy-PcsRemote.ps1`) sets the password interactively using a secure prompt. If you need to set or update it manually without re-running the full deployment script:
 
 ```powershell
-$pwd = Read-Host -AsSecureString "PCS Pro password"
-$bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($pwd)
+$securePwd = Read-Host -AsSecureString "PCS Pro password"
+$bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePwd)
 try {
     $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
     [System.Environment]::SetEnvironmentVariable("PcsPro__Password", $plain, "Machine")

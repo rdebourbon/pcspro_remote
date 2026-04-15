@@ -59,7 +59,7 @@ $TaskName         = 'PcsRemote'
 $FirewallRuleName = 'PcsRemote-HTTP'
 $ExeName          = 'PcsRemote.TrayHost.exe'
 $EnvVarName       = 'PcsPro__Password'
-$SourceDir        = Join-Path $PSScriptRoot '..\publish'
+$SourceDir        = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($PSScriptRoot, '..', 'publish'))
 
 # Track created .new files for the post-deploy warning
 $newConfigFiles = [System.Collections.Generic.List[string]]::new()
@@ -126,7 +126,7 @@ do {
 
 if ($process) {
     Write-Host "    Graceful stop timed out — force-killing PID $($process.Id)..." -ForegroundColor Yellow
-    Stop-Process -Id $process.Id -Force
+    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 5
     $process = Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($ExeName)) -ErrorAction SilentlyContinue
     if ($process) {
