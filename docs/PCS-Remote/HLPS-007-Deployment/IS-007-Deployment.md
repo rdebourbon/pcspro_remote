@@ -207,11 +207,11 @@ Steps are identified with stable IDs S-001 through S-005. IDs are never renumber
 
 | Step | Status | Commit |
 |---|---|---|
-| S-001 — Exit code fix, publish verification, helper script | Pending | — |
-| S-002 — PowerShell deployment script | Pending | — |
-| S-003 — Configuration guide | Pending | — |
-| S-004 — Operational guide | Pending | — |
-| S-005 — Smoke test checklist | Pending | — |
+| S-001 — Exit code fix, publish verification, helper script | Delivered | `ac17c92` |
+| S-002 — PowerShell deployment script | Delivered | `1309b50` |
+| S-003 — Configuration guide | Delivered | `4e19f60` |
+| S-004 — Operational guide | Delivered | `c2298b3` |
+| S-005 — Smoke test checklist | Delivered | `38f1e51` |
 
 ---
 
