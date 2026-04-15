@@ -46,8 +46,11 @@ try
 catch (Exception ex)
 {
     Log.Fatal(ex, "PCS Remote (TrayHost) terminated unexpectedly");
+    return 1; // Non-zero exit code so Task Scheduler restart triggers on crash
 }
 finally
 {
-    Log.CloseAndFlush();
+    Log.CloseAndFlush(); // return 1 above allows this finally block to execute
 }
+
+return 0;
