@@ -12,7 +12,7 @@
 {
     <div class="match-loading">Loading matches&hellip;</div>
 }
-else if (_currentState == PcsProState.MatchSelectionReady)
+else if (_currentState == PcsProState.MatchSelection)
 {
     @if (_matches is { Count: 0 })
     {
@@ -90,19 +90,8 @@ else if (_currentState == PcsProState.Error)
             }
             else if (newState == PcsProState.MatchSelectionReady)
             {
-                // R-8(a): auto-select when state reaches ready and fetch already completed
-                if (_matches?.Count == 1)
-                {
-                    var match = _matches[0];
-                    _loadedMatch = match;
-                    _matches = null; // Guard: prevent re-trigger on intermediate MatchSelectionReady
-                    try { await AutomationService.LoadMatchAsync(match); }
-                    catch { StateHasChanged(); }
-                }
-                else
-                {
-                    StateHasChanged();
-                }
+                // Brief intermediate state — LoadMatchAsync will immediately advance to MatchLoaded.
+                StateHasChanged();
             }
             else
             {
@@ -122,12 +111,12 @@ else if (_currentState == PcsProState.Error)
             var results = await AutomationService.GetTodaysMatchesAsync();
             _matches = results;
 
-            // R-8(b): auto-select when fetch completes and state is already MatchSelectionReady
-            if (_currentState == PcsProState.MatchSelectionReady && _matches?.Count == 1)
+            // R-8: auto-select the only match so the user doesn't need to click when there is no choice.
+            if (_currentState == PcsProState.MatchSelection && _matches?.Count == 1)
             {
                 var match = _matches[0];
                 _loadedMatch = match;
-                _matches = null; // Guard: prevent re-trigger on intermediate MatchSelectionReady
+                _matches = null; // Prevent re-trigger if OnStateChanged fires MatchSelection again
                 await AutomationService.LoadMatchAsync(match);
             }
         }
