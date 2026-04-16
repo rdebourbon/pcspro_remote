@@ -13,14 +13,21 @@ Log.Logger = new LoggerConfiguration()
 
 try
 {
-    var builder = WebApplication.CreateBuilder(args);
+    var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+    {
+        Args = args,
+        // Pin content root to the directory containing the executable so appsettings.json
+        // and static files are found regardless of the working directory the user launches from.
+        ContentRootPath = AppContext.BaseDirectory
+    });
 
     // Stage 2: replace with fully-configured logger.
     builder.Host.UseSerilog((_, _, loggerConfig) =>
         loggerConfig
             .WriteTo.Console()
             .WriteTo.File(
-                path: "logs/pcs-remote-.log",
+                // Absolute path so logs land next to the exe, not the working directory.
+                path: Path.Combine(AppContext.BaseDirectory, "logs", "pcs-remote-.log"),
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 7));
 

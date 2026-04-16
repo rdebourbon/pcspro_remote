@@ -37,7 +37,10 @@ public static class WebApplicationBuilderExtensions
         builder.Services.AddHostedService<OperationInProgressBroadcaster>();
         builder.Services.AddHostedService<ScoreboardPollingService>();
         builder.Services.AddHostedService<AutoLaunchService>();
-        builder.Services.AddRazorPages();
+        // AddApplicationPart ensures _Host.cshtml and Blazor components in PcsRemote.Web
+        // are discoverable when a different assembly (e.g. TrayHost) is the entry point.
+        builder.Services.AddRazorPages()
+            .AddApplicationPart(typeof(WebApplicationBuilderExtensions).Assembly);
         builder.Services.AddRadzenComponents();
         builder.Services.AddScoped<IConfirmDialogService, RadzenConfirmDialogService>();
         return builder;
