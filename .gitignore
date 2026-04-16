@@ -42,3 +42,4 @@ TestResults/
 
 # Publish output
 publish/
+publish-*/
