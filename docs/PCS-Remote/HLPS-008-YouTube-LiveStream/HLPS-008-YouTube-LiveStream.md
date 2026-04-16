@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | **Document** | HLPS-008-YouTube-LiveStream.md |
-| **Status** | DRAFT |
-| **Version** | 0.2 |
+| **Status** | APPROVED — User-approved 2026-04-16 (R2 waived by user directive) |
+| **Version** | 0.3 |
 | **Date** | 2026-06-15 |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.1 |
 | **Dependencies** | HLPS-003 (Blazor Server web infrastructure, DI wiring), HLPS-004 (match-loaded state and scoreboard component context) |
