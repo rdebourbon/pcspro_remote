@@ -298,3 +298,55 @@ body {
     bottom: 1rem !important;
     right: 1rem !important;
 }
+
+/* ---- Radzen global theme overrides ---- */
+/* Replace Radzen's orange (#ff6d41) with gold and white surfaces with maroon */
+:root {
+    /* Primary accent (buttons, focus rings, highlights) */
+    --rz-primary:         #C8A84B;
+    --rz-primary-light:   #D4BA6A;
+    --rz-primary-lighter: rgba(200, 168, 75, 0.16);
+    --rz-primary-dark:    #8B7033;
+    --rz-primary-darker:  #5C4A21;
+
+    /* Dialog surfaces */
+    --rz-dialog-background-color:       #31101F;
+    --rz-dialog-title-background-color: #260D18;
+    --rz-dialog-title-color:            #C8A84B;
+    --rz-dialog-shadow:                 0 8px 32px rgba(0,0,0,.65);
+    --rz-dialog-border-radius:          10px;
+
+    /* Overlay / mask backdrop */
+    --rz-dialog-mask-background-color:  #170810;
+
+    /* Dropdown / panel overlays */
+    --rz-overlay-background-color:      #31101F;
+}
+
+/* Dialog border and text colour (not covered by variables alone) */
+.rz-dialog {
+    border: 1px solid #561B38 !important;
+    color: #F5EDE8 !important;
+}
+
+.rz-dialog-content {
+    color: #F5EDE8 !important;
+}
+
+/* Overlay opacity */
+.rz-dialog-mask {
+    opacity: 0.82 !important;
+}
+
+/* Secondary / cancel button inside dialogs — keep readable on dark background */
+.rz-dialog .rz-button:not(.rz-primary):not([class*="rz-success"]):not([class*="rz-danger"]) {
+    background: transparent !important;
+    border-color: #561B38 !important;
+    color: #B89298 !important;
+}
+
+.rz-dialog .rz-button:not(.rz-primary):not([class*="rz-success"]):not([class*="rz-danger"]):hover {
+    background: #3F1429 !important;
+    border-color: #B89298 !important;
+    color: #F5EDE8 !important;
+}
