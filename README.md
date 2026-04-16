@@ -46,6 +46,48 @@ The web application will be available at `https://localhost:5001` (or the port s
 
 ---
 
+## Local Development Testing (Mock Mode)
+
+`appsettings.Development.json` enables mock mode when running via `dotnet run` — no cricket.exe required. The mock automation service simulates the full PCS Pro state machine with configurable delays and fake match data.
+
+### Start the full application (recommended)
+
+```powershell
+dotnet run --project src/PcsRemote.TrayHost
+```
+
+This starts the Blazor web server **and** the WinForms tray icon (manual mode toggle, Open Browser, Exit). Browse to `http://localhost:5000`.
+
+### Web server only (faster for Blazor component dev)
+
+```powershell
+dotnet run --project src/PcsRemote.Web
+```
+
+No tray icon. Manual mode can still be toggled via the browser UI.
+
+### What mock mode exercises
+
+| Scenario | How to trigger |
+|---|---|
+| Full launch flow (NotRunning → MatchLoaded) | Auto-starts on app launch |
+| Match list (3 fake clubs) | Appears automatically at MatchSelectionReady |
+| Auto-select (single match) | Set `FakeMatchCount: 1` in `appsettings.Development.json` |
+| Manual match selection | Click a match card |
+| Scoreboard preview + Refresh + Change Match | Available once a match is loaded |
+| Manual mode toggle | Right-click tray icon → "Switch to Manual Mode" |
+| Error injection + Retry | Set `ErrorProbability: 0.3` or `ForcedErrorMode` in config |
+
+### Configuring mock delays
+
+Edit `PcsPro:Mock:*` values in `appsettings.Development.json` to speed up or slow down each transition. Current defaults give roughly 1–1.5 s per state step so UI changes are clearly observable.
+
+### Post-deployment smoke test
+
+See [`docs/guides/Smoke-Test-Checklist.md`](docs/guides/Smoke-Test-Checklist.md) for the full acceptance checklist. Items 1–5, 10, and 11 are exercisable in mock mode. Items 6–9, 12–13 require cricket.exe on the garage PC.
+
+---
+
 ## How to Test
 
 ```bash
