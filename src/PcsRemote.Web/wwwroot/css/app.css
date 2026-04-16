@@ -1,0 +1,300 @@
+/* =============================================================
+   PCS Remote — Application Stylesheet
+   Cricket scorer remote controller — dark cricket-green theme
+   ============================================================= */
+
+/* ---- Design tokens ---- */
+:root {
+    --pcs-bg:           #0f1e14;
+    --pcs-surface:      #162619;
+    --pcs-card:         #1c3324;
+    --pcs-card-hover:   #24402e;
+    --pcs-border:       #2a4834;
+    --pcs-green:        #52c07a;
+    --pcs-green-dim:    #2d6b45;
+    --pcs-yellow:       #f4c842;
+    --pcs-red:          #e05252;
+    --pcs-grey:         #7a9a82;
+    --pcs-text:         #e8f0ea;
+    --pcs-text-muted:   #8aab90;
+    --pcs-radius:       10px;
+    --pcs-shadow:       0 2px 12px rgba(0,0,0,.45);
+}
+
+/* ---- Base ---- */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+    background-color: var(--pcs-bg);
+    color: var(--pcs-text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    margin: 0;
+}
+
+/* ---- Radzen layout tinting ---- */
+.rz-layout  { background-color: var(--pcs-bg)      !important; }
+.rz-header  { background-color: var(--pcs-surface)  !important;
+               border-bottom: 1px solid var(--pcs-border) !important; }
+.rz-body    { background-color: var(--pcs-bg)      !important; }
+
+/* Body content area: centred, sensible max-width, padded for mobile */
+.rz-body > * {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 1.25rem 1rem;
+}
+
+/* ---- Connected user count (header) ---- */
+.connected-user-count {
+    font-size: 0.8rem;
+    color: var(--pcs-text-muted);
+    margin-left: auto;
+    margin-right: 0.75rem;
+    white-space: nowrap;
+}
+
+/* ---- Status indicator pill (header) ---- */
+.pcs-status-indicator {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 20px;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+}
+
+.status-grey   { background: rgba(122,154,130,.15); color: var(--pcs-grey);   }
+.status-yellow { background: rgba(244,200,66,.15);  color: var(--pcs-yellow); }
+.status-green  { background: rgba(82,192,122,.15);  color: var(--pcs-green);  }
+.status-red    { background: rgba(224,82,82,.15);   color: var(--pcs-red);    }
+
+/* ---- Manual mode banner ---- */
+.manual-mode-banner {
+    background: rgba(244,200,66,.1);
+    border-bottom: 2px solid var(--pcs-yellow);
+    color: var(--pcs-yellow);
+    text-align: center;
+    padding: 10px 16px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+/* ---- Loading / empty states ---- */
+.match-loading,
+.match-empty-state {
+    text-align: center;
+    padding: 3.5rem 1rem;
+    color: var(--pcs-text-muted);
+    font-size: 1rem;
+}
+
+/* ---- Match cards (primary interaction) ---- */
+.match-card {
+    background: var(--pcs-card);
+    border: 1px solid var(--pcs-border);
+    border-radius: var(--pcs-radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, transform .1s, box-shadow .15s;
+    box-shadow: var(--pcs-shadow);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 4px 8px;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.match-card:hover {
+    background: var(--pcs-card-hover);
+    border-color: var(--pcs-green-dim);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 18px rgba(0,0,0,.5);
+}
+
+.match-card:active {
+    transform: translateY(0);
+    box-shadow: var(--pcs-shadow);
+}
+
+.match-card--disabled {
+    background: var(--pcs-card);
+    border: 1px solid var(--pcs-border);
+    border-radius: var(--pcs-radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: var(--pcs-shadow);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 4px 8px;
+}
+
+.match-card-home {
+    grid-column: 1; grid-row: 1;
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--pcs-text);
+}
+
+.match-card-away {
+    grid-column: 2; grid-row: 1;
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--pcs-text);
+    text-align: right;
+}
+
+.match-card-type {
+    grid-column: 1; grid-row: 2;
+    font-size: 0.75rem;
+    color: var(--pcs-green);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.match-card-date {
+    grid-column: 2; grid-row: 2;
+    font-size: 0.75rem;
+    color: var(--pcs-text-muted);
+    text-align: right;
+}
+
+/* ---- Loaded match header ---- */
+.match-loaded {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--pcs-card);
+    border: 1px solid var(--pcs-green-dim);
+    border-radius: var(--pcs-radius);
+    padding: 0.9rem 1.25rem;
+    margin-bottom: 1rem;
+    gap: 0.75rem;
+}
+
+.match-loaded__home,
+.match-loaded__away {
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--pcs-text);
+}
+
+/* ---- Scoreboard ---- */
+.scoreboard-image {
+    display: block;
+    width: 100%;
+    max-width: 600px;
+    border-radius: var(--pcs-radius);
+    border: 1px solid var(--pcs-border);
+    margin-bottom: 1rem;
+}
+
+.scoreboard-placeholder {
+    background: var(--pcs-card);
+    border: 1px dashed var(--pcs-border);
+    border-radius: var(--pcs-radius);
+    padding: 2.5rem;
+    text-align: center;
+    color: var(--pcs-text-muted);
+    margin-bottom: 1rem;
+}
+
+/* ---- Action buttons ---- */
+.refresh-scoreboard-button,
+.change-match-button {
+    display: inline-block;
+    padding: 0.65rem 1.4rem;
+    border-radius: 8px;
+    border: none;
+    font-size: 0.92rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, opacity .15s, color .15s;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.refresh-scoreboard-button {
+    background: var(--pcs-green-dim);
+    color: var(--pcs-text);
+}
+
+.refresh-scoreboard-button:hover:not(:disabled) {
+    background: var(--pcs-green);
+    color: var(--pcs-bg);
+}
+
+.change-match-button {
+    background: transparent;
+    color: var(--pcs-text-muted);
+    border: 1px solid var(--pcs-border);
+}
+
+.change-match-button:hover:not(:disabled) {
+    background: var(--pcs-card-hover);
+    border-color: var(--pcs-text-muted);
+    color: var(--pcs-text);
+}
+
+.refresh-scoreboard-button:disabled,
+.change-match-button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+/* ---- Error display ---- */
+.error-display {
+    background: rgba(224,82,82,.07);
+    border: 1px solid rgba(224,82,82,.3);
+    border-radius: var(--pcs-radius);
+    padding: 1.75rem;
+    text-align: center;
+    margin-top: 1rem;
+}
+
+.error-display--icon {
+    font-size: 2.5rem;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.error-display__reason {
+    display: block;
+    color: var(--pcs-text-muted);
+    margin-bottom: 1.25rem;
+    font-size: 0.93rem;
+    line-height: 1.5;
+}
+
+.error-display__retry-btn {
+    background: rgba(224,82,82,.18);
+    color: var(--pcs-red);
+    border: 1px solid rgba(224,82,82,.4);
+    border-radius: 8px;
+    padding: 0.65rem 1.5rem;
+    font-size: 0.92rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
+}
+
+.error-display__retry-btn:hover:not(:disabled) {
+    background: rgba(224,82,82,.32);
+}
+
+.error-display__retry-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* ---- Radzen notification toast nudge ---- */
+.rz-notification {
+    bottom: 1rem !important;
+    right: 1rem !important;
+}
