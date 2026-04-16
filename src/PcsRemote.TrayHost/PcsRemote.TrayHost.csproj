@@ -26,6 +26,10 @@
     <!-- Link Web appsettings so TrayHost and Web standalone bind to the same URLs -->
     <Content Include="..\PcsRemote.Web\appsettings.json" Link="appsettings.json" CopyToOutputDirectory="Always" />
     <Content Include="..\PcsRemote.Web\appsettings.Development.json" Link="appsettings.Development.json" CopyToOutputDirectory="Always" />
+    <!-- Copy Web wwwroot so UseStaticFiles() can serve css/app.css from TrayHost's content root -->
+    <Content Include="..\PcsRemote.Web\wwwroot\**\*"
+             Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
