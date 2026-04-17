@@ -46,6 +46,8 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     private CancellationTokenSource? _crashWatcherCts;
     private Task? _crashWatcherTask;
     private string? _lastErrorReason;
+    private MatchInfo? _loadedMatch;
+    private MatchInfo? _pendingLoadedMatch;
 
     /// <summary>
     /// 0 = idle, 1 = a match-selection lifecycle operation is in progress.
@@ -88,6 +90,17 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         _stateMachine = new PcsProStateMachine();
         _stateMachine.OnTransitioned(newState =>
         {
+            if (newState == PcsProState.MatchLoaded)
+            {
+                _loadedMatch = _pendingLoadedMatch;
+                _pendingLoadedMatch = null;
+            }
+            else
+            {
+                _loadedMatch = null;
+                _pendingLoadedMatch = null;
+            }
+
             _logger.LogInformation("State transition → {State}", newState);
             _pendingTransitions.Enqueue(newState);
         });
@@ -98,6 +111,9 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
 
     /// <inheritdoc/>
     public string? LastErrorReason => _lastErrorReason;
+
+    /// <inheritdoc/>
+    public MatchInfo? LoadedMatch => _loadedMatch;
 
     /// <inheritdoc/>
     public event EventHandler<PcsProState>? StateChanged;
@@ -827,6 +843,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             return;
         }
 
+        _pendingLoadedMatch = match;
         await PollForMatchLoadedAsync(startTimestamp, ct).ConfigureAwait(false);
     }
 

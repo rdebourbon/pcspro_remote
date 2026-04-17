@@ -19,6 +19,13 @@ public interface IPcsProAutomationService
     string? LastErrorReason { get; }
 
     /// <summary>
+    /// Gets the currently loaded match when state is <see cref="PcsProState.MatchLoaded"/>,
+    /// or <see langword="null"/> otherwise. Cleared on any state transition away from
+    /// <see cref="PcsProState.MatchLoaded"/>.
+    /// </summary>
+    MatchInfo? LoadedMatch { get; }
+
+    /// <summary>
     /// Raised whenever the lifecycle state changes; the event argument contains the new state.
     /// </summary>
     event EventHandler<PcsProState> StateChanged;

@@ -13,6 +13,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly Random _rng;
     private PcsProState _currentState = PcsProState.NotRunning;
+    private MatchInfo? _loadedMatch;
     private byte[]? _lastImageBytes;
     private int _imageGenCounter;
 
@@ -30,6 +31,8 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     public PcsProState CurrentState => _currentState;
 
     public string? LastErrorReason { get; private set; }
+
+    public MatchInfo? LoadedMatch => _loadedMatch;
 
     public event EventHandler<PcsProState>? StateChanged;
 
@@ -137,6 +140,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
                 TransitionToError("Timed out opening selected match");
                 return;
             }
+            _loadedMatch = match;
             Transition(PcsProState.MatchLoaded);
             _logger.LogInformation("LoadMatchAsync complete — reached {State}", PcsProState.MatchLoaded);
         }
@@ -294,6 +298,9 @@ public class MockPcsProAutomationService : IPcsProAutomationService
 
     private void Transition(PcsProState newState)
     {
+        if (newState != PcsProState.MatchLoaded)
+            _loadedMatch = null;
+
         _currentState = newState;
         OnStateChanged(newState);
     }
