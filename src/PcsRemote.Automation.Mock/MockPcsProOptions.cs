@@ -11,6 +11,8 @@ public class MockPcsProOptions
     public TimeSpan MatchOpenedDelay { get; set; } = TimeSpan.Zero;
     public TimeSpan ChangeMatchDelay { get; set; } = TimeSpan.Zero;
     public TimeSpan StopDelay { get; set; } = TimeSpan.Zero;
+    public TimeSpan StartStreamingDelay { get; set; } = TimeSpan.Zero;
+    public TimeSpan StopStreamingDelay { get; set; } = TimeSpan.Zero;
 
     // Behavioural knobs
     public double ErrorProbability { get; set; } = 0.0;

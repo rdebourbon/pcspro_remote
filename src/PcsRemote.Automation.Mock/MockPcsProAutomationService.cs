@@ -16,6 +16,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     private MatchInfo? _loadedMatch;
     private byte[]? _lastImageBytes;
     private int _imageGenCounter;
+    private bool _isStreaming;
 
     public MockPcsProAutomationService(
         IOptions<MockPcsProOptions> options,
@@ -33,6 +34,13 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     public string? LastErrorReason { get; private set; }
 
     public MatchInfo? LoadedMatch => _loadedMatch;
+
+    /// <summary>
+    /// Gets whether PCS Pro's RTMP streaming is currently active.
+    /// This state is tracked by the mock only — it is not part of
+    /// <see cref="IPcsProAutomationService"/>.
+    /// </summary>
+    public bool IsStreaming => _isStreaming;
 
     public event EventHandler<PcsProState>? StateChanged;
 
@@ -196,6 +204,64 @@ public class MockPcsProAutomationService : IPcsProAutomationService
         }
     }
 
+    public async Task StartStreamingAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("StartStreamingAsync starting from {State}", _currentState);
+
+        if (!_semaphore.Wait(0))
+            throw new InvalidOperationException("A lifecycle operation is already in progress.");
+
+        try
+        {
+            if (_currentState != PcsProState.MatchLoaded)
+                throw new InvalidOperationException(
+                    $"StartStreamingAsync requires MatchLoaded state; current state is {_currentState}.");
+
+            if (_isStreaming)
+            {
+                _logger.LogDebug("StartStreamingAsync called while already streaming — no-op");
+                return;
+            }
+
+            await Task.Delay(_options.StartStreamingDelay, ct);
+            _isStreaming = true;
+            _logger.LogInformation("StartStreamingAsync complete — streaming is now active");
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    public async Task StopStreamingAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("StopStreamingAsync starting from {State}", _currentState);
+
+        if (!_semaphore.Wait(0))
+            throw new InvalidOperationException("A lifecycle operation is already in progress.");
+
+        try
+        {
+            if (_currentState != PcsProState.MatchLoaded)
+                throw new InvalidOperationException(
+                    $"StopStreamingAsync requires MatchLoaded state; current state is {_currentState}.");
+
+            if (!_isStreaming)
+            {
+                _logger.LogDebug("StopStreamingAsync called while not streaming — no-op");
+                return;
+            }
+
+            await Task.Delay(_options.StopStreamingDelay, ct);
+            _isStreaming = false;
+            _logger.LogInformation("StopStreamingAsync complete — streaming is now inactive");
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
     public async Task RetryAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("RetryAsync starting from {State}", _currentState);
@@ -299,7 +365,10 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     private void Transition(PcsProState newState)
     {
         if (newState != PcsProState.MatchLoaded)
+        {
             _loadedMatch = null;
+            _isStreaming = false;
+        }
 
         _currentState = newState;
         OnStateChanged(newState);

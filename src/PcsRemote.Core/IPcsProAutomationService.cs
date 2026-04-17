@@ -91,4 +91,22 @@ public interface IPcsProAutomationService
     /// Accepts an optional <paramref name="ct"/> to cancel the operation.
     /// </summary>
     Task RetryAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Starts PCS Pro's built-in RTMP live streaming.
+    /// Throws <see cref="InvalidOperationException"/> if the current state is not
+    /// <see cref="PcsProState.MatchLoaded"/>.
+    /// Idempotent: calling when already streaming is a no-op.
+    /// Accepts an optional <paramref name="ct"/> to cancel the operation.
+    /// </summary>
+    Task StartStreamingAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Stops PCS Pro's built-in RTMP live streaming.
+    /// Throws <see cref="InvalidOperationException"/> if the current state is not
+    /// <see cref="PcsProState.MatchLoaded"/>.
+    /// Idempotent: calling when not streaming is a no-op.
+    /// Accepts an optional <paramref name="ct"/> to cancel the operation.
+    /// </summary>
+    Task StopStreamingAsync(CancellationToken ct = default);
 }

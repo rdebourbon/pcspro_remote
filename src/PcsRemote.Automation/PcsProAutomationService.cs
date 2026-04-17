@@ -1266,4 +1266,18 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         // Step 9: Log completion.
         _logger.LogInformation("RetryAsync complete; current state {State}", CurrentState);
     }
+
+    /// <inheritdoc/>
+    public Task StartStreamingAsync(CancellationToken ct = default)
+    {
+        throw new NotImplementedException(
+            "StartStreamingAsync will be implemented in IS-009 S-003 (FlaUI streaming automation).");
+    }
+
+    /// <inheritdoc/>
+    public Task StopStreamingAsync(CancellationToken ct = default)
+    {
+        throw new NotImplementedException(
+            "StopStreamingAsync will be implemented in IS-009 S-003 (FlaUI streaming automation).");
+    }
 }

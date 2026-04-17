@@ -965,6 +965,234 @@ public sealed class MockPcsProAutomationServiceTests
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming: StartStreamingAsync happy path
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StartStreamingAsync_WhenMatchLoaded_SetsStreamingState()
+    {
+        var sut = CreateSut();
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+
+        await sut.StartStreamingAsync();
+
+        sut.IsStreaming.Should().BeTrue();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming: StartStreamingAsync wrong state
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StartStreamingAsync_WhenNotMatchLoaded_ThrowsInvalidOperationException()
+    {
+        var sut = CreateSut();
+        await sut.LaunchAndLoginAsync();
+        sut.CurrentState.Should().Be(PcsProState.MatchSelection);
+
+        var act = async () => await sut.StartStreamingAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming: StartStreamingAsync idempotent
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StartStreamingAsync_WhenAlreadyStreaming_IsNoOp()
+    {
+        var sut = CreateSut();
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+        await sut.StartStreamingAsync();
+
+        await sut.StartStreamingAsync();
+
+        sut.IsStreaming.Should().BeTrue();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming: StartStreamingAsync respects delay
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StartStreamingAsync_WithConfiguredDelay_RespectsDelay()
+    {
+        var sut = CreateSut(o => o.StartStreamingDelay = TimeSpan.FromMilliseconds(100));
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await sut.StartStreamingAsync();
+        sw.Stop();
+
+        sw.ElapsedMilliseconds.Should().BeGreaterOrEqualTo(80);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming: StopStreamingAsync happy path
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StopStreamingAsync_WhenStreaming_ClearsStreamingState()
+    {
+        var sut = CreateSut();
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+        await sut.StartStreamingAsync();
+
+        await sut.StopStreamingAsync();
+
+        sut.IsStreaming.Should().BeFalse();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming: StopStreamingAsync wrong state
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StopStreamingAsync_WhenNotMatchLoaded_ThrowsInvalidOperationException()
+    {
+        var sut = CreateSut();
+        await sut.LaunchAndLoginAsync();
+        sut.CurrentState.Should().Be(PcsProState.MatchSelection);
+
+        var act = async () => await sut.StopStreamingAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming: StopStreamingAsync idempotent
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StopStreamingAsync_WhenNotStreaming_IsNoOp()
+    {
+        var sut = CreateSut();
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+
+        await sut.StopStreamingAsync();
+
+        sut.IsStreaming.Should().BeFalse();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming: StopStreamingAsync respects delay
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StopStreamingAsync_WithConfiguredDelay_RespectsDelay()
+    {
+        var sut = CreateSut(o => o.StopStreamingDelay = TimeSpan.FromMilliseconds(100));
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+        await sut.StartStreamingAsync();
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await sut.StopStreamingAsync();
+        sw.Stop();
+
+        sw.ElapsedMilliseconds.Should().BeGreaterOrEqualTo(80);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming: Start cancelled during delay
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StartStreamingAsync_CancelledDuringDelay_ThrowsAndStateUnchanged()
+    {
+        var sut = CreateSut(o => o.StartStreamingDelay = TimeSpan.FromSeconds(5));
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        var act = async () => await sut.StartStreamingAsync(cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        sut.IsStreaming.Should().BeFalse();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming: Stop cancelled during delay
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StopStreamingAsync_CancelledDuringDelay_ThrowsAndStateUnchanged()
+    {
+        var sut = CreateSut(o => o.StopStreamingDelay = TimeSpan.FromSeconds(5));
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+        await sut.StartStreamingAsync();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        var act = async () => await sut.StopStreamingAsync(cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        sut.IsStreaming.Should().BeTrue();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming: Full round-trip lifecycle
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StartThenStop_RoundTrip_StreamingStateTrackedCorrectly()
+    {
+        var sut = CreateSut();
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+
+        sut.IsStreaming.Should().BeFalse();
+
+        await sut.StartStreamingAsync();
+        sut.IsStreaming.Should().BeTrue();
+
+        await sut.StopStreamingAsync();
+        sut.IsStreaming.Should().BeFalse();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming: StopAsync while streaming resets IsStreaming
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task StopAsync_WhileStreaming_ResetsStreamingState()
+    {
+        var sut = CreateSut();
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+        await sut.StartStreamingAsync();
+        sut.IsStreaming.Should().BeTrue();
+
+        await sut.StopAsync();
+
+        sut.IsStreaming.Should().BeFalse();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming: ChangeMatchAsync while streaming resets IsStreaming
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task ChangeMatchAsync_WhileStreaming_ResetsStreamingState()
+    {
+        var sut = CreateSut();
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+        await sut.StartStreamingAsync();
+        sut.IsStreaming.Should().BeTrue();
+
+        await sut.ChangeMatchAsync();
+
+        sut.IsStreaming.Should().BeFalse();
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
