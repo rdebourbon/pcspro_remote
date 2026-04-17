@@ -43,3 +43,4 @@ TestResults/
 # Publish output
 publish/
 publish-*/
+session.md
