@@ -20,7 +20,7 @@ This IS breaks HLPS-009 into an ordered sequence of atomic, independently valuab
 
 ## 2. Implementation Steps
 
-### S-001: Core Interface + Mock Automation
+### S-001: Core Interface + Mock Automation — ✅ DELIVERED (`2a1e81e`)
 
 **What changes:** Add `StartStreamingAsync` and `StopStreamingAsync` to `IPcsProAutomationService`. Implement both methods in `MockPcsProAutomationService` with configurable delays, streaming state tracking, and idempotency. Add stub implementations in `PcsProAutomationService` (throw `NotImplementedException`) to maintain build integrity until S-003 delivers the real FlaUI automation.
 
@@ -39,7 +39,7 @@ This IS breaks HLPS-009 into an ordered sequence of atomic, independently valuab
 
 ---
 
-### S-002: YouTube Service Integration + OBS Text Corrections
+### S-002: YouTube Service Integration + OBS Text Corrections — ✅ DELIVERED (`62f6cbd`)
 
 **What changes:** Integrate `StartStreamingAsync` / `StopStreamingAsync` calls into both `YouTubeLiveStreamService` and `MockYouTubeLiveStreamService` at the correct lifecycle points per HLPS-009 §5. Also correct all OBS references to PCS Pro in error messages and log templates per HLPS-009 §7.
 
