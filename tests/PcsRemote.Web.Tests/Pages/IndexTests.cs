@@ -686,6 +686,7 @@ public class IndexTests
         ctx.Services.AddSingleton(new Mock<IConfirmDialogService>().Object);
         ctx.Services.AddSingleton<ILogger<ChangeMatchButton>>(
             NullLogger<ChangeMatchButton>.Instance);
+        ctx.Services.AddSingleton(new Mock<IYouTubeLiveStreamService>().Object);
         return ctx;
     }
 

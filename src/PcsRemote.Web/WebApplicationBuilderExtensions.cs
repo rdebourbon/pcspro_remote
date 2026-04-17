@@ -4,6 +4,7 @@ using PcsRemote.Automation.Mock;
 using PcsRemote.Core;
 using PcsRemote.Web.Hubs;
 using PcsRemote.Web.Services;
+using PcsRemote.YouTube.Mock;
 using Radzen;
 
 namespace PcsRemote.Web;
@@ -43,6 +44,10 @@ public static class WebApplicationBuilderExtensions
             .AddApplicationPart(typeof(WebApplicationBuilderExtensions).Assembly);
         builder.Services.AddRadzenComponents();
         builder.Services.AddScoped<IConfirmDialogService, RadzenConfirmDialogService>();
+        builder.Services.AddSingleton<BroadcastTitleRenderer>();
+        builder.Services.Configure<MockYouTubeOptions>(
+            builder.Configuration.GetSection("YouTube:Mock"));
+        builder.Services.AddSingleton<IYouTubeLiveStreamService, MockYouTubeLiveStreamService>();
         return builder;
     }
 

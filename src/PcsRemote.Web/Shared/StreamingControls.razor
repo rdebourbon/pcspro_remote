@@ -1,0 +1,190 @@
+@using PcsRemote.Core
+@implements IDisposable
+@inject IYouTubeLiveStreamService StreamService
+@inject IOperationCoordinatorService CoordinatorService
+
+<div class="streaming-controls">
+    <div class="streaming-controls__header">
+        <span class="streaming-controls__badge streaming-controls__badge--@_currentStatus.ToString().ToLowerInvariant()">
+            @GetStatusText()
+        </span>
+        <span class="streaming-controls__title">Live Stream</span>
+    </div>
+
+    <div class="streaming-controls__actions">
+        <button class="streaming-controls__btn streaming-controls__btn--start"
+                disabled="@(!IsStartEnabled)"
+                @onclick="OnStartClickedAsync">
+            ▶ Start Stream
+        </button>
+
+        @if (_currentStatus == LiveStreamStatus.Starting)
+        {
+            <button class="streaming-controls__btn streaming-controls__btn--cancel"
+                    @onclick="OnCancelClicked">
+                Cancel
+            </button>
+        }
+
+        <button class="streaming-controls__btn streaming-controls__btn--stop"
+                disabled="@(!IsStopEnabled)"
+                @onclick="OnStopClickedAsync">
+            ⏹ Stop Stream
+        </button>
+    </div>
+
+    @if (_currentStatus == LiveStreamStatus.Live && _currentBroadcast is not null)
+    {
+        <div class="streaming-controls__watch">
+            <a href="@_currentBroadcast.WatchUrl" target="_blank" rel="noopener noreferrer"
+               class="streaming-controls__watch-link">
+                Watch on YouTube ↗
+            </a>
+        </div>
+    }
+
+    @if (_currentStatus == LiveStreamStatus.Error)
+    {
+        <div class="streaming-controls__error">
+            <span class="streaming-controls__error-message">@_errorMessage</span>
+            <button class="streaming-controls__btn streaming-controls__btn--dismiss"
+                    @onclick="OnDismissClickedAsync">
+                Dismiss
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    private LiveStreamStatus _currentStatus;
+    private LiveBroadcastInfo? _currentBroadcast;
+    private string? _errorMessage;
+    private bool _operationInProgress;
+    private bool _disposed;
+    private CancellationTokenSource? _startCts;
+
+    private bool IsStartEnabled => _currentStatus == LiveStreamStatus.Idle && !_operationInProgress;
+    private bool IsStopEnabled => _currentStatus == LiveStreamStatus.Live && !_operationInProgress;
+
+    protected override void OnInitialized()
+    {
+        StreamService.StatusChanged += OnStatusChanged;
+        CoordinatorService.OperationInProgressChanged += OnOperationInProgressChanged;
+        _currentStatus = StreamService.CurrentStatus;
+        _currentBroadcast = StreamService.CurrentBroadcast;
+        _operationInProgress = CoordinatorService.IsOperationInProgress;
+    }
+
+    private async void OnStatusChanged(object? sender, StreamStateSnapshot snapshot)
+    {
+        if (_disposed) return;
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                _currentStatus = snapshot.Status;
+                _currentBroadcast = snapshot.CurrentBroadcast;
+                _errorMessage = snapshot.ErrorMessage;
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async void OnOperationInProgressChanged(object? sender, bool isInProgress)
+    {
+        if (_disposed) return;
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                _operationInProgress = isInProgress;
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task OnStartClickedAsync()
+    {
+        if (_operationInProgress) return;
+
+        var acquired = false;
+        _startCts?.Dispose();
+        _startCts = new CancellationTokenSource();
+        try
+        {
+            acquired = CoordinatorService.BeginOperation();
+            if (!acquired) return;
+            await StreamService.StartStreamAsync(_startCts.Token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _currentStatus = LiveStreamStatus.Error;
+            _errorMessage = ex.Message;
+            StateHasChanged();
+        }
+        finally
+        {
+            if (acquired) CoordinatorService.MarkComplete();
+        }
+    }
+
+    private async Task OnStopClickedAsync()
+    {
+        if (_operationInProgress) return;
+
+        var acquired = false;
+        try
+        {
+            acquired = CoordinatorService.BeginOperation();
+            if (!acquired) return;
+            await StreamService.StopStreamAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _currentStatus = LiveStreamStatus.Error;
+            _errorMessage = ex.Message;
+            StateHasChanged();
+        }
+        finally
+        {
+            if (acquired) CoordinatorService.MarkComplete();
+        }
+    }
+
+    private void OnCancelClicked()
+    {
+        _startCts?.Cancel();
+    }
+
+    private async Task OnDismissClickedAsync()
+    {
+        try
+        {
+            await StreamService.ResetAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private string GetStatusText() => _currentStatus switch
+    {
+        LiveStreamStatus.Idle => "Idle",
+        LiveStreamStatus.Starting => "Starting…",
+        LiveStreamStatus.Live => "● Live",
+        LiveStreamStatus.Stopping => "Stopping…",
+        LiveStreamStatus.Error => "Error",
+        _ => _currentStatus.ToString()
+    };
+
+    public void Dispose()
+    {
+        _disposed = true;
+        StreamService.StatusChanged -= OnStatusChanged;
+        CoordinatorService.OperationInProgressChanged -= OnOperationInProgressChanged;
+        _startCts?.Dispose();
+    }
+}
