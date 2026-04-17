@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | **Document** | HLPS-008-YouTube-LiveStream.md |
-| **Status** | APPROVED — User-approved 2026-04-16 (R2 waived by user directive) |
-| **Version** | 0.3 |
-| **Date** | 2026-06-15 |
+| **Status** | APPROVED — User-approved 2026-04-16 (R2 waived); v0.4 patch 2026-04-17 from external adversarial review |
+| **Version** | 0.4 |
+| **Date** | 2026-04-17 |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.1 |
 | **Dependencies** | HLPS-003 (Blazor Server web infrastructure, DI wiring), HLPS-004 (match-loaded state and scoreboard component context) |
 
@@ -66,7 +66,7 @@ PCS Remote manages only the **YouTube broadcast lifecycle** — it does not capt
 | ID | Criterion | Verification |
 |---|---|---|
 | S-YT-1 | `StreamingControls` is rendered by `Index.razor` **only** when `PcsProState == MatchLoaded`; absent in all other states | bUnit test for `NotRunning`, `Launching`, `MatchSelection`, `Error` states |
-| S-YT-2 | Clicking Start creates a YouTube broadcast with title generated from the configured template and correct `{HomeTeam}` / `{AwayTeam}` substitution | Unit test on `BroadcastTitleRenderer`; integration test against mock service verifying title passed to `StartStreamAsync` |
+| S-YT-2 | Clicking Start creates a YouTube broadcast with title generated from the configured template and correct `{HomeTeam}` / `{AwayTeam}` substitution | Unit test on `BroadcastTitleRenderer`; integration test against mock service verifying the rendered title appears on `CurrentBroadcast.Title` / `StreamStateSnapshot` after `StartStreamAsync` completes |
 | S-YT-3 | `CurrentStatus` transitions from `Idle` → `Starting` (immediately, before any API call) → `Live` on a successful Start | Unit test via mock — verify `Starting` fires before any simulated API delay |
 | S-YT-4 | Start button disabled unless status = `Idle`; Stop button disabled unless status = `Live`; Cancel button visible only during `Starting`; Dismiss button visible only during `Error` | bUnit test for each `LiveStreamStatus` value |
 | S-YT-5 | OBS not streaming: operation times out after `YouTube:StreamReadyTimeoutSeconds` (default 60s); status → `Error`; error message shown; Dismiss resets to `Idle` | Unit test — mock returns `streamStatus != "active"` for full timeout |
@@ -165,8 +165,11 @@ public interface IYouTubeLiveStreamService
     Task StartStreamAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Transitions the active broadcast to complete.
-    /// No-op (with Warning log) if <see cref="CurrentStatus"/> is not <see cref="LiveStreamStatus.Live"/>.
+    /// Transitions the active broadcast to complete (when <see cref="CurrentStatus"/> is <see cref="LiveStreamStatus.Live"/>),
+    /// OR aborts an in-flight <see cref="StartStreamAsync"/> (when <see cref="CurrentStatus"/> is <see cref="LiveStreamStatus.Starting"/>).
+    /// When aborting a start: cancels the internal start operation, best-effort deletes any partially-created broadcast,
+    /// and returns to <see cref="LiveStreamStatus.Idle"/> (NOT Error — cancellation is a deliberate user action).
+    /// No-op (with Warning log) if <see cref="CurrentStatus"/> is <see cref="LiveStreamStatus.Idle"/> or <see cref="LiveStreamStatus.Error"/>.
     /// </summary>
     Task StopStreamAsync(CancellationToken ct = default);
 
@@ -175,6 +178,13 @@ public interface IYouTubeLiveStreamService
     /// No-op if <see cref="CurrentStatus"/> is not <see cref="LiveStreamStatus.Error"/>.
     /// </summary>
     Task ResetAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Performs startup reconciliation (see §5.6). Invoked once at application startup by an <c>IHostedService</c>
+    /// adapter registered in DI. If no YouTube token is present, logs <c>Information</c> and exits without error
+    /// so the host can start and the operator sees "not configured" via the UI.
+    /// </summary>
+    Task InitializeAsync(CancellationToken ct = default);
 }
 ```
 
@@ -188,12 +198,14 @@ The `YouTube:BroadcastTitleTemplate` value is a string with named replacement to
 - `{AwayTeam}` → `MatchInfo.AwayTeam`
 - `{MatchType}` → `MatchInfo.MatchType`
 - `{Date}` → `MatchInfo.MatchDate.ToString("d")` (short date, current culture)
-- `{Date:format}` → `MatchInfo.MatchDate.ToString("format")` where `format` is a valid `DateOnly` format string. Time-related format specifiers (`H`, `h`, `m`, `s`, `t`, `z`) are not applicable to `DateOnly` and produce undefined output — the renderer must validate and reject them at startup.
+- `{Date:format}` → `MatchInfo.MatchDate.ToString("format")` where `format` is a valid `DateOnly` format string. Time-related format specifiers (`H`, `h`, `m`, `s`, `t`, `z`) are not applicable to `DateOnly`.
+
+**Validation is runtime-only (no startup rejection).** The renderer does not fail-fast on an invalid template; all error cases degrade gracefully per the table below. This is a deliberate choice so a mis-typed config never blocks the host from starting.
 
 **Error handling:**
 - Unknown token (e.g. `{Venue}`) → retained literally in the title
 - Missing `MatchInfo` field (null/empty `HomeTeam`) → substituted with empty string
-- Invalid `{Date:format}` → fall back to `{Date}` (short date) and log a `Warning`
+- Invalid `{Date:format}` (including time-specifiers on `DateOnly`) → fall back to `{Date}` (short date) and log a `Warning`
 - Resulting title longer than 100 characters (YouTube API limit) → truncated to 97 chars + `"..."`
 - Empty or missing `YouTube:BroadcastTitleTemplate` config → use default `"{HomeTeam} vs {AwayTeam}"`
 
@@ -341,7 +353,9 @@ On service startup, `YouTubeLiveStreamService.InitializeAsync()` calls `liveBroa
 7.  Update CurrentBroadcast.WatchUrl; CurrentStatus = Live; fire StatusChanged
 ```
 
-**On any exception** between steps 3-6: if a broadcast ID was obtained (step 3), attempt `liveBroadcasts.delete(broadcastId)` (best-effort, log Warning on failure); set `CurrentStatus = Error`; fire `StatusChanged` with error message.
+**On `OperationCanceledException`** between steps 3-6: if a broadcast ID was obtained (step 3), attempt `liveBroadcasts.delete(broadcastId)` (best-effort, log Warning on failure); set `CurrentStatus = Idle`; fire `StatusChanged` with null error. Cancellation is a deliberate user action and must NEVER route through `Error` state (S-YT-11).
+
+**On any other exception** between steps 3-6: if a broadcast ID was obtained (step 3), attempt `liveBroadcasts.delete(broadcastId)` (best-effort, log Warning on failure); set `CurrentStatus = Error`; fire `StatusChanged` with error message.
 
 ### 5.8 `StreamingControls.razor` Component
 
@@ -456,6 +470,7 @@ The `YouTube:LiveStreamId` uniquely identifies the RTMP ingest endpoint OBS conn
 | Round | Date | Reviewers | Result |
 |---|---|---|---|
 | R1 | 2026-06-15 | Claude Opus 4.6, GPT-5.4 | NEEDS REVIEW — 3 CRITICAL, 9 HIGH, 8 MEDIUM/LOW; all 20 accepted fixes applied in v0.2 |
+| External | 2026-04-17 | Claude Opus 4.7, GPT-5.4 | NEEDS REVIEW — 5 inline contradictions fixed in v0.4; remaining concerns deferred to JIT Specs (see §9) |
 
 ### R1 Findings Applied
 
@@ -485,3 +500,36 @@ The `YouTube:LiveStreamId` uniquely identifies the RTMP ingest endpoint OBS conn
 | 22 | MEDIUM | API quota/retry unspecified | Dismiss | Operational concern; deferred |
 | 23 | MEDIUM | Visibility source unspecified | Accept | Specified parent-controlled rendering in `Index.razor` (consistent with `ScoreboardPreview`) |
 | 24 | LOW | `LiveBroadcastInfo.Status` redundant | Accept | Removed `Status` from record; service is single source of truth |
+
+### v0.4 Patch — External Review Fixes
+
+| # | Issue | Fix |
+|---|---|---|
+| 1 | `InitializeAsync` referenced in §5.6 but absent from `IYouTubeLiveStreamService` | Added `InitializeAsync(CancellationToken)` to interface §4.4; invoked via `IHostedService` adapter at startup |
+| 2 | §5.7 routed `OperationCanceledException` to `Error`, contradicting S-YT-11 (Cancel → Idle) | Split into two paragraphs: `OperationCanceledException` → `Idle`; other exceptions → `Error` |
+| 3 | `StopStreamAsync` defined as no-op outside `Live` but required to abort `Starting` for PCS-Pro-`Error` auto-stop | Redefined: aborts in-flight start when `CurrentStatus == Starting` (returns to `Idle`, not `Error`) |
+| 4 | §4.5 template validation said both "reject at startup" and "runtime fallback" | Unified on runtime-fallback; all invalid forms degrade with `Warning` log |
+| 5 | S-YT-2 verification referenced removed `StartStreamAsync(MatchInfo)` parameter | Rewritten to assert rendered title appears on `CurrentBroadcast.Title` / `StreamStateSnapshot` |
+
+---
+
+## 9. Known Deferred Concerns (JIT-Spec Material)
+
+The following concerns were surfaced by external adversarial review but are **implementation-level detail** that belongs in the per-step JIT Spec (written just before delivery), not in this HLPS. They are listed here for traceability and to guide JIT Spec authors.
+
+| Concern | Owning JIT Spec | Required Resolution |
+|---|---|---|
+| Concrete mechanism for cancel during `Starting` in a singleton service shared across circuits (service-owned `CancellationTokenSource`, not UI-owned) | JIT Spec for IS-008 S-006 | Service owns a single `CancellationTokenSource` for the in-flight start; `StopStreamAsync` cancels it; UI never touches CTS directly |
+| Thread-safety of singleton service methods (concurrent Start/Stop/Reset/auto-stop/reconciliation from multiple circuits) | JIT Spec for IS-008 S-006 | `SemaphoreSlim(1,1)` or equivalent async lock around every public method and `InitializeAsync`; explicit policy for concurrent calls (reject vs wait) |
+| Browser-suppression mechanism preventing `GoogleWebAuthorizationBroker.AuthorizeAsync` from ever launching a browser from the runtime service (only from `--setup-youtube`) | JIT Spec for IS-008 S-006 | Runtime path reads DPAPI token file directly; throws `YouTubeStreamException("not configured")` if missing; `AuthorizeAsync` is invoked ONLY from the setup CLI entrypoint |
+| `TokenStorePath` default resolution when config value is null/empty | JIT Spec for IS-008 S-006 | Default: `Path.Combine(Environment.GetFolderPath(SpecialFolder.ApplicationData), "PcsRemote", "GoogleTokens")`; directory auto-created |
+| Startup validation of `YouTube:LiveStreamId` (verify the resource exists and is `reusable`, not just non-empty) | JIT Spec for IS-008 S-006 | `InitializeAsync` calls `liveStreams.list(id=configured)` after reconciliation; fail-fast with setup-guidance error if not found |
+| Auto-stop observer location for PCS-Pro-`Error` → `StopStreamAsync` | JIT Spec for IS-008 S-005 | Dedicated `YouTubeAutoStopObserver : IHostedService` subscribing to `IPcsProAutomationService.StateChanged` |
+| `MockYouTubeOptions` record for Mock configurability (start delay, simulate failure, simulate live-at-startup) | JIT Spec for IS-008 S-003 | Named options record injected via DI options pattern |
+| Deployment-ready invocation of `--setup-youtube` (shipped exe, not `dotnet run` from source) | JIT Spec for IS-008 S-006 | Documented as `PcsRemote.TrayHost.exe --setup-youtube`; start-menu shortcut added in IS-007 follow-up |
+| `ready`-state orphan broadcast warning logging (mentioned in §5.6 but not tied to a verification) | JIT Spec for IS-008 S-006 | Test asserts one `Warning` log per orphan with `{BroadcastId}` and `{Title}` |
+| Test-double compatibility for `LoadedMatch` addition to `IPcsProAutomationService` | JIT Spec for IS-008 S-001 | Audit existing test doubles; update signatures |
+| S-YT-3 / S-YT-7 timing assertions operationalised (measurable, not "simultaneously") | JIT Spec for IS-008 S-003 / S-007 | Concrete timing bound, e.g. "both circuits observe `Live` within 2000ms" |
+
+These are **not** contract defects — they are implementation questions with defensible answers. Locking them in here would prematurely constrain JIT Spec authors. They are tracked so no JIT Spec ships without addressing them.
+

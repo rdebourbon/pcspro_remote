@@ -3,10 +3,10 @@
 | Field | Value |
 |---|---|
 | **Document** | IS-008-YouTube-LiveStream.md |
-| **Status** | APPROVED — Pending user approval |
-| **Version** | 0.2 |
-| **Date** | 2026-04-16 |
-| **Governing HLPS** | HLPS-008-YouTube-LiveStream.md v0.3 (APPROVED) |
+| **Status** | APPROVED — Pending user approval (v0.3 patch 2026-04-17) |
+| **Version** | 0.3 |
+| **Date** | 2026-04-17 |
+| **Governing HLPS** | HLPS-008-YouTube-LiveStream.md v0.4 (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` v1.1 |
 | **Prerequisites** | IS-007 delivered (deployment, Task Scheduler, tray host). Phase 1 complete. |
 
@@ -122,7 +122,7 @@ A corresponding `PcsRemote.YouTube.Mock.Tests` test project is created with cont
 - A new `PcsRemote.YouTube` project is created (target `net8.0-windows`) referencing `PcsRemote.Core`, `Google.Apis.YouTube.v3`, and `Google.Apis.Auth`.
 - `DpapiFileDataStore` implements Google's `IDataStore` interface: serialises token to JSON, encrypts with `ProtectedData.Protect(DataProtectionScope.CurrentUser)`, writes to `{TokenStorePath}/PcsRemote.YouTube.dat`. Read is the inverse.
 - `YouTubeLiveStreamService` implements the full broadcast lifecycle per HLPS-008 §5.7: create broadcast → bind to stream → poll OBS health → transition to live. Uses `BroadcastTitleRenderer` (from `PcsRemote.Core`) to generate the broadcast title from the loaded match. Includes startup reconciliation (§5.6), setup guard (§5.4), and cancel cleanup.
-- `--setup-youtube` CLI flag is handled in `PcsRemote.TrayHost/Program.cs`: when present, runs the OAuth2 browser consent flow then exits.
+- `--setup-youtube` CLI flag is handled in `PcsRemote.TrayHost/Program.cs`: when present, runs the OAuth2 browser consent flow then exits. This requires adding a `ProjectReference` from `PcsRemote.TrayHost.csproj` to `PcsRemote.YouTube.csproj` (previously none existed).
 - DI registration in `PcsRemote.Web` is updated to conditionally wire `MockYouTubeLiveStreamService` (when `YouTube:UseMock == true`) or `YouTubeLiveStreamService` (when `false`), replacing the mock-only registration from S-004.
 - `PcsRemote.YouTube.Tests` test project is created.
 
@@ -182,6 +182,7 @@ The existing `PcsProWebApplicationFactory` two-host pattern (from IS-003 S-009) 
 |---|---|---|---|
 | R1 | 2026-04-16 | Claude Opus 4.6, GPT-5.4 | NEEDS REVIEW — 0 CRITICAL, 0 HIGH (3 downgraded from HIGH), 7 MEDIUM, 2 LOW; all 9 findings accepted and applied in v0.2 |
 | R2 | 2026-04-16 | Claude Opus 4.6, GPT-5.4 | Opus: **APPROVED** (9/9 verified, 0 new). GPT: NEEDS REVIEW (9/9 verified, 1 new MEDIUM — deferred to delivery). **Effective unanimity achieved.** |
+| External | 2026-04-17 | Claude Opus 4.7, GPT-5.4 | NEEDS REVIEW → BLOCKED (GPT). Architectural defects found in paired HLPS-008; HLPS patched to v0.4. One inline IS fix applied (S-006 TrayHost ProjectReference). Remaining concerns deferred to JIT Specs per HLPS-008 §9. |
 
 ### R1 Findings Applied
 
@@ -202,3 +203,26 @@ The existing `PcsProWebApplicationFactory` two-host pattern (from IS-003 S-009) 
 | # | Source | Severity | Finding | Disposition | Rationale |
 |---|---|---|---|---|---|
 | R2-1 | GPT | MEDIUM | S-YT-12 verification depends on unplanned mock capability | Defer to Delivery | S-003 already supports configurable failure; bUnit tests use test doubles configured to throw, not the runtime mock. Test helper pattern is a delivery concern per IS Abstraction Level rules. |
+
+### v0.3 Patch — External Review (2026-04-17)
+
+External adversarial review (Opus 4.7 + GPT-5.4) found **5 inline contradictions in HLPS-008** and one gap in this IS. HLPS-008 was patched to v0.4 (see its §8 review history). Only one fix was required in IS-008; all other concerns were deferred to JIT Specs per HLPS-008 §9.
+
+| # | Issue | Fix |
+|---|---|---|
+| 1 | S-006 specified `--setup-youtube` in TrayHost but no `ProjectReference` from TrayHost → YouTube existed; build would fail | Added explicit `ProjectReference` requirement to S-006 "What changes" |
+
+**Concerns deferred to JIT Specs** (do not block IS-008 approval — tracked in HLPS-008 §9):
+- Service-owned `CancellationTokenSource` design for Starting-state cancel → JIT Spec S-006
+- Thread-safety (`SemaphoreSlim`) for singleton service → JIT Spec S-006
+- Browser-suppression mechanism in runtime path → JIT Spec S-006
+- `TokenStorePath` default resolution → JIT Spec S-006
+- `LiveStreamId` validity check at startup → JIT Spec S-006
+- Auto-stop observer location (`YouTubeAutoStopObserver : IHostedService`) → JIT Spec S-005
+- `MockYouTubeOptions` record naming → JIT Spec S-003
+- `--setup-youtube` deployment-ready invocation (shipped exe, not `dotnet run`) → JIT Spec S-006
+- `ready`-state orphan broadcast warning logging verification → JIT Spec S-006
+- Test-double audit for `IPcsProAutomationService.LoadedMatch` addition → JIT Spec S-001
+- Timing assertions for S-YT-3 / S-YT-7 operationalised → JIT Spec S-003 / S-007
+
+Every JIT Spec authored for IS-008 must address the concerns assigned to its step.
