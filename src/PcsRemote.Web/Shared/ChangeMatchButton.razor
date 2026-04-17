@@ -5,6 +5,7 @@
 @inject IManualModeService ManualModeService
 @inject IOperationCoordinatorService CoordinatorService
 @inject IScoreboardService ScoreboardService
+@inject IYouTubeLiveStreamService StreamService
 @inject IConfirmDialogService ConfirmDialogService
 @inject NotificationService NotificationService
 @inject ILogger<ChangeMatchButton> Logger
@@ -46,9 +47,13 @@
             return;
         }
 
-        var confirmed = await ConfirmDialogService.ConfirmAsync(
-            "Load a different match? PCS Pro will close and reopen to the match selection screen.",
-            "Change Match");
+        var streamStatus = StreamService.CurrentStatus;
+        var streamActive = streamStatus is LiveStreamStatus.Live or LiveStreamStatus.Starting;
+        var dialogMessage = streamActive
+            ? "Load a different match? PCS Pro will close and reopen to the match selection screen.\n\n⚠️ A live stream is active — it will be automatically stopped."
+            : "Load a different match? PCS Pro will close and reopen to the match selection screen.";
+
+        var confirmed = await ConfirmDialogService.ConfirmAsync(dialogMessage, "Change Match");
 
         if (confirmed != true)
             return;
@@ -56,11 +61,22 @@
         bool acquired = false;
         try
         {
-            // BeginOperation() returns false if another browser already owns the lock (no-op).
-            // Only proceed — and only release — when this call wins the CAS.
             acquired = CoordinatorService.BeginOperation();
             if (!acquired)
                 return;
+
+            if (streamActive)
+            {
+                try
+                {
+                    await StreamService.StopStreamAsync();
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Logger.LogWarning(ex, "Failed to stop stream before match change");
+                }
+            }
+
             ScoreboardService.ClearCache();
             await AutomationService.ChangeMatchAsync();
         }

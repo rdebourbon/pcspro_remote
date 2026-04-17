@@ -1,9 +1,12 @@
 @page "/"
+@using Microsoft.Extensions.Logging
 @using PcsRemote.Core
 @implements IDisposable
 @inject IPcsProAutomationService AutomationService
 @inject IManualModeService ManualModeService
 @inject IOperationCoordinatorService CoordinatorService
+@inject IYouTubeLiveStreamService StreamService
+@inject ILogger<Index> Logger
 @inject NotificationService NotificationService
 
 <PageTitle>PCS Remote</PageTitle>
@@ -97,6 +100,22 @@ else if (_currentState == PcsProState.Error)
             else
             {
                 StateHasChanged();
+
+                if (newState == PcsProState.Error)
+                {
+                    var streamStatus = StreamService.CurrentStatus;
+                    if (streamStatus == LiveStreamStatus.Live || streamStatus == LiveStreamStatus.Starting)
+                    {
+                        try
+                        {
+                            await StreamService.StopStreamAsync();
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            Logger.LogWarning(ex, "Failed to auto-stop stream on PCS Pro {State} entry", newState);
+                        }
+                    }
+                }
             }
         });
     }

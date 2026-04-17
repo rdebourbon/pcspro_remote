@@ -23,10 +23,11 @@ public class ChangeMatchButtonTests
         Mock<IPcsProAutomationService> AutoMock,
         Mock<IConfirmDialogService> DialogMock,
         Mock<IOperationCoordinatorService> CoordinatorMock,
+        Mock<IYouTubeLiveStreamService> StreamMock,
         NotificationService NotificationSvc,
         List<NotificationMessage> Notifications,
         BunitContext Ctx)
-    Build(PcsProState initialState, ILogger<ChangeMatchButton>? logger = null, bool manualModeActive = false, bool operationInProgress = false)
+    Build(PcsProState initialState, ILogger<ChangeMatchButton>? logger = null, bool manualModeActive = false, bool operationInProgress = false, LiveStreamStatus streamStatus = LiveStreamStatus.Idle)
     {
         var scoreMock = new Mock<IScoreboardService>();
         var autoMock = new Mock<IPcsProAutomationService>();
@@ -45,6 +46,9 @@ public class ChangeMatchButtonTests
             .Setup(c => c.MarkComplete())
             .Raises(c => c.OperationInProgressChanged += null, coordinatorMock.Object, false);
 
+        var streamMock = new Mock<IYouTubeLiveStreamService>();
+        streamMock.Setup(s => s.CurrentStatus).Returns(streamStatus);
+
         var notificationSvc = new NotificationService();
         var notifications = new List<NotificationMessage>();
         notificationSvc.Messages.CollectionChanged += (_, e) =>
@@ -59,18 +63,19 @@ public class ChangeMatchButtonTests
         ctx.Services.AddSingleton(autoMock.Object);
         ctx.Services.AddSingleton(manualModeMock.Object);
         ctx.Services.AddSingleton(coordinatorMock.Object);
+        ctx.Services.AddSingleton(streamMock.Object);
         ctx.Services.AddSingleton(dialogMock.Object);
         ctx.Services.AddSingleton(notificationSvc);
         ctx.Services.AddSingleton(logger ?? (ILogger<ChangeMatchButton>)NullLogger<ChangeMatchButton>.Instance);
 
         var cut = ctx.Render<ChangeMatchButton>();
-        return (cut, scoreMock, autoMock, dialogMock, coordinatorMock, notificationSvc, notifications, ctx);
+        return (cut, scoreMock, autoMock, dialogMock, coordinatorMock, streamMock, notificationSvc, notifications, ctx);
     }
 
     [TestMethod]
     public void MatchLoaded_ButtonEnabled()
     {
-        var (cut, _, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, _, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             cut.Find(".change-match-button").HasAttribute("disabled").Should().BeFalse();
@@ -89,7 +94,7 @@ public class ChangeMatchButtonTests
     [DataRow(PcsProState.Error)]
     public void NonMatchLoadedState_ButtonDisabled(PcsProState state)
     {
-        var (cut, _, _, _, _, _, _, ctx) = Build(state);
+        var (cut, _, _, _, _, _, _, _, ctx) = Build(state);
         using (ctx)
         {
             cut.Find(".change-match-button").HasAttribute("disabled").Should().BeTrue();
@@ -101,7 +106,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void StateChanged_ToMatchLoaded_EnablesButton()
     {
-        var (cut, _, autoMock, _, _, _, _, ctx) = Build(PcsProState.NotRunning);
+        var (cut, _, autoMock, _, _, _, _, _, ctx) = Build(PcsProState.NotRunning);
         using (ctx)
         {
             autoMock.Raise(a => a.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
@@ -116,7 +121,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void StateChanged_AwayFromMatchLoaded_DisablesButton()
     {
-        var (cut, _, autoMock, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, autoMock, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             autoMock.Raise(a => a.StateChanged += null, autoMock.Object, PcsProState.MatchSelection);
@@ -131,7 +136,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void Click_ShowsConfirmDialog_WithCorrectArguments()
     {
-        var (cut, _, _, dialogMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, _, dialogMock, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -155,7 +160,7 @@ public class ChangeMatchButtonTests
     [DataRow(null)]
     public void Cancel_NoClearCache_NoChangeMatchAsync(bool? dialogResult)
     {
-        var (cut, scoreMock, autoMock, dialogMock, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, scoreMock, autoMock, dialogMock, coordinatorMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -176,7 +181,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void Confirm_ClearCacheCalledBeforeChangeMatchAsync()
     {
-        var (cut, scoreMock, autoMock, dialogMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, scoreMock, autoMock, dialogMock, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             var callOrder = new List<string>();
@@ -207,7 +212,7 @@ public class ChangeMatchButtonTests
     {
         var thrown = new InvalidOperationException("automation error");
         var loggerMock = new Mock<ILogger<ChangeMatchButton>>();
-        var (cut, scoreMock, autoMock, dialogMock, _, _, notifications, ctx) =
+        var (cut, scoreMock, autoMock, dialogMock, _, _, _, notifications, ctx) =
             Build(PcsProState.MatchLoaded, loggerMock.Object);
         using (ctx)
         {
@@ -243,7 +248,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void CoordinatorFiresInProgress_ButtonDisabled()
     {
-        var (cut, _, _, _, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, _, _, coordinatorMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             coordinatorMock.Raise(c => c.OperationInProgressChanged += null, coordinatorMock.Object, true);
@@ -258,7 +263,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void Dispose_UnsubscribesFromStateChanged()
     {
-        var (cut, _, autoMock, _, _, _, _, ctx) = Build(PcsProState.NotRunning);
+        var (cut, _, autoMock, _, _, _, _, _, ctx) = Build(PcsProState.NotRunning);
         using (ctx)
         {
             cut.Instance.Dispose();
@@ -274,7 +279,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void Dispose_UnsubscribesFromCoordinatorEvent()
     {
-        var (cut, _, _, _, coordinatorMock, _, _, ctx) = Build(PcsProState.NotRunning);
+        var (cut, _, _, _, coordinatorMock, _, _, _, ctx) = Build(PcsProState.NotRunning);
         using (ctx)
         {
             cut.Instance.Dispose();
@@ -290,7 +295,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void CoordinatorFiresComplete_ButtonReenables()
     {
-        var (cut, _, _, _, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded, operationInProgress: true);
+        var (cut, _, _, _, coordinatorMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded, operationInProgress: true);
         using (ctx)
         {
             cut.Find(".change-match-button").HasAttribute("disabled").Should().BeTrue();
@@ -307,7 +312,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void OperationInProgress_TooltipAttributePresent()
     {
-        var (cut, _, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, operationInProgress: true);
+        var (cut, _, _, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, operationInProgress: true);
         using (ctx)
         {
             cut.Find(".change-match-button").GetAttribute("title")
@@ -320,7 +325,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void NoOperationInProgress_TooltipAttributeEmpty()
     {
-        var (cut, _, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, _, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             var title = cut.Find(".change-match-button").GetAttribute("title") ?? string.Empty;
@@ -333,7 +338,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void ChangeMatchAsyncThrows_MarkCompleteCalledInFinally()
     {
-        var (cut, scoreMock, autoMock, dialogMock, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, scoreMock, autoMock, dialogMock, coordinatorMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             autoMock.Setup(a => a.ChangeMatchAsync(It.IsAny<CancellationToken>()))
@@ -354,7 +359,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void DialogCancelled_BeginOperationNeverCalled()
     {
-        var (cut, _, _, dialogMock, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, _, dialogMock, coordinatorMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -372,7 +377,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void BeginOperationReturnsFalse_AutomationNotCalled_MarkCompleteNeverCalled()
     {
-        var (cut, _, autoMock, dialogMock, coordinatorMock, _, _, ctx) = Build(PcsProState.MatchLoaded);
+        var (cut, _, autoMock, dialogMock, coordinatorMock, _, _, _, ctx) = Build(PcsProState.MatchLoaded);
         using (ctx)
         {
             // Simulate another browser winning the CAS: BeginOperation is a no-op (returns false)
@@ -397,7 +402,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void ManualModeActive_ButtonDisabled()
     {
-        var (cut, _, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, manualModeActive: true);
+        var (cut, _, _, _, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, manualModeActive: true);
         using (ctx)
         {
             cut.Find(".change-match-button").HasAttribute("disabled").Should().BeTrue();
@@ -409,7 +414,7 @@ public class ChangeMatchButtonTests
     [TestMethod]
     public void ManualModeActive_Click_RejectedWithNotification()
     {
-        var (cut, _, autoMock, dialogMock, _, _, notifications, ctx) =
+        var (cut, _, autoMock, dialogMock, _, _, _, notifications, ctx) =
             Build(PcsProState.MatchLoaded, manualModeActive: true);
         using (ctx)
         {
@@ -449,6 +454,7 @@ public class ChangeMatchButtonTests
         ctx.Services.AddSingleton(coordinatorMock.Object);
         ctx.Services.AddSingleton(dialogMock.Object);
         ctx.Services.AddSingleton(notificationSvc);
+        ctx.Services.AddSingleton(new Mock<IYouTubeLiveStreamService>().Object);
         ctx.Services.AddSingleton<ILogger<ChangeMatchButton>>(NullLogger<ChangeMatchButton>.Instance);
 
         using (ctx)
@@ -461,6 +467,217 @@ public class ChangeMatchButtonTests
 
             cut.WaitForAssertion(() =>
                 cut.Find(".change-match-button").HasAttribute("disabled").Should().BeFalse());
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // S-005: ChangeMatchButton lifecycle coupling — stream warning + auto-stop
+    // ══════════════════════════════════════════════════════════════════════════
+
+    // ── AC-1: StreamIdle — dialog shows base text, no warning ─────────────
+
+    [TestMethod]
+    public void OnChangeMatchClickedAsync_StreamIdle_DialogHasNoWarning()
+    {
+        var (cut, _, _, dialogMock, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, streamStatus: LiveStreamStatus.Idle);
+        using (ctx)
+        {
+            dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(false);
+
+            cut.Find(".change-match-button").Click();
+
+            cut.WaitForAssertion(() =>
+                dialogMock.Verify(
+                    d => d.ConfirmAsync(
+                        It.Is<string>(msg => !msg.Contains("live stream")),
+                        "Change Match"),
+                    Times.Once));
+        }
+    }
+
+    // ── AC-2: StreamLive — dialog shows warning text ──────────────────────
+
+    [TestMethod]
+    public void OnChangeMatchClickedAsync_StreamLive_DialogHasWarning()
+    {
+        var (cut, _, _, dialogMock, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, streamStatus: LiveStreamStatus.Live);
+        using (ctx)
+        {
+            dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(false);
+
+            cut.Find(".change-match-button").Click();
+
+            cut.WaitForAssertion(() =>
+                dialogMock.Verify(
+                    d => d.ConfirmAsync(
+                        It.Is<string>(msg => msg.Contains("live stream is active")),
+                        "Change Match"),
+                    Times.Once));
+        }
+    }
+
+    // ── AC-2b: StreamStarting — dialog also shows warning ─────────────────
+
+    [TestMethod]
+    public void OnChangeMatchClickedAsync_StreamStarting_DialogHasWarning()
+    {
+        var (cut, _, _, dialogMock, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, streamStatus: LiveStreamStatus.Starting);
+        using (ctx)
+        {
+            dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(false);
+
+            cut.Find(".change-match-button").Click();
+
+            cut.WaitForAssertion(() =>
+                dialogMock.Verify(
+                    d => d.ConfirmAsync(
+                        It.Is<string>(msg => msg.Contains("live stream is active")),
+                        "Change Match"),
+                    Times.Once));
+        }
+    }
+
+    // ── AC-2c: StreamError — no warning (Error is not active) ─────────────
+
+    [TestMethod]
+    public void OnChangeMatchClickedAsync_StreamError_DialogHasNoWarning()
+    {
+        var (cut, _, _, dialogMock, _, _, _, _, ctx) = Build(PcsProState.MatchLoaded, streamStatus: LiveStreamStatus.Error);
+        using (ctx)
+        {
+            dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(false);
+
+            cut.Find(".change-match-button").Click();
+
+            cut.WaitForAssertion(() =>
+                dialogMock.Verify(
+                    d => d.ConfirmAsync(
+                        It.Is<string>(msg => !msg.Contains("live stream")),
+                        "Change Match"),
+                    Times.Once));
+        }
+    }
+
+    // ── AC-3: StreamLive + confirmed → StopStreamAsync before ChangeMatchAsync ──
+
+    [TestMethod]
+    public void OnChangeMatchClickedAsync_StreamLiveConfirmed_StopsThenChangesMatch()
+    {
+        var callOrder = new List<string>();
+        var (cut, scoreMock, autoMock, dialogMock, _, streamMock, _, _, ctx) = Build(PcsProState.MatchLoaded, streamStatus: LiveStreamStatus.Live);
+        using (ctx)
+        {
+            dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(true);
+            streamMock.Setup(s => s.StopStreamAsync(It.IsAny<CancellationToken>()))
+                .Callback(() => callOrder.Add("Stop"))
+                .Returns(Task.CompletedTask);
+            autoMock.Setup(a => a.ChangeMatchAsync(It.IsAny<CancellationToken>()))
+                .Callback(() => callOrder.Add("ChangeMatch"))
+                .Returns(Task.CompletedTask);
+
+            cut.Find(".change-match-button").Click();
+
+            cut.WaitForAssertion(() =>
+            {
+                streamMock.Verify(s => s.StopStreamAsync(It.IsAny<CancellationToken>()), Times.Once);
+                autoMock.Verify(a => a.ChangeMatchAsync(It.IsAny<CancellationToken>()), Times.Once);
+                callOrder.Should().ContainInOrder("Stop", "ChangeMatch");
+            });
+        }
+    }
+
+    // ── AC-4: StreamIdle + confirmed → no StopStreamAsync ─────────────────
+
+    [TestMethod]
+    public void OnChangeMatchClickedAsync_StreamIdleConfirmed_NoStopStream()
+    {
+        var (cut, _, autoMock, dialogMock, _, streamMock, _, _, ctx) = Build(PcsProState.MatchLoaded, streamStatus: LiveStreamStatus.Idle);
+        using (ctx)
+        {
+            dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(true);
+
+            cut.Find(".change-match-button").Click();
+
+            cut.WaitForAssertion(() =>
+            {
+                streamMock.Verify(s => s.StopStreamAsync(It.IsAny<CancellationToken>()), Times.Never);
+                autoMock.Verify(a => a.ChangeMatchAsync(It.IsAny<CancellationToken>()), Times.Once);
+            });
+        }
+    }
+
+    // ── AC-5: Cancelled → no StopStreamAsync regardless of stream state ───
+
+    [TestMethod]
+    public void OnChangeMatchClickedAsync_CancelledWithLiveStream_NoStopStream()
+    {
+        var (cut, _, autoMock, dialogMock, _, streamMock, _, _, ctx) = Build(PcsProState.MatchLoaded, streamStatus: LiveStreamStatus.Live);
+        using (ctx)
+        {
+            dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(false);
+
+            cut.Find(".change-match-button").Click();
+
+            cut.WaitForAssertion(() =>
+            {
+                streamMock.Verify(s => s.StopStreamAsync(It.IsAny<CancellationToken>()), Times.Never);
+                autoMock.Verify(a => a.ChangeMatchAsync(It.IsAny<CancellationToken>()), Times.Never);
+            });
+        }
+    }
+
+    // ── AC-6: StopStreamAsync fails → ChangeMatchAsync still proceeds ─────
+
+    [TestMethod]
+    public void OnChangeMatchClickedAsync_StopStreamFails_ChangeMatchStillProceeds()
+    {
+        var (cut, _, autoMock, dialogMock, _, streamMock, _, _, ctx) = Build(PcsProState.MatchLoaded, streamStatus: LiveStreamStatus.Live);
+        using (ctx)
+        {
+            dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(true);
+            streamMock.Setup(s => s.StopStreamAsync(It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("YouTube API failure"));
+
+            cut.Find(".change-match-button").Click();
+
+            cut.WaitForAssertion(() =>
+                autoMock.Verify(a => a.ChangeMatchAsync(It.IsAny<CancellationToken>()), Times.Once));
+        }
+    }
+
+    // ── AC-6b: StopStreamAsync fails → logged as Warning ──────────────────
+
+    [TestMethod]
+    public void OnChangeMatchClickedAsync_StopStreamFails_LogsWarning()
+    {
+        var loggerMock = new Mock<ILogger<ChangeMatchButton>>();
+        var (cut, _, _, dialogMock, _, streamMock, _, _, ctx) = Build(PcsProState.MatchLoaded, loggerMock.Object, streamStatus: LiveStreamStatus.Live);
+        using (ctx)
+        {
+            dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(true);
+            streamMock.Setup(s => s.StopStreamAsync(It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("YouTube API failure"));
+
+            cut.Find(".change-match-button").Click();
+
+            cut.WaitForAssertion(() =>
+                loggerMock.Verify(
+                    l => l.Log(
+                        LogLevel.Warning,
+                        It.IsAny<EventId>(),
+                        It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("stop stream")), // ToString on Moq's It.IsAnyType FormattedLogValues never returns null
+                        It.IsAny<Exception>(),
+                        It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+                    Times.Once));
         }
     }
 }

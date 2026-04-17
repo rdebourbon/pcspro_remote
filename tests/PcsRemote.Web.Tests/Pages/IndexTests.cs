@@ -687,6 +687,7 @@ public class IndexTests
         ctx.Services.AddSingleton<ILogger<ChangeMatchButton>>(
             NullLogger<ChangeMatchButton>.Instance);
         ctx.Services.AddSingleton(new Mock<IYouTubeLiveStreamService>().Object);
+        ctx.Services.AddSingleton<ILogger<IndexPage>>(NullLogger<IndexPage>.Instance);
         return ctx;
     }
 
@@ -857,5 +858,136 @@ public class IndexTests
 
     private static MatchInfo TestMatch(int id) =>
         new(id.ToString(), $"Home {id}", $"Away {id}", "League", new DateOnly(2026, 6, 20));
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // S-005: Auto-stop on PCS Pro Error (AC-7 through AC-10)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private static (BunitContext Ctx, Mock<IPcsProAutomationService> AutoMock, Mock<IYouTubeLiveStreamService> StreamMock) BuildCtxWithStream(
+        PcsProState initialState, LiveStreamStatus streamStatus, ILogger<IndexPage>? logger = null)
+    {
+        var autoMock = BuildMock(initialState);
+        var streamMock = new Mock<IYouTubeLiveStreamService>();
+        streamMock.Setup(s => s.CurrentStatus).Returns(streamStatus);
+
+        var mmMock = new Mock<IManualModeService>();
+        mmMock.Setup(s => s.IsManualModeActive).Returns(false);
+        var coordMock = new Mock<IOperationCoordinatorService>();
+        coordMock.Setup(s => s.IsOperationInProgress).Returns(false);
+
+        var ctx = new BunitContext();
+        ctx.Services.AddSingleton(autoMock.Object);
+        ctx.Services.AddSingleton(streamMock.Object);
+        ctx.Services.AddSingleton(new Mock<IScoreboardService>().Object);
+        ctx.Services.AddSingleton(mmMock.Object);
+        ctx.Services.AddSingleton(coordMock.Object);
+        ctx.Services.AddSingleton(new NotificationService());
+        ctx.Services.AddSingleton<ILogger<RefreshScoreboardButton>>(NullLogger<RefreshScoreboardButton>.Instance);
+        ctx.Services.AddSingleton(new Mock<IConfirmDialogService>().Object);
+        ctx.Services.AddSingleton<ILogger<ChangeMatchButton>>(NullLogger<ChangeMatchButton>.Instance);
+        ctx.Services.AddSingleton(logger ?? (ILogger<IndexPage>)NullLogger<IndexPage>.Instance);
+        return (ctx, autoMock, streamMock);
+    }
+
+    // ── AC-7: PCS Pro Error + Live stream → auto-stop ─────────────────────
+
+    [TestMethod]
+    public void OnStateChanged_ErrorWithLiveStream_StopsStream()
+    {
+        var (ctx, autoMock, streamMock) = BuildCtxWithStream(PcsProState.MatchLoaded, LiveStreamStatus.Live);
+        using (ctx)
+        {
+            var cut = ctx.Render<IndexPage>();
+
+            autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.Error);
+
+            cut.WaitForAssertion(() =>
+                streamMock.Verify(s => s.StopStreamAsync(It.IsAny<CancellationToken>()), Times.Once));
+        }
+    }
+
+    // ── AC-8: PCS Pro Error + Starting stream → auto-stop ─────────────────
+
+    [TestMethod]
+    public void OnStateChanged_ErrorWithStartingStream_StopsStream()
+    {
+        var (ctx, autoMock, streamMock) = BuildCtxWithStream(PcsProState.MatchLoaded, LiveStreamStatus.Starting);
+        using (ctx)
+        {
+            var cut = ctx.Render<IndexPage>();
+
+            autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.Error);
+
+            cut.WaitForAssertion(() =>
+                streamMock.Verify(s => s.StopStreamAsync(It.IsAny<CancellationToken>()), Times.Once));
+        }
+    }
+
+    // ── AC-9: PCS Pro Error + non-active stream → no auto-stop ────────────
+
+    [TestMethod]
+    [DataRow(LiveStreamStatus.Idle)]
+    [DataRow(LiveStreamStatus.Stopping)]
+    [DataRow(LiveStreamStatus.Error)]
+    public void OnStateChanged_ErrorWithNonActiveStream_NoStopStream(LiveStreamStatus streamStatus)
+    {
+        var (ctx, autoMock, streamMock) = BuildCtxWithStream(PcsProState.MatchLoaded, streamStatus);
+        using (ctx)
+        {
+            var cut = ctx.Render<IndexPage>();
+
+            autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.Error);
+
+            cut.WaitForAssertion(() =>
+                streamMock.Verify(s => s.StopStreamAsync(It.IsAny<CancellationToken>()), Times.Never));
+        }
+    }
+
+    // ── AC-10: Auto-stop failure → logged as Warning, not thrown ──────────
+
+    [TestMethod]
+    public void OnStateChanged_ErrorAutoStopFails_LogsWarningNoThrow()
+    {
+        var loggerMock = new Mock<ILogger<IndexPage>>();
+        var autoMock = BuildMock(PcsProState.MatchLoaded);
+        var streamMock = new Mock<IYouTubeLiveStreamService>();
+        streamMock.Setup(s => s.CurrentStatus).Returns(LiveStreamStatus.Live);
+        streamMock.Setup(s => s.StopStreamAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("YouTube API failure"));
+
+        var mmMock = new Mock<IManualModeService>();
+        mmMock.Setup(s => s.IsManualModeActive).Returns(false);
+        var coordMock = new Mock<IOperationCoordinatorService>();
+        coordMock.Setup(s => s.IsOperationInProgress).Returns(false);
+
+        var ctx = new BunitContext();
+        ctx.Services.AddSingleton(autoMock.Object);
+        ctx.Services.AddSingleton(streamMock.Object);
+        ctx.Services.AddSingleton(new Mock<IScoreboardService>().Object);
+        ctx.Services.AddSingleton(mmMock.Object);
+        ctx.Services.AddSingleton(coordMock.Object);
+        ctx.Services.AddSingleton(new NotificationService());
+        ctx.Services.AddSingleton<ILogger<RefreshScoreboardButton>>(NullLogger<RefreshScoreboardButton>.Instance);
+        ctx.Services.AddSingleton(new Mock<IConfirmDialogService>().Object);
+        ctx.Services.AddSingleton<ILogger<ChangeMatchButton>>(NullLogger<ChangeMatchButton>.Instance);
+        ctx.Services.AddSingleton<ILogger<IndexPage>>(loggerMock.Object);
+
+        using (ctx)
+        {
+            var cut = ctx.Render<IndexPage>();
+
+            autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.Error);
+
+            cut.WaitForAssertion(() =>
+                loggerMock.Verify(
+                    l => l.Log(
+                        LogLevel.Warning,
+                        It.IsAny<EventId>(),
+                        It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("auto-stop")), // ToString on Moq's It.IsAnyType FormattedLogValues never returns null
+                        It.IsAny<Exception>(),
+                        It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+                    Times.Once));
+        }
+    }
 }
 
