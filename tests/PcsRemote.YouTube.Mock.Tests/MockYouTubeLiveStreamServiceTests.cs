@@ -307,4 +307,31 @@ public class MockYouTubeLiveStreamServiceTests
         snapshots[1].Status.Should().Be(LiveStreamStatus.Idle);
         snapshots[1].CurrentBroadcast.Should().BeNull();
     }
+
+    // IS-009 S-002: StartStreamAsync calls StartStreamingAsync on automation service
+    [TestMethod]
+    public async Task StartStreamAsync_CallsStartStreamingOnAutomationService()
+    {
+        await _sut.InitializeAsync();
+
+        await _sut.StartStreamAsync();
+
+        _automationMock.Verify(
+            a => a.StartStreamingAsync(It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    // IS-009 S-002: StopStreamAsync calls StopStreamingAsync on automation service
+    [TestMethod]
+    public async Task StopStreamAsync_CallsStopStreamingOnAutomationService()
+    {
+        await _sut.InitializeAsync();
+        await _sut.StartStreamAsync();
+
+        await _sut.StopStreamAsync();
+
+        _automationMock.Verify(
+            a => a.StopStreamingAsync(It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
 }

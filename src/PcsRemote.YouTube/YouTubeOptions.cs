@@ -12,7 +12,7 @@ public sealed class YouTubeOptions
     public string ClientSecret { get; set; } = "";
 
     /// <summary>
-    /// YouTube <c>liveStream</c> resource ID bound to the club's OBS stream key.
+    /// YouTube <c>liveStream</c> resource ID bound to the club's PCS Pro stream key.
     /// Required for production; fail-fast at startup if absent.
     /// </summary>
     public string LiveStreamId { get; set; } = "";
@@ -29,12 +29,12 @@ public sealed class YouTubeOptions
     public string BroadcastPrivacy { get; set; } = "public";
 
     /// <summary>
-    /// Timeout in seconds waiting for OBS to report stream as active.
+    /// Timeout in seconds waiting for PCS Pro to report stream as active.
     /// </summary>
     public int StreamReadyTimeoutSeconds { get; set; } = 60;
 
     /// <summary>
-    /// Interval in seconds between OBS health poll requests.
+    /// Interval in seconds between PCS Pro stream health poll requests.
     /// </summary>
     public int StreamPollIntervalSeconds { get; set; } = 3;
 

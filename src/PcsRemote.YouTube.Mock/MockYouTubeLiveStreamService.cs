@@ -144,6 +144,20 @@ public sealed class MockYouTubeLiveStreamService : IYouTubeLiveStreamService
             }
             else
             {
+                try
+                {
+                    await _automationService.StartStreamingAsync(CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _currentBroadcast = null;
+                    SetStatus(LiveStreamStatus.Error, ex.Message);
+                    _logger.LogWarning(ex,
+                        "StartStreamingAsync failed — transitioned to Error");
+                    return;
+                }
+
                 SetStatus(LiveStreamStatus.Live);
                 _logger.LogInformation("Stream is now Live: {Title}", _currentBroadcast.Title);
             }
@@ -183,6 +197,17 @@ public sealed class MockYouTubeLiveStreamService : IYouTubeLiveStreamService
 
         // Use CancellationToken.None: once Stopping begins, always complete to Idle
         await Task.Delay(_options.StopDelayMs, CancellationToken.None).ConfigureAwait(false);
+
+        try
+        {
+            await _automationService.StopStreamingAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "StopStreamingAsync failed during mock stop — continuing");
+        }
 
         await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try

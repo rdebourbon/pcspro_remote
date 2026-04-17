@@ -157,6 +157,18 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
 
         FireStatusChanged(pendingEvent);
 
+        // Stop PCS Pro streaming before completing broadcast (C-3 sequencing)
+        // Use CancellationToken.None: once Stopping begins, PCS Pro shutdown must complete
+        try
+        {
+            await _automationService.StopStreamingAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "StopStreamingAsync failed during StopStreamAsync — continuing with broadcast completion");
+        }
+
         // Transition broadcast to complete (outside gate)
         await TryCompleteBroadcastAsync(ct).ConfigureAwait(false);
 
@@ -292,12 +304,13 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
     }
 
     /// <summary>
-    /// Polls for OBS readiness, transitions the broadcast to live,
+    /// Polls for PCS Pro stream readiness, transitions the broadcast to live,
     /// and updates state to Live.
     /// </summary>
     private async Task WaitForStreamAndGoLiveAsync(
         string broadcastId, string title, CancellationToken ct)
     {
+        await _automationService.StartStreamingAsync(ct).ConfigureAwait(false);
         await PollStreamReadyAsync(ct).ConfigureAwait(false);
         await TransitionToLiveAsync(broadcastId, ct).ConfigureAwait(false);
 
@@ -337,6 +350,17 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
                 "StartStreamAsync cancelled by StopStreamAsync — cleaning up");
         }
 
+        try
+        {
+            await _automationService.StopStreamingAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "StopStreamingAsync failed during cancel cleanup — continuing");
+        }
+
         await TryDeleteBroadcastAsync(broadcastId).ConfigureAwait(false);
 
         StreamStateSnapshot? pendingEvent = null;
@@ -363,6 +387,17 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
     /// </summary>
     private async Task CleanupFailedStartAsync(string? broadcastId, Exception ex)
     {
+        try
+        {
+            await _automationService.StopStreamingAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception stopEx)
+        {
+            _logger.LogWarning(stopEx,
+                "StopStreamingAsync failed during error cleanup — continuing");
+        }
+
         await TryDeleteBroadcastAsync(broadcastId).ConfigureAwait(false);
 
         StreamStateSnapshot? pendingEvent = null;
@@ -478,12 +513,12 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
         if (response.Items is null || response.Items.Count == 0)
         {
             _logger.LogCritical(
-                "YouTube LiveStreamId {LiveStreamId} not found — verify OBS is configured and " +
+                "YouTube LiveStreamId {LiveStreamId} not found — verify PCS Pro stream key is configured and " +
                 "the stream key matches. See the setup guide (§7 Step 6)",
                 _options.LiveStreamId);
             throw new YouTubeStreamException(
                 $"YouTube LiveStreamId '{_options.LiveStreamId}' not found. " +
-                "Ensure OBS has connected at least once and the ID is correct.");
+                "Ensure PCS Pro has connected at least once and the ID is correct.");
         }
 
         _logger.LogInformation(
@@ -634,9 +669,9 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
         }
 
         throw new YouTubeStreamException(
-            $"OBS is not streaming. Waited {_options.StreamReadyTimeoutSeconds}s for " +
+            $"PCS Pro is not streaming. Waited {_options.StreamReadyTimeoutSeconds}s for " +
             $"stream '{_options.LiveStreamId}' to become active. " +
-            "Check that OBS is running and streaming to YouTube.");
+            "Check that PCS Pro is running and streaming to YouTube.");
     }
 
     private async Task TransitionToLiveAsync(string broadcastId, CancellationToken ct)
