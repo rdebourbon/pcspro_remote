@@ -184,15 +184,15 @@ public class YouTubeStreamE2ETests
             .WaitForAsync(new() { Timeout = DefaultTimeoutMs });
 
         // Verify the streaming controls header uses club theme colours.
-        // The badge background for "idle" state should use the maroon palette.
+        // The badge background for "idle" state uses the pcs-grey colour (#9A7285).
         var badge = _page1.Locator(".streaming-controls__badge");
         await badge.WaitForAsync(new() { Timeout = ShortTimeoutMs });
 
         var bgColor = await badge.EvaluateAsync<string>(
             "el => getComputedStyle(el).backgroundColor");
 
-        // Maroon palette: #800020 = rgb(128, 0, 32) or similar dark red tones.
-        // Parse rgb(r, g, b) and validate within the maroon colour range.
+        // PCS grey: #9A7285 = rgb(154, 114, 133) — warm muted mauve.
+        // Parse rgb(r, g, b) and validate within the club theme grey range.
         Assert.IsFalse(
             string.IsNullOrEmpty(bgColor) ||
             bgColor == "rgba(0, 0, 0, 0)" ||
@@ -206,8 +206,10 @@ public class YouTubeStreamE2ETests
         int g = int.Parse(rgbValues[1].Trim());
         int b = int.Parse(rgbValues[2].Trim());
 
-        Assert.IsTrue(r >= 80 && g <= 50 && b <= 60,
-            $"Expected maroon palette (high red, low green, low blue), got rgb({r}, {g}, {b})");
+        // PCS grey palette: #9A7285 = rgb(154, 114, 133) — warm muted mauve from club theme.
+        // Verify the idle badge uses the themed grey tone (red-dominant, moderate green/blue).
+        Assert.IsTrue(r >= 100 && g >= 80 && g <= 150 && b >= 100 && b <= 160,
+            $"Expected club-themed grey palette (warm mauve), got rgb({r}, {g}, {b})");
     }
 
     /// <summary>

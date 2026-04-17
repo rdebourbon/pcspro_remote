@@ -53,11 +53,11 @@ public class IndexTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // AC-8: MatchSelectionReady + 2 matches → 2 interactive MatchCard components
+    // AC-8: MatchSelection + 2 matches → 2 interactive MatchCard components
     // ─────────────────────────────────────────────────────────────────────────
 
     [TestMethod]
-    public void StateChanged_MatchSelectionReadyWithTwoMatches_RendersInteractiveCards()
+    public void StateChanged_MatchSelectionWithTwoMatches_RendersInteractiveCards()
     {
         var match1 = TestMatch(1);
         var match2 = TestMatch(2);
@@ -69,18 +69,17 @@ public class IndexTests
 
         var cut = ctx.Render<IndexPage>();
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelectionReady);
 
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
         cut.FindAll(".match-card--disabled").Should().BeEmpty();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // AC-9: MatchSelectionReady + 0 matches → match-empty-state, no cards
+    // AC-9: MatchSelection + 0 matches → match-empty-state, no cards
     // ─────────────────────────────────────────────────────────────────────────
 
     [TestMethod]
-    public void StateChanged_MatchSelectionReadyWithNoMatches_ShowsEmptyState()
+    public void StateChanged_MatchSelectionWithNoMatches_ShowsEmptyState()
     {
         var mock = BuildMock(PcsProState.NotRunning);
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
@@ -90,19 +89,18 @@ public class IndexTests
 
         var cut = ctx.Render<IndexPage>();
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelectionReady);
 
         cut.WaitForAssertion(() => cut.Find(".match-empty-state"));
         cut.FindAll(".match-card").Should().BeEmpty();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // AC-10: Auto-select (a) — single match + StateChanged(MatchSelectionReady)
-    //        → LoadMatchAsync called with that match
+    // AC-10: Auto-select (a) — single match + StateChanged(MatchSelection)
+    //        → FetchMatchesAsync auto-selects, LoadMatchAsync called with that match
     // ─────────────────────────────────────────────────────────────────────────
 
     [TestMethod]
-    public void StateChanged_MatchSelectionReadyWithSingleMatch_AutoSelectsMatch()
+    public void StateChanged_MatchSelectionWithSingleMatch_AutoSelectsMatch()
     {
         var singleMatch = TestMatch(1);
         var mock = BuildMock(PcsProState.NotRunning);
@@ -113,7 +111,6 @@ public class IndexTests
 
         var cut = ctx.Render<IndexPage>();
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelectionReady);
 
         cut.WaitForAssertion(() =>
             mock.Verify(s => s.LoadMatchAsync(
@@ -123,15 +120,15 @@ public class IndexTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // AC-11: Auto-select (b) — mount in MatchSelectionReady + single match
+    // AC-11: Auto-select (b) — mount in MatchSelection + single match
     //        → LoadMatchAsync called via FetchMatchesAsync completion path
     // ─────────────────────────────────────────────────────────────────────────
 
     [TestMethod]
-    public void OnInit_MountedInMatchSelectionReadyWithSingleMatch_AutoSelectsMatch()
+    public void OnInit_MountedInMatchSelectionWithSingleMatch_AutoSelectsMatch()
     {
         var singleMatch = TestMatch(1);
-        var mock = BuildMock(PcsProState.MatchSelectionReady);
+        var mock = BuildMock(PcsProState.MatchSelection);
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { singleMatch });
 
@@ -201,7 +198,6 @@ public class IndexTests
 
         var cut = ctx.Render<IndexPage>();
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelectionReady);
 
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
 
@@ -236,7 +232,6 @@ public class IndexTests
 
         // First entry → fetch → 2 matches → cards shown
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelectionReady);
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
 
         // Re-entry → second fetch (TCS, pending)
@@ -316,7 +311,7 @@ public class IndexTests
     public void MatchLoaded_WithLoadedMatch_RendersTeamNames()
     {
         var match = new MatchInfo("1", "Home XI", "Away XI", "League", new DateOnly(2026, 6, 20));
-        var mock = BuildMock(PcsProState.MatchSelectionReady);
+        var mock = BuildMock(PcsProState.MatchSelection);
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { match });
 
@@ -324,7 +319,7 @@ public class IndexTests
 
         var cut = ctx.Render<IndexPage>();
 
-        // Path-b auto-select fires (mount in MatchSelectionReady + 1 match)
+        // Auto-select fires (single match in MatchSelection)
         cut.WaitForAssertion(() =>
             mock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
 
@@ -371,7 +366,6 @@ public class IndexTests
 
         var cut = ctx.Render<IndexPage>();
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelectionReady);
 
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
         cut.FindAll(".match-card")[0].Click();
@@ -419,22 +413,22 @@ public class IndexTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // AC-5 (S-007): Auto-select path (b) — fetch completes while state is already
-    //               MatchSelectionReady → _loadedMatch stored → MatchLoaded → team names
+    // AC-5 (S-007): Auto-select path (b) — mount in MatchSelection, fetch
+    //               completes with single match → auto-select fires
     // ─────────────────────────────────────────────────────────────────────────
 
     [TestMethod]
     public void AutoSelectPathB_ThenMatchLoaded_RendersTeamNames()
     {
         var match = new MatchInfo("1", "FetchPath Home", "FetchPath Away", "League", new DateOnly(2026, 6, 20));
-        var mock = BuildMock(PcsProState.MatchSelectionReady);
+        var mock = BuildMock(PcsProState.MatchSelection);
         mock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { match });
 
         using var ctx = BuildCtx(mock);
 
-        // On mount: OnInitializedAsync reads MatchSelectionReady → calls FetchMatchesAsync
-        // FetchMatchesAsync completes with 1 match while _currentState == MatchSelectionReady → path-b fires
+        // On mount: OnInitializedAsync reads MatchSelection → calls FetchMatchesAsync
+        // FetchMatchesAsync completes with 1 match → auto-select fires
         var cut = ctx.Render<IndexPage>();
         cut.WaitForAssertion(() =>
             mock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
@@ -456,7 +450,7 @@ public class IndexTests
     public void MatchLoaded_ScoreboardPreviewEmbedded_TeamNamesPreserved()
     {
         var match = new MatchInfo("1", "Riverside CC", "Westwood CC", "League", new DateOnly(2026, 6, 20));
-        var autoMock = BuildMock(PcsProState.MatchSelectionReady);
+        var autoMock = BuildMock(PcsProState.MatchSelection);
         autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { match });
 
@@ -466,7 +460,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, scoreMock);
         var cut = ctx.Render<IndexPage>();
 
-        // Path-b auto-select fires; drive to MatchLoaded
+        // Auto-select fires (single match in MatchSelection); drive to MatchLoaded
         cut.WaitForAssertion(() =>
             autoMock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
         autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
@@ -489,7 +483,7 @@ public class IndexTests
     public void MatchLoaded_RefreshButtonPresent_ExistingElementsUnaffected()
     {
         var match = new MatchInfo("1", "Riverside CC", "Westwood CC", "League", new DateOnly(2026, 6, 20));
-        var autoMock = BuildMock(PcsProState.MatchSelectionReady);
+        var autoMock = BuildMock(PcsProState.MatchSelection);
         autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { match });
 
@@ -522,7 +516,7 @@ public class IndexTests
     public void MatchLoaded_ChangeMatchButtonPresent_AllMatchLoadedElementsPresent()
     {
         var match = new MatchInfo("1", "Riverside CC", "Westwood CC", "League", new DateOnly(2026, 6, 20));
-        var autoMock = BuildMock(PcsProState.MatchSelectionReady);
+        var autoMock = BuildMock(PcsProState.MatchSelection);
         autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { match });
 
@@ -548,7 +542,6 @@ public class IndexTests
             cut.Find(".scoreboard-placeholder");
         });
     }
-
     // ─────────────────────────────────────────────────────────────────────────
     // TC-21 (S-003): MatchCards rendered with IsInteractive=false when manual mode active
     // ─────────────────────────────────────────────────────────────────────────
@@ -568,7 +561,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, manualModeMock: manualModeMock);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_ready(autoMock);
+        mock_drive_to_match_selection(autoMock);
 
         cut.WaitForAssertion(() =>
         {
@@ -609,7 +602,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, manualModeMock: manualModeMock, notificationService: notificationSvc);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_ready(autoMock);
+        mock_drive_to_match_selection(autoMock);
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
 
         // Simulate the race: service reports active but event has not yet propagated
@@ -645,7 +638,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_ready(autoMock);
+        mock_drive_to_match_selection(autoMock);
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
 
         cut.FindAll(".match-card")[0].Click();
@@ -710,7 +703,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_ready(autoMock);
+        mock_drive_to_match_selection(autoMock);
 
         cut.WaitForAssertion(() =>
         {
@@ -738,7 +731,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_ready(autoMock);
+        mock_drive_to_match_selection(autoMock);
 
         cut.WaitForAssertion(() =>
             cut.Find(".match-card--disabled").GetAttribute("title")
@@ -764,7 +757,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_ready(autoMock);
+        mock_drive_to_match_selection(autoMock);
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
 
         // Coordinator fires in-progress — component field updates but re-render may not have hidden the cards yet.
@@ -802,7 +795,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_ready(autoMock);
+        mock_drive_to_match_selection(autoMock);
         cut.WaitForAssertion(() =>
             cut.FindAll(".match-card--disabled").Should().HaveCount(2));
 
@@ -821,7 +814,7 @@ public class IndexTests
     {
         var match1 = TestMatch(1);
         var match2 = TestMatch(2);
-        var autoMock = BuildMock(PcsProState.MatchSelectionReady);
+        var autoMock = BuildMock(PcsProState.MatchSelection);
         autoMock.Setup(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MatchInfo> { match1, match2 });
 
@@ -831,7 +824,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
         var cut = ctx.Render<IndexPage>();
 
-        // Fetch completes; state is already MatchSelectionReady on mount — no event needed
+        // Fetch completes; state is already MatchSelection on mount — no event needed
         cut.WaitForAssertion(() =>
         {
             cut.FindAll(".match-card").Should().HaveCount(2);
@@ -840,10 +833,9 @@ public class IndexTests
         });
     }
 
-    private static void mock_drive_to_ready(Mock<IPcsProAutomationService> autoMock)
+    private static void mock_drive_to_match_selection(Mock<IPcsProAutomationService> autoMock)
     {
         autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchSelection);
-        autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchSelectionReady);
     }
 
     private static Mock<IPcsProAutomationService> BuildMock(PcsProState initialState)
