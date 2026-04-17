@@ -13,6 +13,7 @@ using PcsRemote.Core;
 using PcsRemote.Web;
 using PcsRemote.Web.Hubs;
 using PcsRemote.Web.Services;
+using PcsRemote.YouTube.Mock;
 using Radzen;
 using System.Net;
 
@@ -134,6 +135,9 @@ public sealed class PcsProWebApplicationFactory : WebApplicationFactory<Program>
             ["PcsPro:Mock:ErrorProbability"] = "0",
             ["PcsPro:Mock:ImageVariationProbability"] = "1",
             ["Scoreboard:CaptureIntervalSeconds"] = "1",
+            ["YouTube:UseMock"] = "true",
+            ["YouTube:Mock:StartDelayMs"] = "100",
+            ["YouTube:Mock:StopDelayMs"] = "50",
             // Provide the static web assets manifest so Radzen.Blazor.js and other RCL assets
             // are served correctly. StaticWebAssetsStartupFilter reads this key and adds the
             // Radzen NuGet package staticwebassets/ directory to the WebRootFileProvider,
@@ -160,6 +164,10 @@ public sealed class PcsProWebApplicationFactory : WebApplicationFactory<Program>
         builder.Services.AddSingleton<IScoreboardService, ScoreboardService>();
         builder.Services.AddHostedService<ScoreboardPollingService>();
         builder.Services.AddScoped<IConfirmDialogService, RadzenConfirmDialogService>();
+        builder.Services.AddSingleton<BroadcastTitleRenderer>();
+        builder.Services.Configure<MockYouTubeOptions>(
+            builder.Configuration.GetSection("YouTube:Mock"));
+        builder.Services.AddSingleton<IYouTubeLiveStreamService, MockYouTubeLiveStreamService>();
         builder.Services.Configure<CircuitOptions>(o =>
             o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromSeconds(1));
 
