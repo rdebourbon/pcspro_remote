@@ -5,6 +5,7 @@ using Serilog;
 using PcsRemote.Core;
 using PcsRemote.TrayHost;
 using PcsRemote.Web;
+using PcsRemote.YouTube;
 
 // Stage 1: transient bootstrap logger.
 Log.Logger = new LoggerConfiguration()
@@ -13,6 +14,12 @@ Log.Logger = new LoggerConfiguration()
 
 try
 {
+    // --setup-youtube: one-time OAuth consent flow, then exit
+    if (args.Contains("--setup-youtube", StringComparer.OrdinalIgnoreCase))
+    {
+        return await RunYouTubeSetupAsync(args);
+    }
+
     var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     {
         Args = args,
@@ -61,3 +68,65 @@ finally
 }
 
 return 0;
+
+static async Task<int> RunYouTubeSetupAsync(string[] args)
+{
+    try
+    {
+        Log.Information("YouTube OAuth2 setup starting...");
+
+        var config = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: true)
+            .AddJsonFile("appsettings.Development.json", optional: true)
+            .AddEnvironmentVariables()
+            .Build();
+
+        var options = new YouTubeOptions();
+        config.GetSection("YouTube").Bind(options);
+
+        if (string.IsNullOrWhiteSpace(options.ClientId) ||
+            string.IsNullOrWhiteSpace(options.ClientSecret))
+        {
+            Log.Error(
+                "YouTube:ClientId and YouTube:ClientSecret must be configured " +
+                "before running --setup-youtube. See the setup guide (§7 Step 4)");
+            return 1;
+        }
+
+        var tokenStorePath = options.GetEffectiveTokenStorePath();
+        var serilogLogger = new LoggerConfiguration()
+            .WriteTo.Console()
+            .CreateLogger();
+
+        using var loggerFactory = new Serilog.Extensions.Logging.SerilogLoggerFactory(serilogLogger);
+        var storeLogger = loggerFactory.CreateLogger("PcsRemote.YouTube.DpapiFileDataStore");
+        var typedLogger = new Microsoft.Extensions.Logging.Logger<DpapiFileDataStore>(
+            loggerFactory);
+        var dataStore = new DpapiFileDataStore(tokenStorePath, typedLogger);
+
+        var credential = await Google.Apis.Auth.OAuth2.GoogleWebAuthorizationBroker.AuthorizeAsync(
+            new Google.Apis.Auth.OAuth2.ClientSecrets
+            {
+                ClientId = options.ClientId,
+                ClientSecret = options.ClientSecret
+            },
+            new[] { Google.Apis.YouTube.v3.YouTubeService.Scope.Youtube },
+            "user",
+            CancellationToken.None,
+            dataStore);
+
+        Log.Information(
+            "YouTube OAuth2 setup complete. Token stored at {TokenStorePath}", tokenStorePath);
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "YouTube OAuth2 setup failed");
+        return 1;
+    }
+    finally
+    {
+        Log.CloseAndFlush();
+    }
+}

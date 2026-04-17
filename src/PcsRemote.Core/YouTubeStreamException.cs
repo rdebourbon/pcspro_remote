@@ -3,7 +3,7 @@ namespace PcsRemote.Core;
 /// <summary>
 /// Represents an error that occurred during a YouTube live streaming operation.
 /// </summary>
-public class YouTubeStreamException : Exception
+public sealed class YouTubeStreamException : Exception
 {
     /// <summary>
     /// Initialises a new instance with the specified error message.

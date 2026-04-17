@@ -4,6 +4,7 @@
     <ProjectReference Include="..\PcsRemote.Automation\PcsRemote.Automation.csproj" />
     <ProjectReference Include="..\PcsRemote.Automation.Mock\PcsRemote.Automation.Mock.csproj" />
     <ProjectReference Include="..\PcsRemote.Core\PcsRemote.Core.csproj" />
+    <ProjectReference Include="..\PcsRemote.YouTube\PcsRemote.YouTube.csproj" />
     <ProjectReference Include="..\PcsRemote.YouTube.Mock\PcsRemote.YouTube.Mock.csproj" />
   </ItemGroup>
 

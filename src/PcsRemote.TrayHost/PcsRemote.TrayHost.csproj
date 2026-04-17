@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PcsRemote.Web\PcsRemote.Web.csproj" />
+    <ProjectReference Include="..\PcsRemote.YouTube\PcsRemote.YouTube.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -18,6 +19,7 @@
 
   <ItemGroup>
     <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Extensions.Logging" />
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Serilog.Sinks.File" />
   </ItemGroup>

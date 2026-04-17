@@ -5,6 +5,7 @@
     <Project Path="src/PcsRemote.Core/PcsRemote.Core.csproj" />
     <Project Path="src/PcsRemote.TrayHost/PcsRemote.TrayHost.csproj" />
     <Project Path="src/PcsRemote.Web/PcsRemote.Web.csproj" />
+    <Project Path="src/PcsRemote.YouTube/PcsRemote.YouTube.csproj" />
     <Project Path="src/PcsRemote.YouTube.Mock/PcsRemote.YouTube.Mock.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -15,5 +16,6 @@
     <Project Path="tests/PcsRemote.TrayHost.Tests/PcsRemote.TrayHost.Tests.csproj" />
     <Project Path="tests/PcsRemote.Web.Tests/PcsRemote.Web.Tests.csproj" />
     <Project Path="tests/PcsRemote.YouTube.Mock.Tests/PcsRemote.YouTube.Mock.Tests.csproj" />
+    <Project Path="tests/PcsRemote.YouTube.Tests/PcsRemote.YouTube.Tests.csproj" />
   </Folder>
 </Solution>

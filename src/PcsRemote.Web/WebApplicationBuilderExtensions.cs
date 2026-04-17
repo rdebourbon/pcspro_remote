@@ -1,9 +1,12 @@
+using Google.Apis.Util.Store;
 using Microsoft.AspNetCore.Components.Server.Circuits;
+using Microsoft.Extensions.Options;
 using PcsRemote.Automation;
 using PcsRemote.Automation.Mock;
 using PcsRemote.Core;
 using PcsRemote.Web.Hubs;
 using PcsRemote.Web.Services;
+using PcsRemote.YouTube;
 using PcsRemote.YouTube.Mock;
 using Radzen;
 
@@ -45,9 +48,25 @@ public static class WebApplicationBuilderExtensions
         builder.Services.AddRadzenComponents();
         builder.Services.AddScoped<IConfirmDialogService, RadzenConfirmDialogService>();
         builder.Services.AddSingleton<BroadcastTitleRenderer>();
-        builder.Services.Configure<MockYouTubeOptions>(
-            builder.Configuration.GetSection("YouTube:Mock"));
-        builder.Services.AddSingleton<IYouTubeLiveStreamService, MockYouTubeLiveStreamService>();
+        if (builder.Configuration.GetValue<bool>("YouTube:UseMock"))
+        {
+            builder.Services.Configure<MockYouTubeOptions>(
+                builder.Configuration.GetSection("YouTube:Mock"));
+            builder.Services.AddSingleton<IYouTubeLiveStreamService, MockYouTubeLiveStreamService>();
+        }
+        else
+        {
+            builder.Services.Configure<YouTubeOptions>(
+                builder.Configuration.GetSection("YouTube"));
+            builder.Services.AddSingleton<IDataStore>(sp =>
+            {
+                var opts = sp.GetRequiredService<IOptions<YouTubeOptions>>().Value;
+                var logger = sp.GetRequiredService<ILogger<DpapiFileDataStore>>();
+                return new DpapiFileDataStore(opts.GetEffectiveTokenStorePath(), logger);
+            });
+            builder.Services.AddSingleton<IYouTubeLiveStreamService, YouTubeLiveStreamService>();
+            builder.Services.AddHostedService<YouTubeInitializerHostedService>();
+        }
         return builder;
     }
 
