@@ -512,90 +512,89 @@ internal sealed class DiagnosticRunner : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // STEP 5: Search for Matches
+    // STEP 5: Search for Matches (press Enter to trigger search)
     // ═══════════════════════════════════════════════════════════════════════
 
     private bool Step5_SearchForMatches()
     {
-        PrintStep(5, "Click search button to find today's matches");
+        PrintStep(5, "Trigger match search (Enter key — no search button exists)");
         var cf = _automation.ConditionFactory;
-
-        var searchBtn = FindDescendant(_mainWindow!,
-            cf.ByAutomationId(KnownElements.MatchSearchButtonAutomationId));
-
-        if (searchBtn == null)
-        {
-            PrintFail("Search button not found.");
-            return false;
-        }
 
         try
         {
-            searchBtn.Click();
-            Console.WriteLine("  ✓ Search button clicked");
+            // Find the Open Match dialog
+            var dialog = FindDescendant(_mainWindow!, cf.ByName(KnownElements.MatchSelectionDialogName));
+            if (dialog == null)
+            {
+                PrintFail("Open Match dialog not found.");
+                DumpAndSave("step5-no-dialog");
+                return false;
+            }
+
+            // Focus the dialog and press Enter to trigger search
+            Console.WriteLine("  Focusing Open Match dialog...");
+            dialog.Focus();
+            Thread.Sleep(300);
+
+            Console.WriteLine("  Pressing Enter to trigger search...");
+            FlaUI.Core.Input.Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.ENTER);
+            Thread.Sleep(500);
+
             Console.WriteLine($"  Waiting up to {SearchTimeoutSeconds}s for results...");
 
-            // Poll for spinner to disappear and data grid to populate
+            // Poll for data grid to populate
             var sw = Stopwatch.StartNew();
             while (sw.Elapsed.TotalSeconds < SearchTimeoutSeconds)
             {
                 Thread.Sleep(PollIntervalMs);
                 Console.Write($"\r  [{sw.Elapsed:mm\\:ss}] Waiting for search results...");
 
-                if (KnownElements.MatchDataGridAutomationId != "TODO")
+                RefreshMainWindow();
+                var grid = FindDescendant(_mainWindow!,
+                    cf.ByAutomationId(KnownElements.MatchDataGridAutomationId));
+                if (grid != null)
                 {
-                    var grid = FindDescendant(_mainWindow!,
-                        cf.ByAutomationId(KnownElements.MatchDataGridAutomationId));
-                    if (grid != null)
+                    var rows = FindAllDescendants(grid, cf.ByControlType(ControlType.DataItem));
+                    if (rows.Length > 0)
                     {
-                        var rows = FindAllDescendants(grid, cf.ByControlType(ControlType.DataItem));
-                        if (rows.Length > 0)
-                        {
-                            Console.WriteLine();
-                            Console.WriteLine($"  ✓ DataGrid found with {rows.Length} row(s)");
-                            foreach (var row in rows.Take(5))
-                                Console.WriteLine($"    Row: \"{SafeGet(() => row.Name)}\"");
-                            PrintPass();
-                            return PauseForUser();
-                        }
+                        Console.WriteLine();
+                        Console.WriteLine($"  ✓ DataGrid found with {rows.Length} row(s)");
+                        foreach (var row in rows.Take(5))
+                            Console.WriteLine($"    Row: \"{SafeGet(() => row.Name)}\"");
+                        PrintPass();
+                        return PauseForUser();
                     }
                 }
             }
 
             Console.WriteLine();
-            PrintFail("Search results did not appear within timeout.");
-            var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 6);
-            var path = TreeDumper.SaveToDesktop(dump, "step5-search-results");
-            Console.WriteLine($"  Tree saved to: {path}");
+            PrintFail("Search results did not appear within timeout. Grid may be empty or spinner still active.");
+            DumpAndSave("step5-search-timeout", maxDepth: 8);
             return false;
         }
         catch (Exception ex)
         {
             PrintFail($"Interaction error: {ex.Message}");
+            DumpAndSave("step5-error");
             return false;
         }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // STEP 6: Select First Match
+    // STEP 6: Select First Match and Open Read Only
     // ═══════════════════════════════════════════════════════════════════════
 
     private bool Step6_SelectFirstMatch()
     {
-        PrintStep(6, "Select and open the first match in the data grid");
+        PrintStep(6, "Select first match in grid and click 'Open Read Only'");
         var cf = _automation.ConditionFactory;
-
-        if (KnownElements.MatchDataGridAutomationId == "TODO")
-        {
-            PrintFail("DataGrid AutomationId not yet discovered.");
-            return false;
-        }
 
         var grid = FindDescendant(_mainWindow!,
             cf.ByAutomationId(KnownElements.MatchDataGridAutomationId));
         if (grid == null)
         {
             PrintFail("DataGrid not found.");
+            DumpAndSave("step6-no-grid");
             return false;
         }
 
@@ -603,9 +602,7 @@ internal sealed class DiagnosticRunner : IDisposable
         if (rows.Length == 0)
         {
             PrintFail("No rows in the data grid.");
-            var dump = TreeDumper.Dump(grid, maxDepth: 4);
-            var path = TreeDumper.SaveToDesktop(dump, "step6-empty-grid");
-            Console.WriteLine($"  Grid tree saved to: {path}");
+            DumpAndSave("step6-empty-grid", maxDepth: 8);
             return false;
         }
 
@@ -613,16 +610,33 @@ internal sealed class DiagnosticRunner : IDisposable
         {
             var firstRow = rows[0];
             Console.WriteLine($"  Selecting row: \"{SafeGet(() => firstRow.Name)}\"");
+            firstRow.Click();
+            Console.WriteLine("  ✓ First row selected");
+            Thread.Sleep(300);
 
-            // Try double-click to open
-            firstRow.DoubleClick();
-            Console.WriteLine("  ✓ Double-clicked first row");
+            // Click "Open Read Only" — this instance must always open readonly
+            var openReadOnly = FindDescendant(_mainWindow!,
+                cf.ByAutomationId(KnownElements.OpenReadOnlyButtonAutomationId));
+            if (openReadOnly == null)
+            {
+                Console.WriteLine("  ⚠ 'Open Read Only' button not found — trying double-click as fallback");
+                firstRow.DoubleClick();
+                Console.WriteLine("  ✓ Double-clicked first row");
+            }
+            else
+            {
+                PrintElement("  Found: ", openReadOnly);
+                openReadOnly.Click();
+                Console.WriteLine("  ✓ 'Open Read Only' clicked");
+            }
+
             PrintPass();
             return PauseForUser();
         }
         catch (Exception ex)
         {
             PrintFail($"Interaction error: {ex.Message}");
+            DumpAndSave("step6-error");
             return false;
         }
     }

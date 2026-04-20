@@ -23,9 +23,19 @@ internal static class KnownElements
     // ── Navigation: File → Open Match ────────────────────────────────────
     public static string OpenMatchMenuItemName = "Open Match...";
 
-    // ── Step 2: Match Selection ───────────────────────────────────────────
-    public static string MatchSearchButtonAutomationId = "TODO";
-    public static string MatchDataGridAutomationId = "TODO";
+    // ── Step 2: Match Selection (Open Match dialog) ───────────────────────
+    // The Open Match dialog has no Search button — Enter key triggers search
+    // after filling filter controls.
+    public static string MatchSelectionDialogAutomationId = "window";
+    public static string MatchSelectionDialogName = "Open Match";
+    public static string MatchDataGridAutomationId = "gridMatches";
+    public static string OpenReadOnlyButtonAutomationId = "btnAdditionalCancel";
+    public static string OpenForScoringButtonAutomationId = "multiAction";
+    public static string MatchSelectionCancelButtonAutomationId = "btnCancel";
+    public static string TeamFilterAutomationId = "cboTeamMultiple";
+    public static string CompetitionFilterAutomationId = "cboCompetitionMultiple";
+    public static string StateFilterAutomationId = "cboState";
+    public static string MatchSearchButtonAutomationId = "NONE_USE_ENTER_KEY";
 
     // ── Step 3: Team Names ────────────────────────────────────────────────
     public static string ScoringMenuAutomationId = "mnuScoring";
