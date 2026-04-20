@@ -2199,39 +2199,14 @@ internal sealed class DiagnosticRunner : IDisposable
             // --- 11b: Find the Start Live Stream button ---
             Console.WriteLine("  Searching for Start Live Stream button...");
 
-            // Search broadly — button text may be Name or part of it
-            AutomationElement? startButton = null;
-            var allButtons = FindAllDescendants(videoPane, cf.ByControlType(ControlType.Button));
-            Console.WriteLine($"  Found {allButtons.Length} button(s) in Video Display:");
-            foreach (var btn in allButtons)
-            {
-                var btnName = SafeGet(() => btn.Name);
-                var btnAutoId = SafeGet(() => btn.AutomationId);
-                Console.WriteLine($"    Name=\"{btnName}\" AutomationId=\"{btnAutoId}\"");
+            // The button has no Name — the text is in a child TextBlock.
+            // First try the LiveStreamingControls container, then fall back to videoPane.
+            var streamControls = FindDescendant(videoPane, cf.ByAutomationId("LiveStreamingControls"));
+            var searchRoot = streamControls ?? videoPane;
+            if (streamControls != null)
+                Console.WriteLine("  ✓ Found LiveStreamingControls container");
 
-                if (btnName.Contains("Start Live Stream", StringComparison.OrdinalIgnoreCase))
-                {
-                    startButton = btn;
-                    Console.WriteLine("    ↑ ✓ MATCHED as Start Live Stream");
-                }
-            }
-
-            if (startButton == null)
-            {
-                // Broader search — any clickable element with matching text
-                var allElements = FindAllDescendants(videoPane,
-                    cf.ByControlType(ControlType.Hyperlink));
-                foreach (var el in allElements)
-                {
-                    var elName = SafeGet(() => el.Name);
-                    Console.WriteLine($"    [Hyperlink] Name=\"{elName}\"");
-                    if (elName.Contains("Start Live Stream", StringComparison.OrdinalIgnoreCase))
-                    {
-                        startButton = el;
-                        Console.WriteLine("    ↑ ✓ MATCHED as Start Live Stream (Hyperlink)");
-                    }
-                }
-            }
+            AutomationElement? startButton = FindButtonByChildText(searchRoot, "Start Live Stream", cf);
 
             if (startButton == null)
             {
@@ -2408,7 +2383,9 @@ internal sealed class DiagnosticRunner : IDisposable
             ActivateToolWindow(freshVideoPane);
             Thread.Sleep(1000);
 
-            AutomationElement? stopButton = null;
+            AutomationElement? stopButton = FindButtonByChildText(freshVideoPane, "Stop Live", cf);
+
+            // Also log all text elements for discovery
             var freshButtons = FindAllDescendants(freshVideoPane, cf.ByControlType(ControlType.Button));
             Console.WriteLine($"  Found {freshButtons.Length} button(s) in Video Display after start:");
             foreach (var btn in freshButtons)
@@ -2416,32 +2393,16 @@ internal sealed class DiagnosticRunner : IDisposable
                 var btnName = SafeGet(() => btn.Name);
                 var btnAutoId = SafeGet(() => btn.AutomationId);
                 Console.WriteLine($"    Name=\"{btnName}\" AutomationId=\"{btnAutoId}\"");
-
-                if (btnName.Contains("Stop Live", StringComparison.OrdinalIgnoreCase))
-                {
-                    stopButton = btn;
-                    Console.WriteLine("    ↑ ✓ MATCHED as Stop Live Stream");
-                }
             }
 
-            // Also check for hyperlinks (UI may use hyperlink style)
-            if (stopButton == null)
+            // Check for Hide Stream Output link
+            var hyperlinks = FindAllDescendants(freshVideoPane, cf.ByControlType(ControlType.Hyperlink));
+            foreach (var hl in hyperlinks)
             {
-                var hyperlinks = FindAllDescendants(freshVideoPane, cf.ByControlType(ControlType.Hyperlink));
-                foreach (var hl in hyperlinks)
-                {
-                    var hlName = SafeGet(() => hl.Name);
-                    Console.WriteLine($"    [Hyperlink] Name=\"{hlName}\"");
-                    if (hlName.Contains("Stop Live", StringComparison.OrdinalIgnoreCase))
-                    {
-                        stopButton = hl;
-                        Console.WriteLine("    ↑ ✓ MATCHED as Stop Live Stream (Hyperlink)");
-                    }
-                    if (hlName.Contains("Hide Stream", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Console.WriteLine("    ↑ ✓ NOTED: Hide Stream Output link present");
-                    }
-                }
+                var hlName = SafeGet(() => hl.Name);
+                Console.WriteLine($"    [Hyperlink] Name=\"{hlName}\"");
+                if (hlName.Contains("Hide Stream", StringComparison.OrdinalIgnoreCase))
+                    Console.WriteLine("    ↑ ✓ NOTED: Hide Stream Output link present");
             }
 
             if (stopButton == null)
@@ -2487,15 +2448,13 @@ internal sealed class DiagnosticRunner : IDisposable
             Thread.Sleep(1000);
 
             var postStopButtons = FindAllDescendants(postStopVideoPane, cf.ByControlType(ControlType.Button));
-            bool startButtonReappeared = false;
+            bool startButtonReappeared = FindButtonByChildText(postStopVideoPane, "Start Live Stream", cf) != null;
             Console.WriteLine($"  Post-stop buttons ({postStopButtons.Length}):");
             foreach (var btn in postStopButtons)
             {
                 var btnName = SafeGet(() => btn.Name);
                 var btnAutoId = SafeGet(() => btn.AutomationId);
                 Console.WriteLine($"    Name=\"{btnName}\" AutomationId=\"{btnAutoId}\"");
-                if (btnName.Contains("Start Live Stream", StringComparison.OrdinalIgnoreCase))
-                    startButtonReappeared = true;
             }
 
             if (startButtonReappeared)
@@ -2672,6 +2631,41 @@ internal sealed class DiagnosticRunner : IDisposable
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Finds a Button element whose child TextBlock contains the specified text.
+    /// WPF buttons often have no Name — the label is in a child Text element.
+    /// Searches buttons within the given parent, checks both the button Name
+    /// and its child Text elements. Returns the matching button or null.
+    /// </summary>
+    private AutomationElement? FindButtonByChildText(
+        AutomationElement parent, string searchText, ConditionFactory cf)
+    {
+        var buttons = FindAllDescendants(parent, cf.ByControlType(ControlType.Button));
+        foreach (var btn in buttons)
+        {
+            var btnName = SafeGet(() => btn.Name);
+            if (btnName.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"  ✓ Found button by Name: \"{btnName}\"");
+                return btn;
+            }
+
+            // Check child Text elements (TextBlock in WPF)
+            var childTexts = FindAllDescendants(btn, cf.ByControlType(ControlType.Text));
+            foreach (var txt in childTexts)
+            {
+                var txtName = SafeGet(() => txt.Name);
+                if (txtName.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"  ✓ Found button by child text: \"{txtName}\"");
+                    return btn;
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
