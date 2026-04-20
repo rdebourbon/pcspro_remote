@@ -20,7 +20,7 @@ internal sealed class DiagnosticRunner : IDisposable
     private const int SplashTimeoutSeconds = 90;
     private const int LoginTransitionTimeoutSeconds = 15;
     private const int SearchTimeoutSeconds = 20;
-    private const int MatchLoadTimeoutSeconds = 15;
+    private const int MatchLoadTimeoutSeconds = 30;
 
     private readonly string _password;
     private readonly string _expectedUsername;
@@ -31,6 +31,7 @@ internal sealed class DiagnosticRunner : IDisposable
     private readonly UIA3Automation _automation;
     private Application? _app;
     private Window? _mainWindow;
+    private string? _titleBeforeMatchOpen;
 
     public DiagnosticRunner(string password, string expectedUsername, string? executablePath,
         string siteName, string searchDate, string outputDirectory)
@@ -806,6 +807,9 @@ internal sealed class DiagnosticRunner : IDisposable
             // Click "Open Read Only" — this instance must always open readonly
             var openReadOnly = FindDescendant(_mainWindow!,
                 cf.ByAutomationId(KnownElements.OpenReadOnlyButtonAutomationId));
+            // Capture window title before opening — Step 7 will wait for it to change
+            _titleBeforeMatchOpen = SafeGet(() => _mainWindow!.Title);
+
             if (openReadOnly == null)
             {
                 Console.WriteLine("  ⚠ 'Open Read Only' button not found — trying double-click as fallback");
@@ -838,10 +842,11 @@ internal sealed class DiagnosticRunner : IDisposable
     {
         PrintStep(7, "Wait for match to load (Open Match dialog closes, scoreboard panels appear)");
         var cf = _automation.ConditionFactory;
-
         var sw = Stopwatch.StartNew();
         bool dialogGone = false;
-        bool scorePanelFound = false;
+        bool titleChanged = false;
+
+        Console.WriteLine($"  Previous title: \"{_titleBeforeMatchOpen}\"");
 
         while (sw.Elapsed.TotalSeconds < MatchLoadTimeoutSeconds)
         {
@@ -859,22 +864,22 @@ internal sealed class DiagnosticRunner : IDisposable
                 }
             }
 
-            // Check if the Score Summary panel appeared
-            if (dialogGone && !scorePanelFound)
+            // Check if the window title has changed (new match loaded)
+            if (dialogGone && !titleChanged)
             {
-                var scorePanel = FindDescendant(_mainWindow!,
-                    cf.ByAutomationId(KnownElements.ScoreSummaryPaneAutomationId));
-                if (scorePanel != null)
+                var currentTitle = SafeGet(() => _mainWindow!.Title);
+                if (currentTitle != _titleBeforeMatchOpen)
                 {
-                    scorePanelFound = true;
-                    Console.WriteLine($"  ✓ Score Summary panel detected [{sw.Elapsed:mm\\:ss}]");
+                    titleChanged = true;
+                    Console.WriteLine($"  ✓ Window title changed [{sw.Elapsed:mm\\:ss}]");
+                    Console.WriteLine($"    New: \"{currentTitle}\"");
                 }
             }
 
-            if (dialogGone && scorePanelFound)
+            if (dialogGone && titleChanged)
                 break;
 
-            Console.Write($"\r  [{sw.Elapsed:mm\\:ss}] Waiting... dialog={(!dialogGone ? "open" : "closed")} score={(!scorePanelFound ? "pending" : "found")}");
+            Console.Write($"\r  [{sw.Elapsed:mm\\:ss}] Waiting... dialog={(!dialogGone ? "open" : "closed")} title={(!titleChanged ? "unchanged" : "changed")}");
             Thread.Sleep(PollIntervalMs);
         }
 
@@ -884,6 +889,14 @@ internal sealed class DiagnosticRunner : IDisposable
         {
             PrintFail("Open Match dialog did not close within timeout.");
             DumpAndSave("step7-dialog-stuck");
+            return false;
+        }
+
+        if (!titleChanged)
+        {
+            PrintFail("Window title did not change — match may not have loaded.");
+            Console.WriteLine($"  Title still: \"{SafeGet(() => _mainWindow!.Title)}\"");
+            DumpAndSave("step7-title-unchanged");
             return false;
         }
 
@@ -911,7 +924,7 @@ internal sealed class DiagnosticRunner : IDisposable
         // Dump for analysis
         DumpAndSave("step7-match-loaded");
 
-        PrintPass(scorePanelFound ? "Match loaded with Score Summary panel" : "Dialog closed (panels may still be loading)");
+        PrintPass("Match loaded — title changed");
         return PauseForUser();
     }
 
