@@ -680,11 +680,35 @@ internal sealed class DiagnosticRunner : IDisposable
         {
             var cf = _automation.ConditionFactory;
 
+            // Wait for login dialog to disappear — Step 3 may pass while it's
+            // still closing, and the menu bar isn't reliably accessible until
+            // the modal dialog is fully gone.
+            Console.WriteLine("  Waiting for login dialog to close...");
+            var loginSw = Stopwatch.StartNew();
+            while (loginSw.Elapsed.TotalSeconds < 30)
+            {
+                var loginDialog = FindDescendant(_mainWindow!,
+                    cf.ByAutomationId(KnownElements.LoginDialogAutomationId));
+                if (loginDialog == null)
+                {
+                    Console.WriteLine($"  ✓ Login dialog closed [{loginSw.Elapsed:mm\\:ss}]");
+                    break;
+                }
+                Thread.Sleep(PollIntervalMs);
+            }
+
             // PCS Pro reopens the last match after login — match selection doesn't auto-appear.
             // We must use File → Open Match... to get the selection dialog.
-
             Console.WriteLine("  Opening File menu...");
-            var fileMenu = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.FileMenuAutomationId));
+            AutomationElement? fileMenu = null;
+            var menuSw = Stopwatch.StartNew();
+            while (menuSw.Elapsed.TotalSeconds < 10)
+            {
+                fileMenu = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.FileMenuAutomationId));
+                if (fileMenu != null) break;
+                Thread.Sleep(PollIntervalMs);
+            }
+
             if (fileMenu == null)
             {
                 PrintFail("File menu not found");
