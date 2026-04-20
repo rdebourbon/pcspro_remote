@@ -17,7 +17,7 @@ internal sealed class DiagnosticRunner : IDisposable
 {
     private const string ProcessName = "cricket";
     private const int PollIntervalMs = 500;
-    private const int SplashTimeoutSeconds = 30;
+    private const int SplashTimeoutSeconds = 90;
     private const int LoginTransitionTimeoutSeconds = 15;
     private const int SearchTimeoutSeconds = 20;
     private const int MatchLoadTimeoutSeconds = 15;
@@ -246,7 +246,7 @@ internal sealed class DiagnosticRunner : IDisposable
                 if (stableWindow != null && candidate.Title == stableWindow.Title)
                 {
                     stableCount++;
-                    if (stableCount >= 3) // Stable for 1.5+ seconds
+                    if (stableCount >= 2) // Stable across 2 polls
                     {
                         Console.WriteLine();
                         _mainWindow = candidate;
