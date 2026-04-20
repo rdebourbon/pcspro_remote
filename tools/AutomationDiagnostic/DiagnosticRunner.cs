@@ -353,6 +353,9 @@ internal sealed class DiagnosticRunner : IDisposable
         // Step 10: Change match (select 2nd match)
         if (!Step10_FindChangeMatchElement()) return;
 
+        // Step 11: Start/Stop Live Stream
+        if (!Step11_StartStopLiveStream()) return;
+
         PrintSuccess();
     }
 
@@ -2146,6 +2149,378 @@ internal sealed class DiagnosticRunner : IDisposable
         {
             PrintFail($"Error in change-match flow: {ex.Message}");
             DumpAndSave("step10-error");
+            return false;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STEP 11: Start/Stop Live Stream — discovery and interaction test
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private bool Step11_StartStopLiveStream()
+    {
+        PrintStep(11, "Start Live Stream, handle consent dialogs, verify streaming, then Stop");
+        var cf = _automation.ConditionFactory;
+        RefreshMainWindow();
+
+        try
+        {
+            // --- 11a: Find the Video Display tool window ---
+            Console.WriteLine("  Searching for Video Display tool window...");
+            var allToolWindows = FindAllDescendants(_mainWindow!,
+                cf.ByClassName("ToolWindow"));
+
+            AutomationElement? videoPane = null;
+            foreach (var tw in allToolWindows)
+            {
+                var twName = SafeGet(() => tw.Name);
+                var twAutoId = SafeGet(() => tw.AutomationId);
+                if (twAutoId == "twdVideoCapture" ||
+                    twName.Contains("Video Display", StringComparison.OrdinalIgnoreCase))
+                {
+                    videoPane = tw;
+                    Console.WriteLine($"  ✓ Found: Name=\"{twName}\" AutomationId=\"{twAutoId}\"");
+                    break;
+                }
+            }
+
+            if (videoPane == null)
+            {
+                PrintFail("Video Display tool window not found.");
+                DumpAndSave("step11-no-video-pane");
+                return false;
+            }
+
+            // Activate the Video Display tab
+            ActivateToolWindow(videoPane);
+            Thread.Sleep(1000);
+            RefreshMainWindow();
+
+            // --- 11b: Find the Start Live Stream button ---
+            Console.WriteLine("  Searching for Start Live Stream button...");
+
+            // Search broadly — button text may be Name or part of it
+            AutomationElement? startButton = null;
+            var allButtons = FindAllDescendants(videoPane, cf.ByControlType(ControlType.Button));
+            Console.WriteLine($"  Found {allButtons.Length} button(s) in Video Display:");
+            foreach (var btn in allButtons)
+            {
+                var btnName = SafeGet(() => btn.Name);
+                var btnAutoId = SafeGet(() => btn.AutomationId);
+                Console.WriteLine($"    Name=\"{btnName}\" AutomationId=\"{btnAutoId}\"");
+
+                if (btnName.Contains("Start Live Stream", StringComparison.OrdinalIgnoreCase))
+                {
+                    startButton = btn;
+                    Console.WriteLine("    ↑ ✓ MATCHED as Start Live Stream");
+                }
+            }
+
+            if (startButton == null)
+            {
+                // Broader search — any clickable element with matching text
+                var allElements = FindAllDescendants(videoPane,
+                    cf.ByControlType(ControlType.Hyperlink));
+                foreach (var el in allElements)
+                {
+                    var elName = SafeGet(() => el.Name);
+                    Console.WriteLine($"    [Hyperlink] Name=\"{elName}\"");
+                    if (elName.Contains("Start Live Stream", StringComparison.OrdinalIgnoreCase))
+                    {
+                        startButton = el;
+                        Console.WriteLine("    ↑ ✓ MATCHED as Start Live Stream (Hyperlink)");
+                    }
+                }
+            }
+
+            if (startButton == null)
+            {
+                Console.WriteLine("  ⚠ Start Live Stream button not found — dumping Video Display tree...");
+                var dump = TreeDumper.Dump(videoPane, maxDepth: 6);
+                Console.WriteLine(dump);
+                PrintFail("Start Live Stream button not found in Video Display.");
+                return false;
+            }
+
+            // --- 11c: Click Start Live Stream ---
+            Console.WriteLine("  Clicking Start Live Stream...");
+            var invokeError = InvokeButtonSafely(startButton);
+            if (invokeError != null)
+            {
+                PrintFail($"Could not click Start Live Stream: {invokeError}");
+                return false;
+            }
+            Thread.Sleep(2000);
+
+            // --- 11d: Handle Video Consent dialog ---
+            Console.WriteLine("  Waiting for Video Consent dialog...");
+            RefreshMainWindow();
+
+            AutomationElement? consentDialog = null;
+            var topWindows = GetTopLevelWindows();
+            foreach (var w in topWindows)
+            {
+                var wTitle = SafeGet(() => w.Title);
+                if (wTitle.Contains("Video Consent", StringComparison.OrdinalIgnoreCase))
+                {
+                    consentDialog = w;
+                    Console.WriteLine($"  ✓ Found consent dialog: \"{wTitle}\"");
+                    break;
+                }
+            }
+
+            if (consentDialog == null)
+            {
+                // Try as child window of main window
+                consentDialog = WaitForElement(_mainWindow!,
+                    cf.ByName("Video Consent"), 5000);
+            }
+
+            if (consentDialog == null)
+            {
+                Console.WriteLine("  ⚠ No Video Consent dialog appeared — stream may have started directly or button was not active");
+                Console.WriteLine("  Dumping all top-level windows for analysis...");
+                foreach (var w in GetTopLevelWindows())
+                {
+                    Console.WriteLine($"    \"{SafeGet(() => w.Title)}\" ClassName=\"{SafeGet(() => w.ClassName)}\"");
+                }
+                DumpAndSave("step11-no-consent-dialog");
+                PrintFail("Video Consent dialog did not appear after clicking Start Live Stream.");
+                return false;
+            }
+
+            // Dump consent dialog for discovery
+            Console.WriteLine("\n  ── Consent Dialog Contents ──");
+            var consentDump = TreeDumper.Dump(consentDialog, maxDepth: 4);
+            Console.WriteLine(consentDump);
+
+            // Find and click "Video Consented" button
+            Console.WriteLine("  Looking for 'Video Consented' button...");
+            var consentButton = FindDescendant(consentDialog,
+                cf.ByName("Video Consented"));
+            if (consentButton == null)
+            {
+                // Try by AutomationId — user reported btnAction might be the ID
+                consentButton = FindDescendant(consentDialog,
+                    cf.ByAutomationId("btnAction"));
+            }
+
+            if (consentButton == null)
+            {
+                PrintFail("'Video Consented' button not found in consent dialog.");
+                DumpAndSave("step11-no-consent-button");
+                return false;
+            }
+
+            Console.WriteLine($"  ✓ Found: Name=\"{SafeGet(() => consentButton.Name)}\" " +
+                              $"AutomationId=\"{SafeGet(() => consentButton.AutomationId)}\"");
+            Console.WriteLine("  Clicking Video Consented...");
+            invokeError = InvokeButtonSafely(consentButton);
+            if (invokeError != null)
+            {
+                PrintFail($"Could not click Video Consented: {invokeError}");
+                return false;
+            }
+            Thread.Sleep(2000);
+
+            // --- 11e: Handle "Add Live Stream to Match Centre?" dialog (click No) ---
+            Console.WriteLine("  Checking for 'Add Live Stream to Match Centre?' dialog...");
+            RefreshMainWindow();
+
+            AutomationElement? matchCentreDialog = null;
+            topWindows = GetTopLevelWindows();
+            foreach (var w in topWindows)
+            {
+                var wTitle = SafeGet(() => w.Title);
+                if (wTitle.Contains("Match Centre", StringComparison.OrdinalIgnoreCase) ||
+                    wTitle.Contains("Live Stream", StringComparison.OrdinalIgnoreCase))
+                {
+                    matchCentreDialog = w;
+                    Console.WriteLine($"  ✓ Found Match Centre dialog: \"{wTitle}\"");
+                    break;
+                }
+            }
+
+            if (matchCentreDialog == null)
+            {
+                // Also check child windows
+                matchCentreDialog = FindDescendant(_mainWindow!,
+                    cf.ByName("Add Live Stream to Match Centre?"));
+            }
+
+            if (matchCentreDialog != null)
+            {
+                Console.WriteLine("\n  ── Match Centre Dialog Contents ──");
+                var mcDump = TreeDumper.Dump(matchCentreDialog, maxDepth: 4);
+                Console.WriteLine(mcDump);
+
+                // Click No
+                var noButton = FindDescendant(matchCentreDialog, cf.ByName("No"));
+                if (noButton == null)
+                {
+                    // Try looking for a standard No button by AutomationId
+                    var mcButtons = FindAllDescendants(matchCentreDialog, cf.ByControlType(ControlType.Button));
+                    foreach (var btn in mcButtons)
+                    {
+                        var btnName = SafeGet(() => btn.Name);
+                        Console.WriteLine($"    Button: \"{btnName}\"");
+                        if (btnName.Equals("No", StringComparison.OrdinalIgnoreCase))
+                        {
+                            noButton = btn;
+                            break;
+                        }
+                    }
+                }
+
+                if (noButton != null)
+                {
+                    Console.WriteLine("  Clicking No...");
+                    invokeError = InvokeButtonSafely(noButton);
+                    if (invokeError != null)
+                        Console.WriteLine($"  ⚠ Could not click No: {invokeError}");
+                    else
+                        Console.WriteLine("  ✓ Clicked No");
+                    Thread.Sleep(1500);
+                }
+                else
+                {
+                    Console.WriteLine("  ⚠ No 'No' button found — dialog may need manual dismissal");
+                }
+            }
+            else
+            {
+                Console.WriteLine("  (No Match Centre dialog appeared — continuing)");
+            }
+
+            // --- 11f: Verify stream is running — look for Stop Live Stream button ---
+            Console.WriteLine("\n  Verifying stream started — looking for Stop Live Stream...");
+            Thread.Sleep(3000);
+            RefreshMainWindow();
+
+            // Re-find the Video Display pane (may have refreshed)
+            var freshVideoPane = FindDescendant(_mainWindow!, cf.ByAutomationId("twdVideoCapture"));
+            if (freshVideoPane == null)
+            {
+                freshVideoPane = videoPane; // fall back to original reference
+                Console.WriteLine("  (Using original videoPane reference)");
+            }
+
+            ActivateToolWindow(freshVideoPane);
+            Thread.Sleep(1000);
+
+            AutomationElement? stopButton = null;
+            var freshButtons = FindAllDescendants(freshVideoPane, cf.ByControlType(ControlType.Button));
+            Console.WriteLine($"  Found {freshButtons.Length} button(s) in Video Display after start:");
+            foreach (var btn in freshButtons)
+            {
+                var btnName = SafeGet(() => btn.Name);
+                var btnAutoId = SafeGet(() => btn.AutomationId);
+                Console.WriteLine($"    Name=\"{btnName}\" AutomationId=\"{btnAutoId}\"");
+
+                if (btnName.Contains("Stop Live", StringComparison.OrdinalIgnoreCase))
+                {
+                    stopButton = btn;
+                    Console.WriteLine("    ↑ ✓ MATCHED as Stop Live Stream");
+                }
+            }
+
+            // Also check for hyperlinks (UI may use hyperlink style)
+            if (stopButton == null)
+            {
+                var hyperlinks = FindAllDescendants(freshVideoPane, cf.ByControlType(ControlType.Hyperlink));
+                foreach (var hl in hyperlinks)
+                {
+                    var hlName = SafeGet(() => hl.Name);
+                    Console.WriteLine($"    [Hyperlink] Name=\"{hlName}\"");
+                    if (hlName.Contains("Stop Live", StringComparison.OrdinalIgnoreCase))
+                    {
+                        stopButton = hl;
+                        Console.WriteLine("    ↑ ✓ MATCHED as Stop Live Stream (Hyperlink)");
+                    }
+                    if (hlName.Contains("Hide Stream", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine("    ↑ ✓ NOTED: Hide Stream Output link present");
+                    }
+                }
+            }
+
+            if (stopButton == null)
+            {
+                Console.WriteLine("  ⚠ Stop Live Stream not found — dumping Video Display tree...");
+                var dump = TreeDumper.Dump(freshVideoPane, maxDepth: 6);
+                Console.WriteLine(dump);
+                PrintFail("Stream may not have started — Stop Live Stream button not found.");
+                return false;
+            }
+
+            Console.WriteLine("  ✓ Stream is LIVE — Stop button found");
+
+            // Look for the streaming timer / duration text
+            var allText = FindAllDescendants(freshVideoPane, cf.ByControlType(ControlType.Text));
+            foreach (var txt in allText)
+            {
+                var txtName = SafeGet(() => txt.Name);
+                if (!string.IsNullOrWhiteSpace(txtName))
+                    Console.WriteLine($"    [Text] \"{txtName}\"");
+            }
+
+            // --- 11g: Wait a few seconds then stop the stream ---
+            Console.WriteLine("\n  Waiting 5 seconds before stopping stream...");
+            Thread.Sleep(5000);
+
+            Console.WriteLine("  Clicking Stop Live Stream...");
+            invokeError = InvokeButtonSafely(stopButton);
+            if (invokeError != null)
+            {
+                PrintFail($"Could not click Stop Live Stream: {invokeError}");
+                return false;
+            }
+            Thread.Sleep(3000);
+
+            // --- 11h: Verify stream stopped — Start button should reappear ---
+            Console.WriteLine("  Verifying stream stopped...");
+            RefreshMainWindow();
+
+            var postStopVideoPane = FindDescendant(_mainWindow!, cf.ByAutomationId("twdVideoCapture"))
+                                    ?? freshVideoPane;
+            ActivateToolWindow(postStopVideoPane);
+            Thread.Sleep(1000);
+
+            var postStopButtons = FindAllDescendants(postStopVideoPane, cf.ByControlType(ControlType.Button));
+            bool startButtonReappeared = false;
+            Console.WriteLine($"  Post-stop buttons ({postStopButtons.Length}):");
+            foreach (var btn in postStopButtons)
+            {
+                var btnName = SafeGet(() => btn.Name);
+                var btnAutoId = SafeGet(() => btn.AutomationId);
+                Console.WriteLine($"    Name=\"{btnName}\" AutomationId=\"{btnAutoId}\"");
+                if (btnName.Contains("Start Live Stream", StringComparison.OrdinalIgnoreCase))
+                    startButtonReappeared = true;
+            }
+
+            if (startButtonReappeared)
+            {
+                Console.WriteLine("  ✓ Start Live Stream button reappeared — stream stopped successfully");
+            }
+            else
+            {
+                Console.WriteLine("  ⚠ Start Live Stream button not found after stop — stream may still be running");
+                Console.WriteLine("  Dumping Video Display tree for analysis...");
+                var dump = TreeDumper.Dump(postStopVideoPane, maxDepth: 6);
+                Console.WriteLine(dump);
+            }
+
+            PrintPass(startButtonReappeared
+                ? "Start → Consent → Live → Stop — full cycle complete"
+                : "Start → Consent → Live — stop may not have completed (check log)");
+            return PauseForUser();
+        }
+        catch (Exception ex)
+        {
+            PrintFail($"Error in live stream flow: {ex.Message}");
+            Console.WriteLine($"  {ex.GetType().FullName}: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
+            DumpAndSave("step11-error");
             return false;
         }
     }
