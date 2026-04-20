@@ -23,13 +23,15 @@ internal sealed class DiagnosticRunner : IDisposable
     private const int MatchLoadTimeoutSeconds = 15;
 
     private readonly string _password;
+    private readonly string? _executablePath;
     private readonly UIA3Automation _automation;
     private Application? _app;
     private Window? _mainWindow;
 
-    public DiagnosticRunner(string password)
+    public DiagnosticRunner(string password, string? executablePath = null)
     {
         _password = password;
+        _executablePath = executablePath;
         _automation = new UIA3Automation();
     }
 
@@ -88,20 +90,78 @@ internal sealed class DiagnosticRunner : IDisposable
 
     private bool Step0_AttachToProcess()
     {
-        PrintStep(0, "Attach to cricket.exe process");
+        PrintStep(0, "Kill existing cricket.exe and launch fresh");
 
-        var processes = Process.GetProcessesByName(ProcessName);
-        if (processes.Length == 0)
+        // Kill any existing cricket.exe processes
+        var existing = Process.GetProcessesByName(ProcessName);
+        if (existing.Length > 0)
         {
-            PrintFail("No 'cricket' process found. Please start PCS Pro first.");
+            Console.WriteLine($"  Found {existing.Length} existing cricket.exe process(es) — killing...");
+            foreach (var p in existing)
+            {
+                try
+                {
+                    Console.WriteLine($"    Killing PID {p.Id}");
+                    p.Kill();
+                    p.WaitForExit(5000);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"    Warning: could not kill PID {p.Id}: {ex.Message}");
+                }
+                finally
+                {
+                    p.Dispose();
+                }
+            }
+
+            Console.WriteLine("  Waiting 2s for cleanup...");
+            Thread.Sleep(2000);
+        }
+        else
+        {
+            Console.WriteLine("  No existing cricket.exe found.");
+        }
+
+        // Launch fresh
+        if (string.IsNullOrEmpty(_executablePath))
+        {
+            PrintFail("No executable path provided. Use -e <path> to specify cricket.exe location.");
             return false;
         }
 
-        var process = processes[0];
-        Console.WriteLine($"  Found PID {process.Id} — \"{process.MainWindowTitle}\"");
-        _app = Application.Attach(process);
-        PrintPass();
-        return PauseForUser();
+        if (!File.Exists(_executablePath))
+        {
+            PrintFail($"Executable not found: {_executablePath}");
+            return false;
+        }
+
+        Console.WriteLine($"  Launching: {_executablePath}");
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = _executablePath,
+                WorkingDirectory = Path.GetDirectoryName(_executablePath) ?? "",
+                UseShellExecute = false,
+            };
+            var process = Process.Start(startInfo);
+            if (process == null)
+            {
+                PrintFail("Process.Start returned null.");
+                return false;
+            }
+
+            Console.WriteLine($"  Started PID {process.Id}");
+            _app = Application.Attach(process);
+            PrintPass();
+            return PauseForUser();
+        }
+        catch (Exception ex)
+        {
+            PrintFail($"Failed to launch: {ex.Message}");
+            return false;
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
