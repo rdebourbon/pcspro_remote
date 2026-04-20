@@ -1125,7 +1125,9 @@ internal sealed class DiagnosticRunner : IDisposable
                 }
             }
 
-            if (dialogGone && titleChanged && !syncReady)
+            // Check sync status once dialog is gone — don't require title change first,
+            // because loading the same match type produces an identical abbreviated title.
+            if (dialogGone && !syncReady)
             {
                 var syncBar = FindDescendant(_mainWindow!, cf.ByClassName(KnownElements.StatusBarClassName));
                 if (syncBar != null)
@@ -1140,7 +1142,7 @@ internal sealed class DiagnosticRunner : IDisposable
                 }
             }
 
-            if (dialogGone && titleChanged && syncReady)
+            if (dialogGone && syncReady)
                 break;
 
             var status = $"dialog={(!dialogGone ? "open" : "closed")} title={(!titleChanged ? "unchanged" : "changed")} sync={(!syncReady ? "pending" : "ready")}";
@@ -1157,17 +1159,16 @@ internal sealed class DiagnosticRunner : IDisposable
             return false;
         }
 
-        if (!titleChanged)
+        if (!syncReady)
         {
-            PrintFail("Window title did not change — match may not have loaded.");
-            Console.WriteLine($"  [{Timestamp()}] Title still: \"{SafeGet(() => _mainWindow!.Title)}\"");
-            DumpAndSave("step7-title-unchanged");
+            PrintFail("Sync status never reached 'Up to Date' within timeout.");
+            DumpAndSave("step7-sync-timeout");
             return false;
         }
 
-        if (!syncReady)
+        if (!titleChanged)
         {
-            Console.WriteLine($"  [{Timestamp()}] ⚠ Sync status not 'Up to Date' within timeout — continuing anyway");
+            Console.WriteLine($"  [{Timestamp()}] ⚠ Title unchanged (same match type) — sync confirmed load");
         }
 
         // Allow extra settle time for panels to fully render
@@ -1194,7 +1195,7 @@ internal sealed class DiagnosticRunner : IDisposable
         // Dump for analysis
         DumpAndSave("step7-match-loaded");
 
-        PrintPass("Match loaded — title changed");
+        PrintPass(titleChanged ? "Match loaded — title changed" : "Match loaded — sync confirmed");
         return PauseForUser();
     }
 
