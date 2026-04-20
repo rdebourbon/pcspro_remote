@@ -840,19 +840,19 @@ internal sealed class DiagnosticRunner : IDisposable
 
     private bool Step7_WaitForMatchLoad()
     {
-        PrintStep(7, "Wait for match to load (Open Match dialog closes, scoreboard panels appear)");
+        PrintStep(7, "Wait for match to load (Open Match dialog closes, sync status = Up to Date)");
         var cf = _automation.ConditionFactory;
         var sw = Stopwatch.StartNew();
         bool dialogGone = false;
         bool titleChanged = false;
+        bool syncReady = false;
 
-        Console.WriteLine($"  Previous title: \"{_titleBeforeMatchOpen}\"");
+        Console.WriteLine($"  [{Timestamp()}] Previous title: \"{_titleBeforeMatchOpen}\"");
 
         while (sw.Elapsed.TotalSeconds < MatchLoadTimeoutSeconds)
         {
             RefreshMainWindow();
 
-            // Check if the Open Match dialog has closed
             if (!dialogGone)
             {
                 var dialog = FindDescendant(_mainWindow!,
@@ -860,26 +860,41 @@ internal sealed class DiagnosticRunner : IDisposable
                 if (dialog == null)
                 {
                     dialogGone = true;
-                    Console.WriteLine($"  ✓ Open Match dialog closed [{sw.Elapsed:mm\\:ss}]");
+                    Console.WriteLine($"  [{Timestamp()}] ✓ Open Match dialog closed [{sw.Elapsed:mm\\:ss}]");
                 }
             }
 
-            // Check if the window title has changed (new match loaded)
             if (dialogGone && !titleChanged)
             {
                 var currentTitle = SafeGet(() => _mainWindow!.Title);
                 if (currentTitle != _titleBeforeMatchOpen)
                 {
                     titleChanged = true;
-                    Console.WriteLine($"  ✓ Window title changed [{sw.Elapsed:mm\\:ss}]");
-                    Console.WriteLine($"    New: \"{currentTitle}\"");
+                    Console.WriteLine($"  [{Timestamp()}] ✓ Window title changed [{sw.Elapsed:mm\\:ss}]");
+                    Console.WriteLine($"  [{Timestamp()}]   New: \"{currentTitle}\"");
                 }
             }
 
-            if (dialogGone && titleChanged)
+            if (dialogGone && titleChanged && !syncReady)
+            {
+                var syncBar = FindDescendant(_mainWindow!, cf.ByClassName(KnownElements.StatusBarClassName));
+                if (syncBar != null)
+                {
+                    var syncText = FindAllDescendants(syncBar, cf.ByControlType(ControlType.Text))
+                        .FirstOrDefault(t => SafeGet(() => t.Name) == "Up to Date");
+                    if (syncText != null)
+                    {
+                        syncReady = true;
+                        Console.WriteLine($"  [{Timestamp()}] ✓ Scoring Sync Status: Up to Date [{sw.Elapsed:mm\\:ss}]");
+                    }
+                }
+            }
+
+            if (dialogGone && titleChanged && syncReady)
                 break;
 
-            Console.Write($"\r  [{sw.Elapsed:mm\\:ss}] Waiting... dialog={(!dialogGone ? "open" : "closed")} title={(!titleChanged ? "unchanged" : "changed")}");
+            var status = $"dialog={(!dialogGone ? "open" : "closed")} title={(!titleChanged ? "unchanged" : "changed")} sync={(!syncReady ? "pending" : "ready")}";
+            Console.Write($"\r  [{sw.Elapsed:mm\\:ss}] Waiting... {status}");
             Thread.Sleep(PollIntervalMs);
         }
 
@@ -895,9 +910,14 @@ internal sealed class DiagnosticRunner : IDisposable
         if (!titleChanged)
         {
             PrintFail("Window title did not change — match may not have loaded.");
-            Console.WriteLine($"  Title still: \"{SafeGet(() => _mainWindow!.Title)}\"");
+            Console.WriteLine($"  [{Timestamp()}] Title still: \"{SafeGet(() => _mainWindow!.Title)}\"");
             DumpAndSave("step7-title-unchanged");
             return false;
+        }
+
+        if (!syncReady)
+        {
+            Console.WriteLine($"  [{Timestamp()}] ⚠ Sync status not 'Up to Date' within timeout — continuing anyway");
         }
 
         // Allow extra settle time for panels to fully render
@@ -1213,6 +1233,8 @@ internal sealed class DiagnosticRunner : IDisposable
         string.IsNullOrWhiteSpace(title) ? "untitled" :
         new string(title.Take(20).Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
 
+    private static string Timestamp() => DateTime.Now.ToString("HH:mm:ss.fff");
+
     private static bool PauseForUser()
     {
         Console.WriteLine();
@@ -1233,28 +1255,28 @@ internal sealed class DiagnosticRunner : IDisposable
     private static void PrintStep(int number, string description)
     {
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine($"═══ STEP {number}: {description} ═══");
+        Console.WriteLine($"[{Timestamp()}] ═══ STEP {number}: {description} ═══");
         Console.ResetColor();
     }
 
     private static void PrintPass(string? note = null)
     {
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine(note != null ? $"  ✓ PASS — {note}" : "  ✓ PASS");
+        Console.WriteLine(note != null ? $"  [{Timestamp()}] ✓ PASS — {note}" : $"  [{Timestamp()}] ✓ PASS");
         Console.ResetColor();
     }
 
     private static void PrintFail(string reason)
     {
         Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine($"  ✗ FAIL — {reason}");
+        Console.WriteLine($"  [{Timestamp()}] ✗ FAIL — {reason}");
         Console.ResetColor();
     }
 
     private static void PrintWait(string message)
     {
         Console.ForegroundColor = ConsoleColor.Magenta;
-        Console.WriteLine($"  ⏸ DISCOVERY NEEDED — {message}");
+        Console.WriteLine($"  [{Timestamp()}] ⏸ DISCOVERY NEEDED — {message}");
         Console.ResetColor();
     }
 
