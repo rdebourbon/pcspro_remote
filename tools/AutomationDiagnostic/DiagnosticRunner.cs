@@ -1309,9 +1309,12 @@ internal sealed class DiagnosticRunner : IDisposable
     }
 
     /// <summary>
-    /// Waits for the LoaderSpinner inside the given dialog to become offscreen (idle).
-    /// The spinner is always in the dialog tree. IsOffscreen=false means search in progress.
-    /// Returns true if spinner cleared, false on timeout.
+    /// Waits for the search spinner inside the Open Match dialog to become idle.
+    /// Tries multiple detection strategies:
+    ///   1. ClassName="LoaderSpinner" (from PRD research)
+    ///   2. ClassName="FontAwesomeSpinner" inside the dialog (not status bar)
+    ///   3. Falls back to grid row-count stabilization if no spinner found
+    /// Returns true if search is idle, false on timeout.
     /// </summary>
     private static bool WaitForSpinnerIdle(
         AutomationElement dialog, ConditionFactory cf, int timeoutMs = 30000)
@@ -1319,33 +1322,55 @@ internal sealed class DiagnosticRunner : IDisposable
         // Brief delay so spinner can appear before we start polling
         Thread.Sleep(200);
 
-        var sw = Stopwatch.StartNew();
-        while (sw.ElapsedMilliseconds < timeoutMs)
+        // Try to find spinner element — check both known class names
+        AutomationElement? spinner = FindDescendant(dialog,
+            cf.ByClassName(KnownElements.LoaderSpinnerClassName));
+        string spinnerType = "LoaderSpinner";
+
+        if (spinner == null)
         {
-            var spinner = FindDescendant(dialog,
-                cf.ByClassName(KnownElements.LoaderSpinnerClassName));
-
-            if (spinner == null)
-            {
-                // Spinner not found in tree — treat as idle
-                Console.WriteLine($"  [{Timestamp()}] No LoaderSpinner found in dialog — treating as idle");
-                return true;
-            }
-
-            bool isOffscreen = spinner.Properties.IsOffscreen.ValueOrDefault;
-            if (isOffscreen)
-            {
-                Console.WriteLine($"  [{Timestamp()}] LoaderSpinner is offscreen — search idle");
-                return true;
-            }
-
-            Console.Write($"\r  [{Timestamp()}] LoaderSpinner visible — search in progress...  ");
-            Thread.Sleep(200);
+            spinner = FindDescendant(dialog, cf.ByClassName("FontAwesomeSpinner"));
+            spinnerType = "FontAwesomeSpinner";
         }
 
-        Console.WriteLine();
-        Console.WriteLine($"  [{Timestamp()}] ⚠ LoaderSpinner still visible after {timeoutMs}ms timeout");
-        return false;
+        if (spinner != null)
+        {
+            Console.WriteLine($"  [{Timestamp()}] Found spinner: ClassName=\"{spinnerType}\", " +
+                $"Name=\"{SafeGet(() => spinner.Name)}\", " +
+                $"IsOffscreen={spinner.Properties.IsOffscreen.ValueOrDefault}");
+
+            var sw = Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                bool isOffscreen = spinner.Properties.IsOffscreen.ValueOrDefault;
+                if (isOffscreen)
+                {
+                    Console.WriteLine($"  [{Timestamp()}] {spinnerType} is offscreen — search idle");
+                    return true;
+                }
+
+                Console.Write($"\r  [{Timestamp()}] {spinnerType} visible — search in progress...  ");
+                Thread.Sleep(200);
+            }
+
+            Console.WriteLine();
+            Console.WriteLine($"  [{Timestamp()}] ⚠ {spinnerType} still visible after {timeoutMs}ms timeout");
+            return false;
+        }
+
+        // No spinner element found — fall back to grid stabilization
+        Console.WriteLine($"  [{Timestamp()}] No spinner element found in dialog — falling back to grid stabilization");
+        var grid = FindDescendant(dialog,
+            cf.ByAutomationId(KnownElements.MatchDataGridAutomationId));
+        if (grid != null)
+        {
+            int stableCount = WaitForGridStable(grid, cf, timeoutMs: Math.Min(timeoutMs, 10000));
+            Console.WriteLine($"  [{Timestamp()}] Grid stabilized with {stableCount} row(s)");
+            return stableCount >= 0;
+        }
+
+        Console.WriteLine($"  [{Timestamp()}] No grid found either — proceeding anyway");
+        return true;
     }
 
     /// <summary>
