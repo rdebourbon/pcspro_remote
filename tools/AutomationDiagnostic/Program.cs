@@ -7,6 +7,8 @@ internal static class Program
         string? password = null;
         string? exePath = null;
         string? username = null;
+        string? siteName = null;
+        string? searchDate = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -16,6 +18,10 @@ internal static class Program
                 exePath = args[++i];
             if (args[i] is "-u" or "--username" && i + 1 < args.Length)
                 username = args[++i];
+            if (args[i] is "-s" or "--site" && i + 1 < args.Length)
+                siteName = args[++i];
+            if (args[i] is "-d" or "--date" && i + 1 < args.Length)
+                searchDate = args[++i];
             if (args[i] is "-h" or "--help")
             {
                 PrintUsage();
@@ -51,7 +57,22 @@ internal static class Program
             }
         }
 
-        using var runner = new DiagnosticRunner(password, username, exePath);
+        if (string.IsNullOrEmpty(siteName))
+        {
+            Console.Write("Enter site/club name (default: High Halstow CC): ");
+            var input = Console.ReadLine();
+            siteName = string.IsNullOrEmpty(input) ? "High Halstow CC" : input;
+        }
+
+        if (string.IsNullOrEmpty(searchDate))
+        {
+            var today = DateTime.Today.ToString("dd/MM/yyyy");
+            Console.Write($"Enter search date dd/MM/yyyy (default: {today}): ");
+            var input = Console.ReadLine();
+            searchDate = string.IsNullOrEmpty(input) ? today : input;
+        }
+
+        using var runner = new DiagnosticRunner(password, username, exePath, siteName, searchDate);
         runner.Run();
         return 0;
     }
@@ -67,6 +88,8 @@ internal static class Program
               -e, --exe <path>       Path to cricket.exe (required)
               -u, --username <user>  Expected PCS Pro username (validates pre-filled value)
               -p, --password <pwd>   PCS Pro login password
+              -s, --site <name>      Site/club name for match filter (default: High Halstow CC)
+              -d, --date <dd/MM/yyyy> Search date for match filter (default: today)
               -h, --help             Show this help
 
             The tool kills any existing cricket.exe, launches a fresh instance,
@@ -75,6 +98,7 @@ internal static class Program
 
             Example:
               AutomationDiagnostic -e "C:\PcsPro\cricket.exe" -u "myuser" -p "mypass"
+              AutomationDiagnostic -e "C:\PcsPro\cricket.exe" -p "mypass" -s "High Halstow CC" -d "20/04/2026"
 
             Tree dumps are saved to the Desktop as pcs-diag-*.txt
             """);

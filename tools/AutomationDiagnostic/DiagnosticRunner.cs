@@ -25,15 +25,20 @@ internal sealed class DiagnosticRunner : IDisposable
     private readonly string _password;
     private readonly string _expectedUsername;
     private readonly string? _executablePath;
+    private readonly string _siteName;
+    private readonly string _searchDate;
     private readonly UIA3Automation _automation;
     private Application? _app;
     private Window? _mainWindow;
 
-    public DiagnosticRunner(string password, string expectedUsername, string? executablePath = null)
+    public DiagnosticRunner(string password, string expectedUsername, string? executablePath,
+        string siteName, string searchDate)
     {
         _password = password;
         _expectedUsername = expectedUsername;
         _executablePath = executablePath;
+        _siteName = siteName;
+        _searchDate = searchDate;
         _automation = new UIA3Automation();
     }
 
@@ -512,12 +517,12 @@ internal sealed class DiagnosticRunner : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // STEP 5: Search for Matches (press Enter to trigger search)
+    // STEP 5: Set Filters and Search for Matches
     // ═══════════════════════════════════════════════════════════════════════
 
     private bool Step5_SearchForMatches()
     {
-        PrintStep(5, "Trigger match search (Enter key — no search button exists)");
+        PrintStep(5, "Set filters and search for matches");
         var cf = _automation.ConditionFactory;
 
         try
@@ -531,12 +536,124 @@ internal sealed class DiagnosticRunner : IDisposable
                 return false;
             }
 
-            // Focus the dialog and press Enter to trigger search
-            Console.WriteLine("  Focusing Open Match dialog...");
-            dialog.Focus();
-            Thread.Sleep(300);
+            // Safety check: verify "Connected to Server" label
+            Console.WriteLine("  Checking server connection status...");
+            var connectedText = FindDescendant(dialog, cf.ByName("Connected to Server"));
+            if (connectedText == null)
+            {
+                // Check for alternative states
+                var notConnected = FindDescendant(dialog, cf.ByName("Not Connected to Server"));
+                if (notConnected != null)
+                {
+                    PrintFail("PCS Pro is NOT connected to server — cannot search online matches.");
+                    return false;
+                }
 
+                // Dump to see what the actual status text says
+                Console.WriteLine("  ⚠ 'Connected to Server' label not found — dumping to investigate...");
+                DumpAndSave("step5-connection-unknown", maxDepth: 8);
+                PrintFail("Unable to verify server connection status.");
+                return false;
+            }
+            Console.WriteLine("  ✓ Connected to Server confirmed");
+
+            // 1. Click "Clear Filters"
+            Console.WriteLine("  Clicking 'Clear Filters'...");
+            var clearFilters = FindDescendant(dialog, cf.ByName("Clear Filters"));
+            if (clearFilters == null)
+            {
+                PrintFail("'Clear Filters' link not found.");
+                DumpAndSave("step5-no-clear-filters");
+                return false;
+            }
+            clearFilters.Click();
+            Thread.Sleep(500);
+            Console.WriteLine("  ✓ Filters cleared");
+
+            // 2. Select site from Site dropdown
+            Console.WriteLine($"  Setting Site to '{_siteName}'...");
+            var siteComboBoxes = FindAllDescendants(dialog, cf.ByControlType(ControlType.ComboBox));
+            // The Site combobox is the first ComboBox without an AutomationId (or with no specific ID)
+            // From the tree dump: it's the ComboBox right after the "Site:" label
+            AutomationElement? siteCombo = null;
+            foreach (var combo in siteComboBoxes)
+            {
+                var autoId = SafeGet(() => combo.AutomationId);
+                if (string.IsNullOrEmpty(autoId) || autoId == "<error>")
+                {
+                    siteCombo = combo;
+                    break;
+                }
+            }
+
+            if (siteCombo == null)
+            {
+                PrintFail("Site ComboBox not found.");
+                DumpAndSave("step5-no-site-combo");
+                return false;
+            }
+
+            // Expand the combo and look for matching item
+            siteCombo.Click();
+            Thread.Sleep(500);
+
+            var siteItem = FindDescendant(_mainWindow!, cf.ByName(_siteName));
+            if (siteItem == null)
+            {
+                Console.WriteLine($"  ⚠ Site '{_siteName}' not found in dropdown — dumping...");
+                DumpAndSave("step5-site-not-found", maxDepth: 8);
+                PrintFail($"Site '{_siteName}' not found in Site dropdown.");
+                return false;
+            }
+            siteItem.Click();
+            Thread.Sleep(300);
+            Console.WriteLine($"  ✓ Site set to '{_siteName}'");
+
+            // 3. Set Date From and Date To
+            Console.WriteLine($"  Setting date range to '{_searchDate}'...");
+            var datePickers = FindAllDescendants(dialog,
+                cf.ByClassName("DatePicker"));
+
+            if (datePickers.Length < 2)
+            {
+                PrintFail($"Expected 2 DatePicker controls, found {datePickers.Length}.");
+                DumpAndSave("step5-date-pickers");
+                return false;
+            }
+
+            // Set both Date From and Date To to the search date
+            for (int i = 0; i < 2; i++)
+            {
+                var label = i == 0 ? "Date From" : "Date To";
+                var textBox = FindDescendant(datePickers[i],
+                    cf.ByAutomationId("PART_TextBox"));
+                if (textBox == null)
+                {
+                    PrintFail($"{label}: TextBox not found inside DatePicker.");
+                    return false;
+                }
+
+                textBox.Click();
+                Thread.Sleep(200);
+
+                // Select all existing text and replace with search date
+                FlaUI.Core.Input.Keyboard.TypeSimultaneously(
+                    FlaUI.Core.WindowsAPI.VirtualKeyShort.CONTROL,
+                    FlaUI.Core.WindowsAPI.VirtualKeyShort.KEY_A);
+                FlaUI.Core.Input.Keyboard.Type(_searchDate);
+                Thread.Sleep(200);
+
+                // Tab out to commit the value
+                FlaUI.Core.Input.Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.TAB);
+                Thread.Sleep(200);
+
+                Console.WriteLine($"  ✓ {label} set to '{_searchDate}'");
+            }
+
+            // 4. Press Enter to trigger search
             Console.WriteLine("  Pressing Enter to trigger search...");
+            dialog.Focus();
+            Thread.Sleep(200);
             FlaUI.Core.Input.Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.ENTER);
             Thread.Sleep(500);
 
