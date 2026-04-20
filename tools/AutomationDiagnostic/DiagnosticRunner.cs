@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Drawing.Imaging;
 using FlaUI.Core;
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Capturing;
 using FlaUI.Core.Conditions;
 using FlaUI.Core.Definitions;
 using FlaUI.UIA3;
@@ -346,7 +348,7 @@ internal sealed class DiagnosticRunner : IDisposable
         // Step 9: Find scoreboard elements
         if (!Step9_FindScoreboardElements()) return;
 
-        // Step 10: Find change match element
+        // Step 10: Change match (select 2nd match)
         if (!Step10_FindChangeMatchElement()) return;
 
         PrintSuccess();
@@ -1543,8 +1545,43 @@ internal sealed class DiagnosticRunner : IDisposable
             DumpAndSave("step9-scoreboard-after-refresh", maxDepth: 6);
         }
 
-        PrintPass("Scoreboard found and refresh triggered");
+        // Capture a screenshot of the scoreboard pane for diagnostic output
+        Console.WriteLine("\n  Capturing scoreboard screenshot...");
+        CaptureScoreboardImage(freshScoreboard ?? scoreboardPane);
+
+        PrintPass("Scoreboard found, refreshed, and captured");
         return PauseForUser();
+    }
+
+    /// <summary>
+    /// Captures a screenshot of the scoreboard element and saves it as a PNG
+    /// to the output directory. This validates the screen-grab approach that
+    /// will be used in the production application.
+    /// </summary>
+    private void CaptureScoreboardImage(AutomationElement scoreboardElement)
+    {
+        try
+        {
+            var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            var fileName = $"scoreboard-capture-{timestamp}.png";
+            var filePath = Path.Combine(_outputDirectory, fileName);
+
+            var image = Capture.Element(scoreboardElement);
+            image.ToFile(filePath);
+
+            var fileInfo = new FileInfo(filePath);
+            Console.WriteLine($"  ✓ Scoreboard screenshot saved: {fileName} ({fileInfo.Length / 1024}KB)");
+            Console.WriteLine($"    Path: {filePath}");
+
+            // Report dimensions from bounding rectangle
+            var bounds = scoreboardElement.BoundingRectangle;
+            Console.WriteLine($"    Dimensions: {bounds.Width}x{bounds.Height} at ({bounds.X},{bounds.Y})");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  ⚠ Screenshot capture failed: {ex.Message}");
+            Console.WriteLine($"    This may occur if the element is off-screen or not visible.");
+        }
     }
 
     /// <summary>
@@ -1812,51 +1849,288 @@ internal sealed class DiagnosticRunner : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // STEP 10: Find Change Match Element
+    // STEP 10: Change Match — Open 2nd match to validate change-match flow
     // ═══════════════════════════════════════════════════════════════════════
 
     private bool Step10_FindChangeMatchElement()
     {
-        PrintStep(10, "Find change-match element");
+        PrintStep(10, "Change match — select 2nd match from grid and verify load");
         var cf = _automation.ConditionFactory;
 
-        if (KnownElements.ChangeMatchElementAutomationId == "TODO")
+        try
         {
-            Console.WriteLine("  No known change-match AutomationId — searching for likely candidates...");
-
-            // Look for buttons/menu items that might relate to changing matches
-            var buttons = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.Button));
-            var menuItems = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.MenuItem));
-
-            Console.WriteLine($"  Found {buttons.Length} Button(s) and {menuItems.Length} MenuItem(s):");
-            foreach (var e in buttons.Concat(menuItems))
+            // --- 10a: Open File → Open Match... ---
+            Console.WriteLine("  Opening File → Open Match...");
+            var fileMenu = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.FileMenuAutomationId));
+            if (fileMenu == null)
             {
-                var name = SafeGet(() => e.Name);
-                if (!string.IsNullOrWhiteSpace(name))
-                    PrintElement("    ", e);
+                PrintFail("File menu not found.");
+                DumpAndSave("step10-no-file-menu");
+                return false;
             }
 
-            var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 5);
-            Console.WriteLine($"\n  ── UI Tree: step10-change-match ──");
-            Console.WriteLine(dump);
-            Console.WriteLine($"  ── End ──");
-            PrintWait("Review and report which element triggers the change-match action.");
-            return false;
-        }
+            var openMatch = ClickMenuItem(fileMenu, KnownElements.OpenMatchMenuItemAutomationId, cf);
+            if (openMatch == null)
+            {
+                PrintFail("'Open Match...' menu item not found.");
+                DumpAndSave("step10-no-open-match");
+                return false;
+            }
+            Console.WriteLine("  ✓ Open Match clicked");
+            Thread.Sleep(500);
+            RefreshMainWindow();
 
-        var element = FindDescendant(_mainWindow!,
-            cf.ByAutomationId(KnownElements.ChangeMatchElementAutomationId));
+            // --- 10b: Wait for dialog to appear ---
+            Console.WriteLine("  Waiting for Open Match dialog...");
+            var dialog = WaitForElement(_mainWindow!,
+                cf.ByName(KnownElements.MatchSelectionDialogName), LoginTransitionTimeoutSeconds * 1000);
 
-        if (element != null)
-        {
-            Console.WriteLine($"  ✓ Change-match element found");
-            PrintElement("    ", element);
-            PrintPass();
+            if (dialog == null)
+            {
+                PrintFail("Open Match dialog did not appear.");
+                DumpAndSave("step10-no-dialog");
+                return false;
+            }
+            Console.WriteLine("  ✓ Open Match dialog found");
+
+            // --- 10c: Wait for spinner to clear (filters should still be set from first search) ---
+            Console.WriteLine("  Waiting for search to complete (filters should be retained)...");
+            if (!WaitForSpinnerIdle(dialog, cf))
+            {
+                PrintFail("Search spinner did not clear.");
+                DumpAndSave("step10-spinner-timeout");
+                return false;
+            }
+
+            // --- 10d: Find the grid and select 2nd row ---
+            var grid = FindDescendant(dialog,
+                cf.ByAutomationId(KnownElements.MatchDataGridAutomationId));
+            if (grid == null)
+            {
+                PrintFail("DataGrid not found in Open Match dialog.");
+                DumpAndSave("step10-no-grid");
+                return false;
+            }
+
+            var rows = FindAllDescendants(grid, cf.ByControlType(ControlType.DataItem));
+            Console.WriteLine($"  Grid has {rows.Length} row(s)");
+
+            if (rows.Length < 2)
+            {
+                PrintFail($"Need at least 2 rows to test change-match, found {rows.Length}.");
+                DumpAndSave("step10-not-enough-rows");
+                return false;
+            }
+
+            // Log what we're selecting
+            for (int i = 0; i < Math.Min(rows.Length, 3); i++)
+                Console.WriteLine($"    Row[{i}]: \"{SafeGet(() => rows[i].Name)}\"");
+
+            var secondRow = rows[1];
+            Console.WriteLine($"  [{Timestamp()}] Selecting row[1]: \"{SafeGet(() => secondRow.Name)}\"");
+
+            if (!SelectDataGridRow(secondRow))
+            {
+                PrintFail("Could not select row[1].");
+                DumpAndSave("step10-select-failed");
+                return false;
+            }
+            Console.WriteLine($"  [{Timestamp()}] ✓ Row[1] selected");
+            Thread.Sleep(500);
+
+            // --- 10e: Capture title before opening, then click "Open Read Only" ---
+            _titleBeforeMatchOpen = SafeGet(() => _mainWindow!.Title);
+
+            var openReadOnly = FindDescendant(dialog,
+                cf.ByAutomationId(KnownElements.OpenReadOnlyButtonAutomationId))
+                ?? FindDescendant(_mainWindow!,
+                    cf.ByAutomationId(KnownElements.OpenReadOnlyButtonAutomationId));
+
+            if (openReadOnly == null)
+            {
+                Console.WriteLine("  ⚠ 'Open Read Only' button not found — using double-click fallback");
+                secondRow.DoubleClick();
+                Console.WriteLine("  ✓ Double-clicked row[1]");
+            }
+            else
+            {
+                var invokeError = InvokeButtonSafely(openReadOnly);
+                if (invokeError != null)
+                {
+                    Console.WriteLine($"  ⚠ InvokeButtonSafely failed: {invokeError} — using double-click");
+                    secondRow.DoubleClick();
+                }
+                else
+                {
+                    Console.WriteLine($"  [{Timestamp()}] ✓ 'Open Read Only' invoked");
+                }
+            }
+
+            // --- 10f: Wait for match to load (reuse Step 7 logic inline) ---
+            Console.WriteLine($"  [{Timestamp()}] Waiting for match load...");
+            var sw = Stopwatch.StartNew();
+            bool dialogGone = false;
+            bool titleChanged = false;
+            bool syncReady = false;
+
+            while (sw.Elapsed.TotalSeconds < MatchLoadTimeoutSeconds)
+            {
+                RefreshMainWindow();
+
+                if (!dialogGone)
+                {
+                    var matchDialog = FindDescendant(_mainWindow!,
+                        cf.ByName(KnownElements.MatchSelectionDialogName));
+                    if (matchDialog == null)
+                    {
+                        dialogGone = true;
+                        Console.WriteLine($"  [{Timestamp()}] ✓ Dialog closed [{sw.Elapsed:mm\\:ss}]");
+                    }
+                }
+
+                if (dialogGone && !titleChanged)
+                {
+                    var currentTitle = SafeGet(() => _mainWindow!.Title);
+                    if (currentTitle != _titleBeforeMatchOpen)
+                    {
+                        titleChanged = true;
+                        Console.WriteLine($"  [{Timestamp()}] ✓ Title changed [{sw.Elapsed:mm\\:ss}]");
+                        Console.WriteLine($"    New: \"{SafeGet(() => _mainWindow!.Title)}\"");
+                    }
+                }
+
+                if (dialogGone && !syncReady)
+                {
+                    var syncBar = FindDescendant(_mainWindow!, cf.ByClassName(KnownElements.StatusBarClassName));
+                    if (syncBar != null)
+                    {
+                        var syncText = FindAllDescendants(syncBar, cf.ByControlType(ControlType.Text))
+                            .FirstOrDefault(t => SafeGet(() => t.Name) == "Up to Date");
+                        if (syncText != null)
+                        {
+                            syncReady = true;
+                            Console.WriteLine($"  [{Timestamp()}] ✓ Sync: Up to Date [{sw.Elapsed:mm\\:ss}]");
+                        }
+                    }
+                }
+
+                if (dialogGone && syncReady)
+                    break;
+
+                var status = $"dialog={(!dialogGone ? "open" : "closed")} title={(!titleChanged ? "unchanged" : "changed")} sync={(!syncReady ? "pending" : "ready")}";
+                Console.Write($"\r  [{sw.Elapsed:mm\\:ss}] Waiting... {status}");
+                Thread.Sleep(PollIntervalMs);
+            }
+
+            Console.WriteLine();
+
+            if (!dialogGone)
+            {
+                PrintFail("Open Match dialog did not close within timeout.");
+                DumpAndSave("step10-dialog-stuck");
+                return false;
+            }
+
+            if (!syncReady)
+            {
+                PrintFail("Sync status never reached 'Up to Date' within timeout.");
+                DumpAndSave("step10-sync-timeout");
+                return false;
+            }
+
+            // Allow panels to settle
+            Thread.Sleep(2000);
+            RefreshMainWindow();
+
+            Console.WriteLine($"  Window title: \"{SafeGet(() => _mainWindow!.Title)}\"");
+
+            // --- 10g: Re-extract team names to confirm different match loaded ---
+            Console.WriteLine("\n  Re-extracting team names to confirm match change...");
+            var teamData = ExtractTeamNames(cf);
+            if (teamData != null)
+            {
+                Console.WriteLine($"  Team 1: Club=\"{teamData.Value.club1}\" Team=\"{teamData.Value.team1}\"");
+                Console.WriteLine($"  Team 2: Club=\"{teamData.Value.club2}\" Team=\"{teamData.Value.team2}\"");
+            }
+            else
+            {
+                Console.WriteLine("  ⚠ Could not extract team names (non-fatal)");
+            }
+
+            // --- 10h: Capture scoreboard for the new match ---
+            Console.WriteLine("\n  Capturing scoreboard for new match...");
+            RefreshMainWindow();
+            var scoreboard = FindDescendant(_mainWindow!,
+                cf.ByAutomationId("twdReplayScreen"));
+            if (scoreboard != null)
+            {
+                CaptureScoreboardImage(scoreboard);
+            }
+            else
+            {
+                Console.WriteLine("  ⚠ Main Scoreboard not found for capture (non-fatal)");
+            }
+
+            PrintPass(titleChanged ? "Match changed — title changed" : "Match changed — sync confirmed");
             return PauseForUser();
         }
+        catch (Exception ex)
+        {
+            PrintFail($"Error in change-match flow: {ex.Message}");
+            DumpAndSave("step10-error");
+            return false;
+        }
+    }
 
-        PrintFail("Change-match element not found with known AutomationId.");
-        return false;
+    /// <summary>
+    /// Opens Scoring → Match Details/Teams, extracts club and team names
+    /// from both MatchTeamViews, then closes the dialog. Returns the data
+    /// or null if extraction fails.
+    /// </summary>
+    private (string club1, string team1, string club2, string team2)? ExtractTeamNames(ConditionFactory cf)
+    {
+        var scoringMenu = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.ScoringMenuAutomationId));
+        if (scoringMenu == null)
+        {
+            Console.WriteLine("    ⚠ Scoring menu not found");
+            return null;
+        }
+
+        var matchDetailsItem = ClickMenuItemByName(
+            scoringMenu, KnownElements.MatchDetailsMenuItemName, cf);
+        if (matchDetailsItem == null)
+        {
+            Console.WriteLine("    ⚠ Match Details/Teams menu item not found");
+            return null;
+        }
+
+        Thread.Sleep(1000);
+        RefreshMainWindow();
+
+        var dialog = WaitForElement(_mainWindow!,
+            cf.ByName(KnownElements.MatchDetailsDialogName), 5000);
+        if (dialog == null)
+        {
+            Console.WriteLine("    ⚠ Match Details dialog did not appear");
+            return null;
+        }
+
+        var teamViews = FindAllDescendants(dialog,
+            cf.ByClassName(KnownElements.MatchTeamViewClassName));
+        if (teamViews.Length < 2)
+        {
+            Console.WriteLine($"    ⚠ Expected 2 MatchTeamViews, found {teamViews.Length}");
+            CloseMatchDetailsDialog(dialog, cf);
+            return null;
+        }
+
+        var club1 = ReadComboBoxValue(FindDescendant(teamViews[0], cf.ByAutomationId(KnownElements.ClubComboBoxAutomationId)));
+        var team1 = ReadComboBoxValue(FindDescendant(teamViews[0], cf.ByAutomationId(KnownElements.TeamComboBoxAutomationId)));
+        var club2 = ReadComboBoxValue(FindDescendant(teamViews[1], cf.ByAutomationId(KnownElements.ClubComboBoxAutomationId)));
+        var team2 = ReadComboBoxValue(FindDescendant(teamViews[1], cf.ByAutomationId(KnownElements.TeamComboBoxAutomationId)));
+
+        CloseMatchDetailsDialog(dialog, cf);
+        return (club1, team1, club2, team2);
     }
 
     // ═══════════════════════════════════════════════════════════════════════

@@ -91,6 +91,7 @@ internal static class KnownElements
     public static string ScoreboardWindowName = "TODO";
 
     // ── Step 5: Change Match (File → Open Match... re-use) ───────────────
+    // Change match uses File → Open Match... (same as Step 4). No separate element needed.
     public static string FileMenuAutomationId = "mnuFile";
-    public static string ChangeMatchElementAutomationId = "TODO";
+    public static string ChangeMatchElementAutomationId = "btnOpenMatch";
 }
