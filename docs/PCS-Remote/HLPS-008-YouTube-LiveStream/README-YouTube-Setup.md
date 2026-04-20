@@ -86,7 +86,7 @@ Complete these items **once** before the first match day. Tick each off as you g
 
 1. Open [YouTube Studio](https://studio.youtube.com).
 2. Sign in with the Google account that manages the club's YouTube channel.
-   - **Brand Account?** If the club channel is a Brand Account, sign in with your personal Google account that has **Owner** or **Manager** access, then switch to the Brand Account channel in YouTube Studio (click your profile icon → **Switch account**). See [Brand Account Considerations](#13-brand-account-considerations) for details.
+   - **Brand Account?** If the club channel is a Brand Account, select the **Brand Account identity directly** in the Google account chooser — do NOT sign in with your personal account. The YouTube Studio "default channel" setting is a UI preference only and does not affect which channel the API (or Studio features like live streaming) operates on. See [Brand Account Considerations](#13-brand-account-considerations) for details.
 3. Click **Create** (the camera/+ icon) → **Go Live**.
 4. If live streaming is not already enabled:
    - Click **Enable**.
@@ -138,7 +138,7 @@ This tells Google what your app is and who can use it.
    - Click **Update** → **Save and Continue**
 6. **Test users** screen: click **Add Users**:
    - Add the email address of the Google account that will run `--setup-youtube` on the garage PC.
-   - **Brand Account?** Add the **personal Google account email** (not the Brand Account email), because OAuth consent happens at the personal account level.
+   - **Brand Account?** Add **both** the personal Google account email **and** the Brand Account email. During `--setup-youtube`, the operator selects the Brand Account identity in the account chooser — Google needs the Brand Account listed as a test user for consent to succeed.
    - Click **Save and Continue**.
 7. Review the summary and click **Back to Dashboard**.
 
@@ -246,7 +246,7 @@ This step authorises PCS Remote to manage YouTube broadcasts on your channel. It
 
 3. A browser window opens showing the Google sign-in page.
 4. Sign in with the Google account that manages the club's YouTube channel.
-   - **Brand Account?** Sign in with your **personal Google account** that has Owner/Manager access to the Brand Account channel. See [Brand Account Considerations](#13-brand-account-considerations).
+   - **Brand Account?** When the account chooser appears, select the **Brand Account identity directly** — do NOT select your personal Google account. Signing in as the personal account will bind the token to your personal channel (which may not have live streaming enabled), even if the Brand Account is your "default channel" in YouTube Studio. See [Brand Account Considerations](#13-brand-account-considerations).
 5. You may see **"This app isn't verified"** — this is expected in Testing mode:
    - Click **Advanced** → **Go to PCS Remote (unsafe)** → **Continue**.
 6. Grant the requested permission: **"Manage your YouTube account"**.
@@ -328,23 +328,23 @@ A Brand Account is a YouTube channel identity that can be managed by multiple Go
 
 ### How OAuth works with Brand Accounts
 
-- OAuth consent happens at the **personal Google account** level, not the Brand Account level.
-- When you run `--setup-youtube`, sign in with the **personal Google account** that has **Owner** or **Manager** access to the Brand Account channel.
-- The OAuth token is bound to that personal Google account.
-- YouTube API calls with `mine=true` (used by PCS Remote for broadcast reconciliation) query broadcasts belonging to the **currently active channel** — which depends on how the account is configured.
+- During OAuth consent (whether via `--setup-youtube` or the API Explorer), Google's account chooser presents **both** your personal Google account **and** any Brand Account identities you manage.
+- **You must select the Brand Account identity directly.** Selecting your personal account binds the token to your personal channel — which likely does not have live streaming enabled and does not own the club's `liveStream` resource.
+- The YouTube Studio "default channel" setting is a **UI preference only** — it does NOT affect which channel API calls (including `mine=true`) operate on. The API always operates on the channel of the authenticated identity.
+- The OAuth token is bound to whichever identity you selected in the account chooser.
 
 ### Key gotchas
 
 | Issue | Impact | Mitigation |
 |-------|--------|------------|
-| `mine=true` may query the personal channel instead of the Brand Account channel | Broadcast reconciliation at startup may not find existing broadcasts on the Brand Account channel | Ensure the personal account's "default channel" is set to the Brand Account channel, or verify during end-to-end testing |
-| The `LiveStreamId` is channel-specific | If you switch to a different channel, the `LiveStreamId` will not be found and PCS Remote will fail at startup | Always use the `LiveStreamId` from the Brand Account channel, obtained while signed in as that channel |
-| Token is tied to the personal account | If the person loses Manager access to the Brand Account, the token becomes invalid | Ensure the person running `--setup-youtube` has permanent Owner access to the Brand Account |
-| Multiple managed channels | If the personal account manages multiple Brand Account channels, API calls may target the wrong channel | Verify during end-to-end testing that broadcasts appear on the correct channel |
+| Selecting the personal account instead of the Brand Account during OAuth | Token bound to personal channel — API calls fail (e.g., "live streaming not enabled") or target the wrong channel. The "default channel" setting in YouTube Studio does **not** redirect API calls. | **Always select the Brand Account identity** in the account chooser during `--setup-youtube`. This is confirmed by real-world testing. |
+| The `LiveStreamId` is channel-specific | If the token is bound to a different channel than the one that owns the `LiveStreamId`, the service will fail at startup with "LiveStreamId not found" | Obtain the `LiveStreamId` while signed in as the Brand Account (Step 9), and ensure `--setup-youtube` was also run with the Brand Account selected |
+| Token is tied to the selected identity | If the person who ran `--setup-youtube` loses access to the Brand Account, the token becomes invalid | Ensure the person running `--setup-youtube` has permanent Owner access to the Brand Account |
+| Multiple Brand Accounts in the account chooser | The operator might accidentally select the wrong Brand Account | Verify during end-to-end testing (Step 10) that broadcasts appear on the correct channel |
 
 ### Recommendation
 
-For simplest setup: ensure the personal Google account used for `--setup-youtube` has **Owner** access to the Brand Account channel and does **not** have its own personal YouTube channel (or has its default channel set to the Brand Account). This avoids ambiguity about which channel `mine=true` queries.
+When running `--setup-youtube` or the API Explorer, **always select the Brand Account identity directly** in the account chooser. Do not select your personal Google account — even if the Brand Account is your "default channel" in YouTube Studio, that setting has no effect on API authentication. This has been confirmed through real-world testing: signing in with the personal account produces errors about live streaming not being enabled, while signing in directly as the Brand Account works correctly.
 
 ---
 
@@ -501,10 +501,13 @@ No need to touch the garage PC, YouTube Studio, or PCS Pro directly.
 **Cause:** A stream operation is already in progress or the service is in an error state.
 **Fix:** Wait for the current operation to complete, or click **Dismiss** (if in Error state) to reset to Idle, then try again.
 
-### Broadcasts appearing on the wrong YouTube channel
+### Broadcasts appearing on the wrong YouTube channel / "Live streaming not enabled" errors
 
-**Cause:** Brand Account user authenticated to their personal channel instead of the Brand Account channel.
-**Fix:** See [Brand Account Considerations](#13-brand-account-considerations). Revoke the current token, switch to the correct channel in YouTube, and re-run `--setup-youtube`.
+**Cause:** During `--setup-youtube` (or API Explorer), the operator selected their **personal Google account** instead of the **Brand Account identity** in the account chooser. The YouTube Studio "default channel" setting does NOT affect which channel the API operates on.
+**Fix:** 
+1. Delete the token file: `%AppData%\PcsRemote\GoogleTokens\`
+2. Re-run `--setup-youtube` (Step 8).
+3. In the account chooser, select the **Brand Account** identity — not your personal account.
 
 ---
 
