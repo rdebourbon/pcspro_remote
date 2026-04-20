@@ -1551,7 +1551,7 @@ internal sealed class DiagnosticRunner : IDisposable
         Console.WriteLine("\n  Capturing scoreboard screenshot...");
         var captureTarget = freshScoreboard ?? scoreboardPane;
         ActivateToolWindow(captureTarget);
-        Thread.Sleep(500);
+        Thread.Sleep(2000);
 
         var previewElement = FindDescendant(captureTarget,
             cf.ByAutomationId("ReplayScreenPreview"));
@@ -1583,6 +1583,7 @@ internal sealed class DiagnosticRunner : IDisposable
     /// Captures a screenshot of the scoreboard element and saves it as a PNG
     /// to the output directory. This validates the screen-grab approach that
     /// will be used in the production application.
+    /// Handles DPI scaling by comparing UIA coordinates with screen DPI.
     /// </summary>
     private void CaptureScoreboardImage(AutomationElement scoreboardElement)
     {
@@ -1592,16 +1593,40 @@ internal sealed class DiagnosticRunner : IDisposable
             var fileName = $"scoreboard-capture-{timestamp}.png";
             var filePath = Path.Combine(_outputDirectory, fileName);
 
-            var image = Capture.Element(scoreboardElement);
+            var bounds = scoreboardElement.BoundingRectangle;
+            Console.WriteLine($"    UIA BoundingRect: {bounds.Width}x{bounds.Height} at ({bounds.X},{bounds.Y})");
+
+            // Detect DPI scale factor — UIA returns coordinates in the process's
+            // DPI context. On high-DPI systems with a DPI-unaware process, UIA
+            // virtualizes to logical coords but CopyFromScreen may use physical.
+            // Scale to physical to ensure correct capture area.
+            using var g = System.Drawing.Graphics.FromHwnd(IntPtr.Zero);
+            float dpiScaleX = g.DpiX / 96f;
+            float dpiScaleY = g.DpiY / 96f;
+            Console.WriteLine($"    DPI scale: {dpiScaleX:F2}x{dpiScaleY:F2}");
+
+            System.Drawing.Rectangle captureBounds;
+            if (Math.Abs(dpiScaleX - 1.0f) > 0.01f || Math.Abs(dpiScaleY - 1.0f) > 0.01f)
+            {
+                // Scale UIA logical coords to physical screen coords
+                captureBounds = new System.Drawing.Rectangle(
+                    (int)(bounds.X * dpiScaleX),
+                    (int)(bounds.Y * dpiScaleY),
+                    (int)(bounds.Width * dpiScaleX),
+                    (int)(bounds.Height * dpiScaleY));
+                Console.WriteLine($"    Physical capture: {captureBounds.Width}x{captureBounds.Height} at ({captureBounds.X},{captureBounds.Y})");
+            }
+            else
+            {
+                captureBounds = bounds;
+            }
+
+            var image = Capture.Rectangle(captureBounds);
             image.ToFile(filePath);
 
             var fileInfo = new FileInfo(filePath);
             Console.WriteLine($"  ✓ Scoreboard screenshot saved: {fileName} ({fileInfo.Length / 1024}KB)");
             Console.WriteLine($"    Path: {filePath}");
-
-            // Report dimensions from bounding rectangle
-            var bounds = scoreboardElement.BoundingRectangle;
-            Console.WriteLine($"    Dimensions: {bounds.Width}x{bounds.Height} at ({bounds.X},{bounds.Y})");
         }
         catch (Exception ex)
         {
@@ -1641,9 +1666,55 @@ internal sealed class DiagnosticRunner : IDisposable
     /// Attempts to activate a ToolWindow pane so its title bar buttons become
     /// interactive. Tries SelectionItemPattern first, then Focus, then Click.
     /// </summary>
-    private static void ActivateToolWindow(AutomationElement toolWindow)
+    /// <summary>
+    /// Activates a ToolWindow tab by finding its tab header in the parent
+    /// ToolWindowContainer and clicking it. Falls back to Focus/Click on
+    /// the pane itself if the tab header cannot be found.
+    /// </summary>
+    private void ActivateToolWindow(AutomationElement toolWindow)
     {
-        // Try SelectionItemPattern (TabItem-like selection)
+        var cf = _automation.ConditionFactory;
+        var toolWindowName = SafeGet(() => toolWindow.Name);
+
+        // Strategy 1: Find the tab header in the parent ToolWindowContainer
+        // and click it to switch tabs visually.
+        try
+        {
+            var container = WalkUpToClassName(toolWindow, "ToolWindowContainer");
+            if (container != null)
+            {
+                // Look for TabItem elements in the container's tab strip
+                var tabItems = FindAllDescendants(container, cf.ByControlType(ControlType.TabItem));
+                foreach (var tab in tabItems)
+                {
+                    var tabName = SafeGet(() => tab.Name);
+                    if (tabName.Contains(toolWindowName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        tab.Click();
+                        Console.WriteLine($"    ✓ Clicked tab header: \"{tabName}\"");
+                        return;
+                    }
+                }
+
+                // No TabItem — look for a clickable header with matching text
+                var headers = FindAllDescendants(container, cf.ByControlType(ControlType.Header));
+                foreach (var header in headers)
+                {
+                    var headerName = SafeGet(() => header.Name);
+                    if (headerName.Contains(toolWindowName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        header.Click();
+                        Console.WriteLine($"    ✓ Clicked header: \"{headerName}\"");
+                        return;
+                    }
+                }
+
+                Console.WriteLine($"    ⚠ No matching tab header found for \"{toolWindowName}\"");
+            }
+        }
+        catch { /* fall through to other strategies */ }
+
+        // Strategy 2: SelectionItemPattern (TabItem-like selection)
         try
         {
             if (toolWindow.Patterns.SelectionItem.IsSupported)
@@ -1655,7 +1726,7 @@ internal sealed class DiagnosticRunner : IDisposable
         }
         catch { /* fall through */ }
 
-        // Try Focus
+        // Strategy 3: Focus
         try
         {
             toolWindow.Focus();
@@ -1663,7 +1734,7 @@ internal sealed class DiagnosticRunner : IDisposable
         }
         catch { /* focus may fail */ }
 
-        // Click as last resort
+        // Strategy 4: Click as last resort
         try
         {
             toolWindow.Click();
@@ -2092,7 +2163,7 @@ internal sealed class DiagnosticRunner : IDisposable
             {
                 // Activate the scoreboard tab (it may be tabbed with Video Display)
                 ActivateToolWindow(scoreboard);
-                Thread.Sleep(500);
+                Thread.Sleep(2000);
 
                 var preview = FindDescendant(scoreboard,
                     cf.ByAutomationId("ReplayScreenPreview"));
