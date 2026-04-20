@@ -358,6 +358,29 @@ internal sealed class DiagnosticRunner : IDisposable
             submitBtn.Click();
             Console.WriteLine("  ✓ Submit button clicked");
 
+            // Wait briefly, then check if login failed (error message appeared)
+            Console.WriteLine("  Waiting 3s for login response...");
+            Thread.Sleep(3000);
+
+            var loginDialog = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.LoginDialogAutomationId));
+            if (loginDialog != null)
+            {
+                // Login dialog still visible — check for error text
+                var allText = FindAllDescendants(loginDialog, cf.ByControlType(ControlType.Text));
+                var errorText = allText.FirstOrDefault(t =>
+                    SafeGet(() => t.Name)?.Contains("incorrect", StringComparison.OrdinalIgnoreCase) == true ||
+                    SafeGet(() => t.Name)?.Contains("error", StringComparison.OrdinalIgnoreCase) == true);
+
+                if (errorText != null)
+                {
+                    PrintFail($"Login failed — PCS Pro says: \"{SafeGet(() => errorText.Name)}\"");
+                    return false;
+                }
+
+                // Dialog still showing but no error — might be slow, continue to Step 4
+                Console.WriteLine("  ⚠ Login dialog still visible but no error text — may be slow");
+            }
+
             PrintPass();
             return PauseForUser();
         }
