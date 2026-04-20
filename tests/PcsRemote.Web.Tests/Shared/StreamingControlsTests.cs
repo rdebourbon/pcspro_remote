@@ -17,11 +17,13 @@ public class StreamingControlsTests
         IRenderedComponent<StreamingControls> Cut,
         Mock<IYouTubeLiveStreamService> StreamMock,
         Mock<IOperationCoordinatorService> CoordinatorMock,
+        Mock<IConfirmDialogService> DialogMock,
         BunitContext Ctx)
     Build(
         LiveStreamStatus initialStatus = LiveStreamStatus.Idle,
         LiveBroadcastInfo? broadcast = null,
-        bool operationInProgress = false)
+        bool operationInProgress = false,
+        bool? confirmResult = true)
     {
         var streamMock = new Mock<IYouTubeLiveStreamService>();
         streamMock.Setup(s => s.CurrentStatus).Returns(initialStatus);
@@ -38,12 +40,17 @@ public class StreamingControlsTests
             .Setup(c => c.MarkComplete())
             .Raises(c => c.OperationInProgressChanged += null, coordinatorMock.Object, false);
 
+        var dialogMock = new Mock<IConfirmDialogService>();
+        dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(confirmResult);
+
         var ctx = new BunitContext();
         ctx.Services.AddSingleton(streamMock.Object);
         ctx.Services.AddSingleton(coordinatorMock.Object);
+        ctx.Services.AddSingleton(dialogMock.Object);
 
         var cut = ctx.Render<StreamingControls>();
-        return (cut, streamMock, coordinatorMock, ctx);
+        return (cut, streamMock, coordinatorMock, dialogMock, ctx);
     }
 
     private static readonly LiveBroadcastInfo TestBroadcast = new(
@@ -54,7 +61,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void StartButton_WhenIdle_IsEnabled()
     {
-        var (cut, _, _, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, _, _, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             var btn = cut.Find(".streaming-controls__btn--start");
@@ -67,7 +74,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void StopButton_WhenIdle_IsDisabled()
     {
-        var (cut, _, _, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, _, _, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             var btn = cut.Find(".streaming-controls__btn--stop");
@@ -80,7 +87,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void StartButton_WhenLive_IsDisabled()
     {
-        var (cut, _, _, ctx) = Build(LiveStreamStatus.Live, TestBroadcast);
+        var (cut, _, _, _, ctx) = Build(LiveStreamStatus.Live, TestBroadcast);
         using (ctx)
         {
             cut.Find(".streaming-controls__btn--start").HasAttribute("disabled").Should().BeTrue();
@@ -92,7 +99,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void StopButton_WhenLive_IsEnabled()
     {
-        var (cut, _, _, ctx) = Build(LiveStreamStatus.Live, TestBroadcast);
+        var (cut, _, _, _, ctx) = Build(LiveStreamStatus.Live, TestBroadcast);
         using (ctx)
         {
             cut.Find(".streaming-controls__btn--stop").HasAttribute("disabled").Should().BeFalse();
@@ -104,7 +111,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void OnStartClickedAsync_WhenIdle_CallsStartStreamAsync()
     {
-        var (cut, streamMock, _, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, streamMock, _, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             streamMock.Setup(s => s.StartStreamAsync(It.IsAny<CancellationToken>()))
@@ -122,7 +129,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void OnStopClickedAsync_WhenLive_CallsStopStreamAsync()
     {
-        var (cut, streamMock, _, ctx) = Build(LiveStreamStatus.Live, TestBroadcast);
+        var (cut, streamMock, _, _, ctx) = Build(LiveStreamStatus.Live, TestBroadcast);
         using (ctx)
         {
             streamMock.Setup(s => s.StopStreamAsync(It.IsAny<CancellationToken>()))
@@ -140,7 +147,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void CancelButton_WhenStarting_IsVisible()
     {
-        var (cut, _, _, ctx) = Build(LiveStreamStatus.Starting);
+        var (cut, _, _, _, ctx) = Build(LiveStreamStatus.Starting);
         using (ctx)
         {
             cut.Find(".streaming-controls__btn--cancel").Should().NotBeNull();
@@ -152,7 +159,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void CancelButton_WhenIdle_IsNotPresent()
     {
-        var (cut, _, _, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, _, _, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             cut.FindAll(".streaming-controls__btn--cancel").Should().BeEmpty();
@@ -171,9 +178,12 @@ public class StreamingControlsTests
         var coordinatorMock = new Mock<IOperationCoordinatorService>();
         coordinatorMock.Setup(c => c.IsOperationInProgress).Returns(false);
 
+        var dialogMock = new Mock<IConfirmDialogService>();
+
         var ctx = new BunitContext();
         ctx.Services.AddSingleton(streamMock.Object);
         ctx.Services.AddSingleton(coordinatorMock.Object);
+        ctx.Services.AddSingleton(dialogMock.Object);
 
         using (ctx)
         {
@@ -203,9 +213,12 @@ public class StreamingControlsTests
         var coordinatorMock = new Mock<IOperationCoordinatorService>();
         coordinatorMock.Setup(c => c.IsOperationInProgress).Returns(false);
 
+        var dialogMock = new Mock<IConfirmDialogService>();
+
         var ctx = new BunitContext();
         ctx.Services.AddSingleton(streamMock.Object);
         ctx.Services.AddSingleton(coordinatorMock.Object);
+        ctx.Services.AddSingleton(dialogMock.Object);
 
         using (ctx)
         {
@@ -228,7 +241,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void WatchLink_WhenLive_IsVisible()
     {
-        var (cut, _, _, ctx) = Build(LiveStreamStatus.Live, TestBroadcast);
+        var (cut, _, _, _, ctx) = Build(LiveStreamStatus.Live, TestBroadcast);
         using (ctx)
         {
             var link = cut.Find(".streaming-controls__watch-link");
@@ -242,7 +255,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void WatchLink_WhenIdle_IsNotPresent()
     {
-        var (cut, _, _, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, _, _, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             cut.FindAll(".streaming-controls__watch-link").Should().BeEmpty();
@@ -254,7 +267,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void OnStatusChanged_TransitionsToLive_UpdatesUI()
     {
-        var (cut, streamMock, _, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, streamMock, _, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             streamMock.Raise(s => s.StatusChanged += null, streamMock.Object,
@@ -273,7 +286,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void Dispose_UnsubscribesFromStatusChanged()
     {
-        var (cut, streamMock, _, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, streamMock, _, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             cut.Instance.Dispose();
@@ -289,7 +302,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void Dispose_UnsubscribesFromCoordinatorEvent()
     {
-        var (cut, _, coordinatorMock, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, _, coordinatorMock, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             cut.Instance.Dispose();
@@ -305,7 +318,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void OnStartClickedAsync_BeginOperationCalledBeforeStartStream()
     {
-        var (cut, streamMock, coordinatorMock, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, streamMock, coordinatorMock, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             var callOrder = new List<string>();
@@ -332,7 +345,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void StartButton_WhenOperationInProgress_IsDisabled()
     {
-        var (cut, _, _, ctx) = Build(LiveStreamStatus.Idle, operationInProgress: true);
+        var (cut, _, _, _, ctx) = Build(LiveStreamStatus.Idle, operationInProgress: true);
         using (ctx)
         {
             cut.Find(".streaming-controls__btn--start").HasAttribute("disabled").Should().BeTrue();
@@ -344,7 +357,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void StopButton_WhenOperationInProgress_IsDisabled()
     {
-        var (cut, _, _, ctx) = Build(LiveStreamStatus.Live, TestBroadcast, operationInProgress: true);
+        var (cut, _, _, _, ctx) = Build(LiveStreamStatus.Live, TestBroadcast, operationInProgress: true);
         using (ctx)
         {
             cut.Find(".streaming-controls__btn--stop").HasAttribute("disabled").Should().BeTrue();
@@ -359,7 +372,7 @@ public class StreamingControlsTests
         // Verified by all other tests: the mock is accepted at the
         // IYouTubeLiveStreamService DI slot. This test explicitly
         // confirms a real Mock<IYouTubeLiveStreamService> resolves.
-        var (cut, _, _, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, _, _, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             cut.Markup.Should().Contain("streaming-controls");
@@ -371,7 +384,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void OnStartClickedAsync_BeginOperationFails_StartStreamNotCalled()
     {
-        var (cut, streamMock, coordinatorMock, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, streamMock, coordinatorMock, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             coordinatorMock.Setup(c => c.BeginOperation()).Returns(false);
@@ -391,7 +404,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void OnStartClickedAsync_ServiceThrows_MarkCompleteCalledInFinally()
     {
-        var (cut, streamMock, coordinatorMock, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, streamMock, coordinatorMock, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             streamMock.Setup(s => s.StartStreamAsync(It.IsAny<CancellationToken>()))
@@ -409,7 +422,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void OnStartClickedAsync_ServiceThrows_TransitionsToErrorState()
     {
-        var (cut, streamMock, _, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, streamMock, _, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             streamMock.Setup(s => s.StartStreamAsync(It.IsAny<CancellationToken>()))
@@ -430,7 +443,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void OnStopClickedAsync_ServiceThrows_MarkCompleteCalledInFinally()
     {
-        var (cut, streamMock, coordinatorMock, ctx) = Build(LiveStreamStatus.Live, TestBroadcast);
+        var (cut, streamMock, coordinatorMock, _, ctx) = Build(LiveStreamStatus.Live, TestBroadcast);
         using (ctx)
         {
             streamMock.Setup(s => s.StopStreamAsync(It.IsAny<CancellationToken>()))
@@ -448,7 +461,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void OnStopClickedAsync_ServiceThrows_TransitionsToErrorState()
     {
-        var (cut, streamMock, _, ctx) = Build(LiveStreamStatus.Live, TestBroadcast);
+        var (cut, streamMock, _, _, ctx) = Build(LiveStreamStatus.Live, TestBroadcast);
         using (ctx)
         {
             streamMock.Setup(s => s.StopStreamAsync(It.IsAny<CancellationToken>()))
@@ -475,7 +488,7 @@ public class StreamingControlsTests
     public void StatusBadge_ForEachStatus_ShowsCorrectTextAndClass(LiveStreamStatus status, string expectedText, string expectedClass)
     {
         var broadcast = status == LiveStreamStatus.Live ? TestBroadcast : null;
-        var (cut, _, _, ctx) = Build(status, broadcast);
+        var (cut, _, _, _, ctx) = Build(status, broadcast);
         using (ctx)
         {
             var badge = cut.Find(".streaming-controls__badge");
@@ -489,7 +502,7 @@ public class StreamingControlsTests
     [TestMethod]
     public void OnOperationInProgressChanged_FiredTrue_DisablesStartButton()
     {
-        var (cut, _, coordinatorMock, ctx) = Build(LiveStreamStatus.Idle);
+        var (cut, _, coordinatorMock, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
             cut.Find(".streaming-controls__btn--start").HasAttribute("disabled").Should().BeFalse();
@@ -525,9 +538,14 @@ public class StreamingControlsTests
         coordinatorMock.Setup(c => c.IsOperationInProgress).Returns(false);
         coordinatorMock.Setup(c => c.BeginOperation()).Returns(true);
 
+        var dialogMock = new Mock<IConfirmDialogService>();
+        dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(true);
+
         var ctx = new BunitContext();
         ctx.Services.AddSingleton(streamMock.Object);
         ctx.Services.AddSingleton(coordinatorMock.Object);
+        ctx.Services.AddSingleton(dialogMock.Object);
 
         using (ctx)
         {
@@ -540,6 +558,74 @@ public class StreamingControlsTests
             cut.Find(".streaming-controls__btn--cancel").Click();
 
             capturedToken.IsCancellationRequested.Should().BeTrue();
+        }
+    }
+
+    // ── Consent confirmation dialog tests ────────────────────────────────────
+
+    [TestMethod]
+    public void OnStartClicked_ShowsConsentConfirmDialog()
+    {
+        var (cut, _, _, dialogMock, ctx) = Build(LiveStreamStatus.Idle, confirmResult: false);
+        using (ctx)
+        {
+            cut.Find(".streaming-controls__btn--start").Click();
+
+            cut.WaitForAssertion(() =>
+                dialogMock.Verify(
+                    d => d.ConfirmAsync(
+                        It.Is<string>(msg => msg.Contains("consents and approvals")),
+                        "Start Live Stream"),
+                    Times.Once));
+        }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(null)]
+    public void OnStartClicked_ConsentDeclined_DoesNotCallStartStream(bool? confirmResult)
+    {
+        var (cut, streamMock, _, _, ctx) = Build(LiveStreamStatus.Idle, confirmResult: confirmResult);
+        using (ctx)
+        {
+            cut.Find(".streaming-controls__btn--start").Click();
+
+            cut.WaitForAssertion(() =>
+                streamMock.Verify(
+                    s => s.StartStreamAsync(It.IsAny<CancellationToken>()), Times.Never));
+        }
+    }
+
+    [TestMethod]
+    public void OnStartClicked_ConsentConfirmed_ProceedsToStartStream()
+    {
+        var (cut, streamMock, _, _, ctx) = Build(LiveStreamStatus.Idle, confirmResult: true);
+        using (ctx)
+        {
+            streamMock.Setup(s => s.StartStreamAsync(It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+
+            cut.Find(".streaming-controls__btn--start").Click();
+
+            cut.WaitForAssertion(() =>
+                streamMock.Verify(
+                    s => s.StartStreamAsync(It.IsAny<CancellationToken>()), Times.Once));
+        }
+    }
+
+    [TestMethod]
+    public void OnStartClicked_ConsentDeclined_MarkCompleteReleasesLock()
+    {
+        var (cut, _, coordinatorMock, _, ctx) = Build(LiveStreamStatus.Idle, confirmResult: false);
+        using (ctx)
+        {
+            cut.Find(".streaming-controls__btn--start").Click();
+
+            cut.WaitForAssertion(() =>
+            {
+                coordinatorMock.Verify(c => c.BeginOperation(), Times.Once);
+                coordinatorMock.Verify(c => c.MarkComplete(), Times.Once);
+            });
         }
     }
 }

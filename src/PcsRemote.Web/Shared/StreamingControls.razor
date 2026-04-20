@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject IYouTubeLiveStreamService StreamService
 @inject IOperationCoordinatorService CoordinatorService
+@inject IConfirmDialogService ConfirmDialogService
 
 <div class="streaming-controls">
     <div class="streaming-controls__header">
@@ -109,13 +110,22 @@
     {
         if (_operationInProgress) return;
 
-        var acquired = false;
-        _startCts?.Dispose();
-        _startCts = new CancellationTokenSource();
+        var acquired = CoordinatorService.BeginOperation();
+        if (!acquired) return;
+
         try
         {
-            acquired = CoordinatorService.BeginOperation();
-            if (!acquired) return;
+            var confirmed = await ConfirmDialogService.ConfirmAsync(
+                "You are about to start a public live stream on YouTube.\n\n" +
+                "Please confirm that you have obtained all necessary consents and approvals " +
+                "to live stream this match, including from players, officials, and parents/guardians " +
+                "of any minors involved.",
+                "Start Live Stream");
+
+            if (confirmed != true) return;
+
+            _startCts?.Dispose();
+            _startCts = new CancellationTokenSource();
             await StreamService.StartStreamAsync(_startCts.Token);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -126,7 +136,7 @@
         }
         finally
         {
-            if (acquired) CoordinatorService.MarkComplete();
+            CoordinatorService.MarkComplete();
         }
     }
 

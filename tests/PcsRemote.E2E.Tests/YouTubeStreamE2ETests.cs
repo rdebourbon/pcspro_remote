@@ -130,6 +130,11 @@ public class YouTubeStreamE2ETests
         // Step 4: Click Start Stream on page1.
         await _page1.Locator(".streaming-controls__btn--start").ClickAsync();
 
+        // Step 4b: Consent confirmation dialog appears — click OK to proceed.
+        var okButton = _page1.GetByRole(AriaRole.Button, new() { Name = "OK" });
+        await okButton.WaitForAsync(new() { Timeout = ShortTimeoutMs });
+        await okButton.ClickAsync();
+
         // Step 5: Both contexts should transition to Live.
         // Mock has 100ms start delay so this should be fast.
         await _page1.Locator(".streaming-controls__badge", new() { HasText = "Live" })
