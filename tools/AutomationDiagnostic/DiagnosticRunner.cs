@@ -395,62 +395,120 @@ internal sealed class DiagnosticRunner : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // STEP 4: Wait for Match Selection Screen
+    // STEP 4: Navigate to Match Selection via File → Open Match...
     // ═══════════════════════════════════════════════════════════════════════
 
     private bool Step4_WaitForMatchSelection()
     {
-        PrintStep(4, "Wait for match selection screen after login");
+        PrintStep(4, "Navigate to match selection via File → Open Match...");
 
-        if (KnownElements.MatchSearchButtonAutomationId == "TODO")
+        try
         {
-            Console.WriteLine("  No known search button AutomationId — dumping tree for discovery.");
-            Console.WriteLine($"  Waiting {LoginTransitionTimeoutSeconds}s for UI to settle...");
-            Thread.Sleep(LoginTransitionTimeoutSeconds * 1000);
-
-            RefreshMainWindow();
-            var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 6);
-            var path = TreeDumper.SaveToDesktop(dump, "step4-match-selection");
-            Console.WriteLine($"  Full tree saved to: {path}");
-
-            // Also search for DataGrid controls which might be the match list
             var cf = _automation.ConditionFactory;
-            var dataGrids = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.DataGrid));
-            var tables = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.Table));
-            var lists = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.List));
 
-            Console.WriteLine($"  Found {dataGrids.Length} DataGrid(s), {tables.Length} Table(s), {lists.Length} List(s):");
-            foreach (var e in dataGrids.Concat(tables).Concat(lists))
-                PrintElement("    ", e);
+            // PCS Pro reopens the last match after login — match selection doesn't auto-appear.
+            // We must use File → Open Match... to get the selection dialog.
 
-            PrintWait("Review the output and report back which elements are the search button and data grid.");
-            return false;
-        }
-
-        // Poll for the search button to appear
-        var sw = Stopwatch.StartNew();
-        while (sw.Elapsed.TotalSeconds < LoginTransitionTimeoutSeconds)
-        {
-            RefreshMainWindow();
-            var searchBtn = FindDescendant(_mainWindow!,
-                _automation.ConditionFactory.ByAutomationId(KnownElements.MatchSearchButtonAutomationId));
-            if (searchBtn != null)
+            Console.WriteLine("  Opening File menu...");
+            var fileMenu = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.FileMenuAutomationId));
+            if (fileMenu == null)
             {
-                Console.WriteLine($"  ✓ Match selection screen detected — search button found");
-                PrintPass();
-                return PauseForUser();
+                PrintFail("File menu not found");
+                DumpAndSave("step4-no-file-menu");
+                return false;
             }
 
-            Console.Write($"\r  [{sw.Elapsed:mm\\:ss}] Waiting for match selection...");
-            Thread.Sleep(PollIntervalMs);
-        }
+            fileMenu.Click();
+            Thread.Sleep(500);
 
-        Console.WriteLine();
-        PrintFail("Match selection screen did not appear within timeout.");
-        var failDump = TreeDumper.Dump(_mainWindow!, maxDepth: 6);
-        var failPath = TreeDumper.SaveToDesktop(failDump, "step4-timeout");
-        Console.WriteLine($"  Tree saved to: {failPath}");
-        return false;
+            // Dump the expanded File menu to discover the menu items
+            Console.WriteLine("  File menu clicked — dumping menu items...");
+            RefreshMainWindow();
+
+            // Find the "Open Match..." menu item
+            var openMatch = FindDescendant(_mainWindow!,
+                cf.ByName(KnownElements.OpenMatchMenuItemName));
+
+            if (openMatch == null)
+            {
+                // Dump tree to discover what menu items are available
+                Console.WriteLine("  ⚠ 'Open Match...' not found by Name — dumping tree for discovery.");
+                var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 6);
+                var path = TreeDumper.SaveToDesktop(dump, "step4-file-menu-expanded");
+                Console.WriteLine($"  Full tree saved to: {path}");
+                PrintWait("Review the file menu dump — look for the Open Match menu item name.");
+                return false;
+            }
+
+            PrintElement("  Found: ", openMatch);
+            Console.WriteLine("  Clicking 'Open Match...'...");
+            openMatch.Click();
+            Console.WriteLine("  ✓ Open Match clicked");
+
+            // Wait for match selection dialog to appear
+            Console.WriteLine($"  Waiting up to {LoginTransitionTimeoutSeconds}s for match selection dialog...");
+            Thread.Sleep(3000); // give it a moment to open
+
+            RefreshMainWindow();
+
+            if (KnownElements.MatchSearchButtonAutomationId == "TODO")
+            {
+                Console.WriteLine("  No known search button AutomationId — dumping tree for discovery.");
+                var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 8);
+                var path = TreeDumper.SaveToDesktop(dump, "step4-match-selection");
+                Console.WriteLine($"  Full tree saved to: {path}");
+
+                // Also search for DataGrid controls which might be the match list
+                var dataGrids = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.DataGrid));
+                var tables = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.Table));
+                var lists = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.List));
+
+                Console.WriteLine($"  Found {dataGrids.Length} DataGrid(s), {tables.Length} Table(s), {lists.Length} List(s):");
+                foreach (var e in dataGrids.Concat(tables).Concat(lists))
+                    PrintElement("    ", e);
+
+                // Search for any child Window elements (match selection might be a dialog)
+                var childWindows = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.Window));
+                if (childWindows.Length > 0)
+                {
+                    Console.WriteLine($"  Found {childWindows.Length} child Window(s):");
+                    foreach (var w in childWindows)
+                        PrintElement("    ", w);
+                }
+
+                PrintWait("Review the output and report back which elements are the search button and data grid.");
+                return false;
+            }
+
+            // Poll for the search button to appear
+            var sw = Stopwatch.StartNew();
+            while (sw.Elapsed.TotalSeconds < LoginTransitionTimeoutSeconds)
+            {
+                RefreshMainWindow();
+                var searchBtn = FindDescendant(_mainWindow!,
+                    cf.ByAutomationId(KnownElements.MatchSearchButtonAutomationId));
+                if (searchBtn != null)
+                {
+                    Console.WriteLine($"  ✓ Match selection screen detected — search button found");
+                    PrintPass();
+                    return PauseForUser();
+                }
+
+                Console.Write($"\r  [{sw.Elapsed:mm\\:ss}] Waiting for match selection...");
+                Thread.Sleep(PollIntervalMs);
+            }
+
+            Console.WriteLine();
+            PrintFail("Match selection screen did not appear within timeout.");
+            DumpAndSave("step4-timeout");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            PrintFail($"Error navigating to match selection: {ex.Message}");
+            DumpAndSave("step4-error");
+            return false;
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -798,6 +856,14 @@ internal sealed class DiagnosticRunner : IDisposable
     {
         try { return parent.FindAllDescendants(condition); }
         catch { return []; }
+    }
+
+    private void DumpAndSave(string label, int maxDepth = 6)
+    {
+        RefreshMainWindow();
+        var dump = TreeDumper.Dump(_mainWindow!, maxDepth: maxDepth);
+        var path = TreeDumper.SaveToDesktop(dump, label);
+        Console.WriteLine($"  Tree saved to: {path}");
     }
 
     private static void PrintElement(string indent, AutomationElement e)

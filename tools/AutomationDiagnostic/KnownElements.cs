@@ -20,6 +20,9 @@ internal static class KnownElements
     public static string LoginCancelButtonAutomationId = "btnCancel";
     public static string LoginSwitchUserText = "Switch User";
 
+    // ── Navigation: File → Open Match ────────────────────────────────────
+    public static string OpenMatchMenuItemName = "Open Match...";
+
     // ── Step 2: Match Selection ───────────────────────────────────────────
     public static string MatchSearchButtonAutomationId = "TODO";
     public static string MatchDataGridAutomationId = "TODO";
