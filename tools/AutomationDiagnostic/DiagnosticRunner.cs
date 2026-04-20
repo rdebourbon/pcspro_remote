@@ -805,8 +805,11 @@ internal sealed class DiagnosticRunner : IDisposable
             Console.WriteLine($"  ── End ──");
 
             // Click "Open Read Only" — this instance must always open readonly
-            var openReadOnly = FindDescendant(_mainWindow!,
-                cf.ByAutomationId(KnownElements.OpenReadOnlyButtonAutomationId));
+            // Re-find the button fresh (UI tree may have shifted during enumeration)
+            var dialog = FindDescendant(_mainWindow!, cf.ByName(KnownElements.MatchSelectionDialogName));
+            var openReadOnly = dialog != null
+                ? FindDescendant(dialog, cf.ByAutomationId(KnownElements.OpenReadOnlyButtonAutomationId))
+                : FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.OpenReadOnlyButtonAutomationId));
             // Capture window title before opening — Step 7 will wait for it to change
             _titleBeforeMatchOpen = SafeGet(() => _mainWindow!.Title);
 
@@ -819,8 +822,9 @@ internal sealed class DiagnosticRunner : IDisposable
             else
             {
                 PrintElement("  Found: ", openReadOnly);
-                openReadOnly.Click();
-                Console.WriteLine("  ✓ 'Open Read Only' clicked");
+                // Use InvokePattern for reliable button activation (mouse Click can miss in WPF)
+                openReadOnly.AsButton().Invoke();
+                Console.WriteLine("  ✓ 'Open Read Only' invoked");
             }
 
             PrintPass();
