@@ -475,12 +475,18 @@ internal sealed class DiagnosticRunner : IDisposable
             }
 
             fileMenu.Click();
-            Thread.Sleep(200);
+            Thread.Sleep(300);
 
-            // Find the "Open Match..." menu item within the expanded File menu
+            // Find the "Open Match..." menu item — retry briefly for menu expansion
             Console.WriteLine("  File menu clicked — looking for Open Match...");
-            var openMatch = FindDescendant(fileMenu,
-                cf.ByName(KnownElements.OpenMatchMenuItemName));
+            AutomationElement? openMatch = null;
+            for (int attempt = 0; attempt < 5 && openMatch == null; attempt++)
+            {
+                openMatch = FindDescendant(fileMenu,
+                    cf.ByAutomationId(KnownElements.OpenMatchMenuItemAutomationId));
+                if (openMatch == null)
+                    Thread.Sleep(200);
+            }
 
             if (openMatch == null)
             {

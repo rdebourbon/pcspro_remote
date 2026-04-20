@@ -22,6 +22,7 @@ internal static class KnownElements
 
     // ── Navigation: File → Open Match ────────────────────────────────────
     public static string OpenMatchMenuItemName = "Open Match...";
+    public static string OpenMatchMenuItemAutomationId = "btnOpenMatch";
 
     // ── Step 2: Match Selection (Open Match dialog) ───────────────────────
     // The Open Match dialog has no Search button — Enter key triggers search
