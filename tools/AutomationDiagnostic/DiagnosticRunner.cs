@@ -631,14 +631,22 @@ internal sealed class DiagnosticRunner : IDisposable
             submitBtn.Click();
             Console.WriteLine("  ✓ Submit button clicked");
 
-            // Wait briefly, then check if login failed (error message appeared)
+            // Wait for login to complete — poll until dialog disappears or error appears
             Console.WriteLine("  Waiting for login response...");
             Thread.Sleep(1000);
 
-            var loginDialog = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.LoginDialogAutomationId));
-            if (loginDialog != null)
+            var sw = Stopwatch.StartNew();
+            while (sw.Elapsed.TotalSeconds < 30)
             {
-                // Login dialog still visible — check for error text
+                var loginDialog = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.LoginDialogAutomationId));
+                if (loginDialog == null)
+                {
+                    Console.WriteLine($"  ✓ Login dialog closed [{sw.Elapsed:mm\\:ss}]");
+                    PrintPass();
+                    return PauseForUser();
+                }
+
+                // Check for error text while dialog is still visible
                 var allText = FindAllDescendants(loginDialog, cf.ByControlType(ControlType.Text));
                 var errorText = allText.FirstOrDefault(t =>
                     SafeGet(() => t.Name)?.Contains("incorrect", StringComparison.OrdinalIgnoreCase) == true ||
@@ -650,12 +658,11 @@ internal sealed class DiagnosticRunner : IDisposable
                     return false;
                 }
 
-                // Dialog still showing but no error — might be slow, continue to Step 4
-                Console.WriteLine("  ⚠ Login dialog still visible but no error text — may be slow");
+                Thread.Sleep(PollIntervalMs);
             }
 
-            PrintPass();
-            return PauseForUser();
+            PrintFail("Login dialog did not close within 30s.");
+            return false;
         }
         catch (Exception ex)
         {
@@ -679,23 +686,6 @@ internal sealed class DiagnosticRunner : IDisposable
         try
         {
             var cf = _automation.ConditionFactory;
-
-            // Wait for login dialog to disappear — Step 3 may pass while it's
-            // still closing, and the menu bar isn't reliably accessible until
-            // the modal dialog is fully gone.
-            Console.WriteLine("  Waiting for login dialog to close...");
-            var loginSw = Stopwatch.StartNew();
-            while (loginSw.Elapsed.TotalSeconds < 30)
-            {
-                var loginDialog = FindDescendant(_mainWindow!,
-                    cf.ByAutomationId(KnownElements.LoginDialogAutomationId));
-                if (loginDialog == null)
-                {
-                    Console.WriteLine($"  ✓ Login dialog closed [{loginSw.Elapsed:mm\\:ss}]");
-                    break;
-                }
-                Thread.Sleep(PollIntervalMs);
-            }
 
             // PCS Pro reopens the last match after login — match selection doesn't auto-appear.
             // We must use File → Open Match... to get the selection dialog.
