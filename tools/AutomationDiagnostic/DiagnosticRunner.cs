@@ -1545,9 +1545,35 @@ internal sealed class DiagnosticRunner : IDisposable
             DumpAndSave("step9-scoreboard-after-refresh", maxDepth: 6);
         }
 
-        // Capture a screenshot of the scoreboard pane for diagnostic output
+        // Capture a screenshot of the scoreboard content (ReplayScreenPreview),
+        // not the ToolWindow pane which includes title bar chrome.
+        // Re-activate the tab — the Refresh click may have shifted focus.
         Console.WriteLine("\n  Capturing scoreboard screenshot...");
-        CaptureScoreboardImage(freshScoreboard ?? scoreboardPane);
+        var captureTarget = freshScoreboard ?? scoreboardPane;
+        ActivateToolWindow(captureTarget);
+        Thread.Sleep(500);
+
+        var previewElement = FindDescendant(captureTarget,
+            cf.ByAutomationId("ReplayScreenPreview"));
+
+        if (previewElement != null)
+        {
+            Console.WriteLine($"  ✓ ReplayScreenPreview found — using as capture target");
+            PrintElement("    ", previewElement);
+
+            // Dump the preview element subtree to discover any inner canvas/image controls
+            var previewDump = TreeDumper.Dump(previewElement, maxDepth: 8);
+            Console.WriteLine($"\n  ── UI Tree: ReplayScreenPreview internals ──");
+            Console.WriteLine(previewDump);
+            Console.WriteLine($"  ── End ──");
+
+            CaptureScoreboardImage(previewElement);
+        }
+        else
+        {
+            Console.WriteLine("  ⚠ ReplayScreenPreview not found — falling back to ToolWindow pane");
+            CaptureScoreboardImage(captureTarget);
+        }
 
         PrintPass("Scoreboard found, refreshed, and captured");
         return PauseForUser();
@@ -2064,7 +2090,13 @@ internal sealed class DiagnosticRunner : IDisposable
                 cf.ByAutomationId("twdReplayScreen"));
             if (scoreboard != null)
             {
-                CaptureScoreboardImage(scoreboard);
+                // Activate the scoreboard tab (it may be tabbed with Video Display)
+                ActivateToolWindow(scoreboard);
+                Thread.Sleep(500);
+
+                var preview = FindDescendant(scoreboard,
+                    cf.ByAutomationId("ReplayScreenPreview"));
+                CaptureScoreboardImage(preview ?? scoreboard);
             }
             else
             {
