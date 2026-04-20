@@ -72,6 +72,17 @@ internal sealed class DiagnosticRunner : IDisposable
         {
             RunSteps(logPath);
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║  💥 UNHANDLED EXCEPTION                                     ║");
+            Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine($"  {ex.GetType().FullName}: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
+        }
         finally
         {
             Console.SetOut(originalOut);
@@ -217,36 +228,40 @@ internal sealed class DiagnosticRunner : IDisposable
 
         while (sw.Elapsed.TotalSeconds < SplashTimeoutSeconds)
         {
-            var windows = _app!.GetAllTopLevelWindows(_automation);
+            var windows = GetTopLevelWindows();
+            if (windows.Length == 0)
+            {
+                Console.Write($"\r  [{sw.Elapsed:mm\\:ss}] Waiting for windows...          ");
+                Thread.Sleep(PollIntervalMs);
+                continue;
+            }
+
             Console.Write($"\r  [{sw.Elapsed:mm\\:ss}] Found {windows.Length} window(s)");
 
-            if (windows.Length > 0)
+            // Look for the "real" main window — typically the largest non-splash window
+            // or one with a meaningful title containing "PlayCricket" or similar.
+            var candidate = FindMainWindowCandidate(windows);
+            if (candidate != null)
             {
-                // Look for the "real" main window — typically the largest non-splash window
-                // or one with a meaningful title containing "PlayCricket" or similar.
-                var candidate = FindMainWindowCandidate(windows);
-                if (candidate != null)
+                if (stableWindow != null && candidate.Title == stableWindow.Title)
                 {
-                    if (stableWindow != null && candidate.Title == stableWindow.Title)
+                    stableCount++;
+                    if (stableCount >= 3) // Stable for 1.5+ seconds
                     {
-                        stableCount++;
-                        if (stableCount >= 3) // Stable for 1.5+ seconds
-                        {
-                            Console.WriteLine();
-                            _mainWindow = candidate;
-                            Console.WriteLine($"  Main window: \"{candidate.Title}\"");
-                            Console.WriteLine($"  ClassName: \"{candidate.ClassName}\"");
-                            Console.WriteLine($"  AutomationId: \"{candidate.AutomationId}\"");
-                            Console.WriteLine($"  Size: {candidate.BoundingRectangle.Width}x{candidate.BoundingRectangle.Height}");
-                            PrintPass();
-                            return PauseForUser();
-                        }
+                        Console.WriteLine();
+                        _mainWindow = candidate;
+                        Console.WriteLine($"  Main window: \"{candidate.Title}\"");
+                        Console.WriteLine($"  ClassName: \"{candidate.ClassName}\"");
+                        Console.WriteLine($"  AutomationId: \"{candidate.AutomationId}\"");
+                        Console.WriteLine($"  Size: {candidate.BoundingRectangle.Width}x{candidate.BoundingRectangle.Height}");
+                        PrintPass();
+                        return PauseForUser();
                     }
-                    else
-                    {
-                        stableWindow = candidate;
-                        stableCount = 1;
-                    }
+                }
+                else
+                {
+                    stableWindow = candidate;
+                    stableCount = 1;
                 }
             }
 
@@ -257,7 +272,7 @@ internal sealed class DiagnosticRunner : IDisposable
         PrintFail($"No stable main window appeared within {SplashTimeoutSeconds}s.");
 
         // Dump whatever windows are visible for debugging
-        var finalWindows = _app!.GetAllTopLevelWindows(_automation);
+        var finalWindows = GetTopLevelWindows();
         if (finalWindows.Length > 0)
         {
             Console.WriteLine("  Dumping all visible windows:");
@@ -975,7 +990,7 @@ internal sealed class DiagnosticRunner : IDisposable
             }
 
             // Also dump from top-level windows in case dialog is a separate window
-            var topWindows = _app!.GetAllTopLevelWindows(_automation);
+            var topWindows = GetTopLevelWindows();
             if (topWindows.Length > 1)
             {
                 Console.WriteLine($"  Found {topWindows.Length} top-level window(s):");
@@ -1025,7 +1040,7 @@ internal sealed class DiagnosticRunner : IDisposable
 
         // Search for the scoreboard window among all top-level windows
         Console.WriteLine("\n  Searching for scoreboard window among top-level windows...");
-        var allWindows = _app!.GetAllTopLevelWindows(_automation);
+        var allWindows = GetTopLevelWindows();
 
         bool found = false;
         foreach (var w in allWindows)
@@ -1126,10 +1141,15 @@ internal sealed class DiagnosticRunner : IDisposable
     // Helpers
     // ═══════════════════════════════════════════════════════════════════════
 
+    private Window[] GetTopLevelWindows()
+    {
+        try { return _app!.GetAllTopLevelWindows(_automation); }
+        catch (System.Runtime.InteropServices.COMException) { return []; }
+    }
+
     private void RefreshMainWindow()
     {
-        var windows = _app!.GetAllTopLevelWindows(_automation);
-        var candidate = FindMainWindowCandidate(windows);
+        var candidate = FindMainWindowCandidate(GetTopLevelWindows());
         if (candidate != null)
             _mainWindow = candidate;
     }
