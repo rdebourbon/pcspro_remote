@@ -43,12 +43,6 @@ internal static class Program
             }
         }
 
-        if (string.IsNullOrEmpty(username))
-        {
-            Console.Write("Enter expected PCS Pro username (or Enter to skip): ");
-            username = Console.ReadLine() ?? "";
-        }
-
         if (string.IsNullOrEmpty(password))
         {
             Console.Write("Enter PCS Pro password: ");
@@ -60,20 +54,9 @@ internal static class Program
             }
         }
 
-        if (string.IsNullOrEmpty(siteName))
-        {
-            Console.Write("Enter site/club name (default: High Halstow CC): ");
-            var input = Console.ReadLine();
-            siteName = string.IsNullOrEmpty(input) ? "High Halstow CC" : input;
-        }
-
-        if (string.IsNullOrEmpty(searchDate))
-        {
-            var today = DateTime.Today.ToString("dd/MM/yyyy");
-            Console.Write($"Enter search date dd/MM/yyyy (default: {today}): ");
-            var input = Console.ReadLine();
-            searchDate = string.IsNullOrEmpty(input) ? today : input;
-        }
+        username ??= "";
+        siteName ??= "High Halstow CC";
+        searchDate ??= DateTime.Today.ToString("dd/MM/yyyy");
 
         outputDir ??= Path.Combine(
             Path.GetDirectoryName(exePath) ?? Environment.CurrentDirectory,
