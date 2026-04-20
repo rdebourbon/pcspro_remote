@@ -745,20 +745,22 @@ internal sealed class DiagnosticRunner : IDisposable
                 return false;
             }
 
-            // Poll for the Open Match dialog or DataGrid to appear
+            // Poll for the Open Match dialog — search child Windows only (fast)
+            // rather than deep FindDescendant by Name (slow on WPF trees)
             var sw = Stopwatch.StartNew();
             while (sw.Elapsed.TotalSeconds < LoginTransitionTimeoutSeconds)
             {
-                RefreshMainWindow();
-
-                // Check for the Open Match dialog by name
-                var openMatchDialog = FindDescendant(_mainWindow!,
-                    cf.ByName(KnownElements.MatchSelectionDialogName));
-                if (openMatchDialog != null)
+                var childWindows = FindAllDescendants(_mainWindow!,
+                    cf.ByControlType(ControlType.Window));
+                foreach (var w in childWindows)
                 {
-                    Console.WriteLine($"  ✓ Open Match dialog detected");
-                    PrintPass();
-                    return PauseForUser();
+                    var name = SafeGet(() => w.Name);
+                    if (name == KnownElements.MatchSelectionDialogName)
+                    {
+                        Console.WriteLine($"  ✓ Open Match dialog detected");
+                        PrintPass();
+                        return PauseForUser();
+                    }
                 }
 
                 Console.Write($"\r  [{sw.Elapsed:mm\\:ss}] Waiting for match selection...");
