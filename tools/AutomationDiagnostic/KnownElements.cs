@@ -8,16 +8,24 @@ namespace AutomationDiagnostic;
 /// </summary>
 internal static class KnownElements
 {
+    // ── Main Window ───────────────────────────────────────────────────────
+    public const string MainWindowTitlePrefix = "Play-Cricket Scorer Pro";
+    public const string MainWindowAutomationId = "LayoutRoot";
+
     // ── Step 1: Login Screen ──────────────────────────────────────────────
-    public static string LoginPasswordFieldAutomationId = "TODO";
-    public static string LoginSubmitButtonAutomationId = "TODO";
+    public const string LoginDialogAutomationId = "window";
+    public static string LoginUsernameFieldAutomationId = "txtUsername";
+    public static string LoginPasswordFieldAutomationId = "txtPassword";
+    public static string LoginSubmitButtonAutomationId = "btnLogin";
+    public static string LoginCancelButtonAutomationId = "btnCancel";
+    public static string LoginSwitchUserText = "Switch User";
 
     // ── Step 2: Match Selection ───────────────────────────────────────────
     public static string MatchSearchButtonAutomationId = "TODO";
     public static string MatchDataGridAutomationId = "TODO";
 
     // ── Step 3: Team Names ────────────────────────────────────────────────
-    public static string ScoringMenuAutomationId = "TODO";
+    public static string ScoringMenuAutomationId = "mnuScoring";
     public static string HomeTeamComboBoxAutomationId = "TODO";
     public static string AwayTeamComboBoxAutomationId = "TODO";
 
@@ -27,5 +35,6 @@ internal static class KnownElements
     public static string ScoreboardWindowName = "TODO";
 
     // ── Step 5: Change Match ──────────────────────────────────────────────
+    public static string FileMenuAutomationId = "mnuFile";
     public static string ChangeMatchElementAutomationId = "TODO";
 }

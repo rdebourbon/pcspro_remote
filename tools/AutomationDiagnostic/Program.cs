@@ -6,6 +6,7 @@ internal static class Program
     {
         string? password = null;
         string? exePath = null;
+        string? username = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -13,6 +14,8 @@ internal static class Program
                 password = args[++i];
             if (args[i] is "-e" or "--exe" && i + 1 < args.Length)
                 exePath = args[++i];
+            if (args[i] is "-u" or "--username" && i + 1 < args.Length)
+                username = args[++i];
             if (args[i] is "-h" or "--help")
             {
                 PrintUsage();
@@ -31,6 +34,12 @@ internal static class Program
             }
         }
 
+        if (string.IsNullOrEmpty(username))
+        {
+            Console.Write("Enter expected PCS Pro username (or Enter to skip): ");
+            username = Console.ReadLine() ?? "";
+        }
+
         if (string.IsNullOrEmpty(password))
         {
             Console.Write("Enter PCS Pro password: ");
@@ -42,7 +51,7 @@ internal static class Program
             }
         }
 
-        using var runner = new DiagnosticRunner(password, exePath);
+        using var runner = new DiagnosticRunner(password, username, exePath);
         runner.Run();
         return 0;
     }
@@ -56,6 +65,7 @@ internal static class Program
 
             Options:
               -e, --exe <path>       Path to cricket.exe (required)
+              -u, --username <user>  Expected PCS Pro username (validates pre-filled value)
               -p, --password <pwd>   PCS Pro login password
               -h, --help             Show this help
 
@@ -64,7 +74,7 @@ internal static class Program
             it dumps the UI tree for that screen to the Desktop.
 
             Example:
-              AutomationDiagnostic -e "C:\PcsPro\cricket.exe" -p mypassword
+              AutomationDiagnostic -e "C:\PcsPro\cricket.exe" -u "myuser" -p "mypass"
 
             Tree dumps are saved to the Desktop as pcs-diag-*.txt
             """);

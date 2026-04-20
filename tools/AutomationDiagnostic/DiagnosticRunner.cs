@@ -23,14 +23,16 @@ internal sealed class DiagnosticRunner : IDisposable
     private const int MatchLoadTimeoutSeconds = 15;
 
     private readonly string _password;
+    private readonly string _expectedUsername;
     private readonly string? _executablePath;
     private readonly UIA3Automation _automation;
     private Application? _app;
     private Window? _mainWindow;
 
-    public DiagnosticRunner(string password, string? executablePath = null)
+    public DiagnosticRunner(string password, string expectedUsername, string? executablePath = null)
     {
         _password = password;
+        _expectedUsername = expectedUsername;
         _executablePath = executablePath;
         _automation = new UIA3Automation();
     }
@@ -236,9 +238,13 @@ internal sealed class DiagnosticRunner : IDisposable
 
     private static Window? FindMainWindowCandidate(Window[] windows)
     {
-        // Strategy: prefer windows with the largest bounding rectangle
-        // (splash screens tend to be small/centered, main app fills more space).
-        // Also filter out windows with empty titles or very small dimensions.
+        // Prefer windows whose title starts with the known PCS Pro prefix.
+        // Fall back to largest window if no title match (e.g. during splash transition).
+        var pcsWindow = windows.FirstOrDefault(w =>
+            SafeGet(() => w.Title)?.StartsWith(KnownElements.MainWindowTitlePrefix, StringComparison.OrdinalIgnoreCase) == true);
+        if (pcsWindow != null)
+            return pcsWindow;
+
         return windows
             .Where(w =>
             {
@@ -255,87 +261,66 @@ internal sealed class DiagnosticRunner : IDisposable
 
     private bool Step2_FindLoginElements()
     {
-        PrintStep(2, "Find login dialog elements (password field + submit button)");
-
-        // The login might be a modal dialog child of the main window,
-        // or it might be a separate top-level window.
+        PrintStep(2, "Find login dialog and verify username");
         var cf = _automation.ConditionFactory;
 
-        // Strategy 1: Search by AutomationId if we have them
-        if (KnownElements.LoginPasswordFieldAutomationId != "TODO")
+        // Find the login dialog (child Window with AutomationId="window")
+        var loginDialog = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.LoginDialogAutomationId));
+        if (loginDialog == null)
         {
-            var pwField = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.LoginPasswordFieldAutomationId));
-            var submitBtn = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.LoginSubmitButtonAutomationId));
-
-            if (pwField != null && submitBtn != null)
-            {
-                Console.WriteLine($"  ✓ Password field found: AutomationId=\"{pwField.AutomationId}\", ControlType={pwField.ControlType}");
-                Console.WriteLine($"  ✓ Submit button found: AutomationId=\"{submitBtn.AutomationId}\", ControlType={submitBtn.ControlType}");
-                PrintPass();
-                return PauseForUser();
-            }
-        }
-
-        // Strategy 2: Search by control type — find all Edit/Password controls and Buttons
-        Console.WriteLine("  Searching by control type (no known AutomationIds)...");
-        Console.WriteLine();
-
-        // Check main window AND any modal dialogs/child windows
-        var searchTargets = new List<(string Label, AutomationElement Element)>
-        {
-            ("Main Window", _mainWindow!)
-        };
-
-        // Also check all top-level windows (login might be a separate window)
-        var allWindows = _app!.GetAllTopLevelWindows(_automation);
-        for (int i = 0; i < allWindows.Length; i++)
-        {
-            if (allWindows[i].Title != _mainWindow!.Title)
-                searchTargets.Add(($"Window #{i + 1}: \"{allWindows[i].Title}\"", allWindows[i]));
-        }
-
-        foreach (var (label, target) in searchTargets)
-        {
-            Console.WriteLine($"  ── Searching in: {label} ──");
-
-            var edits = FindAllDescendants(target, cf.ByControlType(ControlType.Edit));
-            var passwords = FindAllDescendants(target, cf.ByControlType(ControlType.Custom))
-                .Where(e => SafeGet(() => e.ClassName)?.Contains("Password", StringComparison.OrdinalIgnoreCase) == true)
-                .ToArray();
-
-            var buttons = FindAllDescendants(target, cf.ByControlType(ControlType.Button));
-
-            Console.WriteLine($"  Found {edits.Length} Edit control(s):");
-            foreach (var e in edits)
-                PrintElement("    ", e);
-
-            if (passwords.Length > 0)
-            {
-                Console.WriteLine($"  Found {passwords.Length} Password-like control(s):");
-                foreach (var e in passwords)
-                    PrintElement("    ", e);
-            }
-
-            Console.WriteLine($"  Found {buttons.Length} Button control(s):");
-            foreach (var b in buttons)
-                PrintElement("    ", b);
-
-            Console.WriteLine();
-        }
-
-        // Always dump tree for analysis
-        var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 6);
-        var dumpPath = TreeDumper.SaveToDesktop(dump, "step2-login");
-        Console.WriteLine($"  Full tree saved to: {dumpPath}");
-
-        if (KnownElements.LoginPasswordFieldAutomationId == "TODO")
-        {
-            PrintWait("Review the output above and report back which elements are the password field and submit button.");
+            Console.WriteLine("  No login dialog found — app may already be logged in.");
+            Console.WriteLine("  Dumping main window tree for analysis...");
+            var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 4);
+            var path = TreeDumper.SaveToDesktop(dump, "step2-no-login-dialog");
+            Console.WriteLine($"  Tree saved to: {path}");
+            PrintWait("Is the login dialog visible? If already logged in, we can skip ahead.");
             return false;
         }
 
-        PrintFail("Known AutomationIds were set but elements were not found.");
-        return false;
+        Console.WriteLine($"  ✓ Login dialog found: AutomationId=\"{loginDialog.AutomationId}\"");
+
+        // Find username field and verify
+        var usernameField = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.LoginUsernameFieldAutomationId));
+        var pwField = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.LoginPasswordFieldAutomationId));
+        var submitBtn = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.LoginSubmitButtonAutomationId));
+
+        if (usernameField != null)
+        {
+            var currentUsername = SafeGet(() => usernameField.Patterns.Value.PatternOrDefault?.Value ?? usernameField.Name);
+            Console.WriteLine($"  ✓ Username field found — current value: \"{currentUsername}\"");
+
+            if (!string.IsNullOrEmpty(_expectedUsername) &&
+                !string.Equals(currentUsername, _expectedUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"  ⚠ Username mismatch! Expected \"{_expectedUsername}\", got \"{currentUsername}\"");
+                Console.WriteLine("  → Would need to click 'Switch User' in production code");
+                Console.ResetColor();
+            }
+            else if (!string.IsNullOrEmpty(_expectedUsername))
+            {
+                Console.WriteLine($"  ✓ Username matches expected: \"{_expectedUsername}\"");
+            }
+        }
+        else
+        {
+            Console.WriteLine("  ✗ Username field not found");
+        }
+
+        Console.WriteLine($"  Password field: {(pwField != null ? $"✓ FOUND (AutomationId=\"{pwField.AutomationId}\")" : "✗ NOT FOUND")}");
+        Console.WriteLine($"  Submit button: {(submitBtn != null ? $"✓ FOUND (AutomationId=\"{submitBtn.AutomationId}\")" : "✗ NOT FOUND")}");
+
+        if (pwField == null || submitBtn == null)
+        {
+            var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 6);
+            var path = TreeDumper.SaveToDesktop(dump, "step2-missing-elements");
+            Console.WriteLine($"  Tree saved to: {path}");
+            PrintFail("Login elements not found.");
+            return false;
+        }
+
+        PrintPass();
+        return PauseForUser();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -358,23 +343,16 @@ internal sealed class DiagnosticRunner : IDisposable
 
         try
         {
-            // Enter password
-            var editPattern = pwField.Patterns.Value.PatternOrDefault;
-            if (editPattern != null)
-            {
-                editPattern.SetValue(_password);
-                Console.WriteLine("  ✓ Password entered via ValuePattern");
-            }
-            else
-            {
-                // Fallback: try setting text via keyboard
-                pwField.Focus();
-                FlaUI.Core.Input.Keyboard.TypeSimultaneously(
-                    FlaUI.Core.WindowsAPI.VirtualKeyShort.CONTROL,
-                    FlaUI.Core.WindowsAPI.VirtualKeyShort.KEY_A);
-                FlaUI.Core.Input.Keyboard.Type(_password);
-                Console.WriteLine("  ✓ Password entered via keyboard input");
-            }
+            // Enter password — PasswordBox may not support ValuePattern, use keyboard
+            pwField.Focus();
+            Thread.Sleep(200);
+            FlaUI.Core.Input.Keyboard.TypeSimultaneously(
+                FlaUI.Core.WindowsAPI.VirtualKeyShort.CONTROL,
+                FlaUI.Core.WindowsAPI.VirtualKeyShort.KEY_A);
+            FlaUI.Core.Input.Keyboard.Type(_password);
+            Console.WriteLine("  ✓ Password entered");
+
+            Thread.Sleep(300);
 
             // Click submit
             submitBtn.Click();
