@@ -653,14 +653,13 @@ internal sealed class DiagnosticRunner : IDisposable
             Thread.Sleep(500);
             Console.WriteLine($"  ✓ Site set to '{_siteName}'");
 
-            // Wait for grid to stabilize after site selection (it triggers async search)
-            Console.WriteLine("  Waiting for grid to stabilize after site selection...");
-            var gridAfterSite = FindDescendant(dialog,
-                cf.ByAutomationId(KnownElements.MatchDataGridAutomationId));
-            if (gridAfterSite != null)
+            // Wait for spinner to clear after site selection (it triggers async search)
+            Console.WriteLine("  Waiting for search spinner to clear after site selection...");
+            if (!WaitForSpinnerIdle(dialog, cf))
             {
-                int stableCount = WaitForGridStable(gridAfterSite, cf, timeoutMs: 5000);
-                Console.WriteLine($"  Grid stabilized with {stableCount} row(s)");
+                PrintFail("Search spinner did not clear after site selection.");
+                DumpAndSave("step5-spinner-timeout-site");
+                return false;
             }
 
             // 3. Set Date From and Date To
@@ -697,59 +696,43 @@ internal sealed class DiagnosticRunner : IDisposable
                 FlaUI.Core.Input.Keyboard.Type(_searchDate);
                 Thread.Sleep(200);
 
-                // Tab out to commit the value
+                // Tab out to commit the value and trigger search
                 FlaUI.Core.Input.Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.TAB);
                 Thread.Sleep(200);
 
                 Console.WriteLine($"  ✓ {label} set to '{_searchDate}'");
-            }
 
-            // 4. Tab-out already triggered the search (focus loss is sufficient)
-            Console.WriteLine("  Focus loss triggers search — waiting for grid to stabilize...");
-            Thread.Sleep(500);
-
-            Console.WriteLine($"  Waiting up to {SearchTimeoutSeconds}s for stable results...");
-
-            // Poll for data grid to populate AND stabilize
-            var sw = Stopwatch.StartNew();
-            int lastRowCount = -1;
-            int stablePolls = 0;
-            while (sw.Elapsed.TotalSeconds < SearchTimeoutSeconds)
-            {
-                Thread.Sleep(PollIntervalMs);
-
-                RefreshMainWindow();
-                var grid = FindDescendant(_mainWindow!,
-                    cf.ByAutomationId(KnownElements.MatchDataGridAutomationId));
-                if (grid != null)
+                // Wait for spinner to clear after each date change
+                Console.WriteLine($"  Waiting for search spinner to clear after {label}...");
+                if (!WaitForSpinnerIdle(dialog, cf))
                 {
-                    var rows = FindAllDescendants(grid, cf.ByControlType(ControlType.DataItem));
-                    Console.Write($"\r  [{Timestamp()}] Grid has {rows.Length} row(s), stable={stablePolls}/3  ");
-
-                    if (rows.Length > 0 && rows.Length == lastRowCount)
-                    {
-                        stablePolls++;
-                        if (stablePolls >= 3) // stable for 3 consecutive polls
-                        {
-                            Console.WriteLine();
-                            Console.WriteLine($"  ✓ DataGrid stabilized with {rows.Length} row(s)");
-                            foreach (var row in rows.Take(5))
-                                Console.WriteLine($"    Row: \"{SafeGet(() => row.Name)}\"");
-                            PrintPass();
-                            return PauseForUser();
-                        }
-                    }
-                    else
-                    {
-                        stablePolls = 0;
-                    }
-                    lastRowCount = rows.Length;
+                    PrintFail($"Search spinner did not clear after setting {label}.");
+                    DumpAndSave($"step5-spinner-timeout-{label.ToLower().Replace(' ', '-')}");
+                    return false;
                 }
             }
 
-            Console.WriteLine();
-            PrintFail("Search results did not stabilize within timeout. Grid may be empty or still refreshing.");
-            DumpAndSave("step5-search-timeout", maxDepth: 8);
+            // 4. Spinner cleared after last date entry — read results
+            Console.WriteLine("  Spinner cleared — reading grid results...");
+
+            var grid = FindDescendant(dialog,
+                cf.ByAutomationId(KnownElements.MatchDataGridAutomationId));
+            if (grid != null)
+            {
+                var rows = FindAllDescendants(grid, cf.ByControlType(ControlType.DataItem));
+                Console.WriteLine($"  ✓ DataGrid has {rows.Length} row(s)");
+                foreach (var row in rows.Take(5))
+                    Console.WriteLine($"    Row: \"{SafeGet(() => row.Name)}\"");
+
+                if (rows.Length > 0)
+                {
+                    PrintPass();
+                    return PauseForUser();
+                }
+            }
+
+            PrintFail("Grid is empty after search completed — no matches found for the date.");
+            DumpAndSave("step5-search-empty", maxDepth: 8);
             return false;
         }
         catch (Exception ex)
@@ -1323,6 +1306,46 @@ internal sealed class DiagnosticRunner : IDisposable
         {
             return $"Button invocation failed: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// Waits for the LoaderSpinner inside the given dialog to become offscreen (idle).
+    /// The spinner is always in the dialog tree. IsOffscreen=false means search in progress.
+    /// Returns true if spinner cleared, false on timeout.
+    /// </summary>
+    private static bool WaitForSpinnerIdle(
+        AutomationElement dialog, ConditionFactory cf, int timeoutMs = 30000)
+    {
+        // Brief delay so spinner can appear before we start polling
+        Thread.Sleep(200);
+
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < timeoutMs)
+        {
+            var spinner = FindDescendant(dialog,
+                cf.ByClassName(KnownElements.LoaderSpinnerClassName));
+
+            if (spinner == null)
+            {
+                // Spinner not found in tree — treat as idle
+                Console.WriteLine($"  [{Timestamp()}] No LoaderSpinner found in dialog — treating as idle");
+                return true;
+            }
+
+            bool isOffscreen = spinner.Properties.IsOffscreen.ValueOrDefault;
+            if (isOffscreen)
+            {
+                Console.WriteLine($"  [{Timestamp()}] LoaderSpinner is offscreen — search idle");
+                return true;
+            }
+
+            Console.Write($"\r  [{Timestamp()}] LoaderSpinner visible — search in progress...  ");
+            Thread.Sleep(200);
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"  [{Timestamp()}] ⚠ LoaderSpinner still visible after {timeoutMs}ms timeout");
+        return false;
     }
 
     /// <summary>

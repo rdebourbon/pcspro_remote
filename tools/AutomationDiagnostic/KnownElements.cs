@@ -38,6 +38,12 @@ internal static class KnownElements
     public static string StateFilterAutomationId = "cboState";
     public static string MatchSearchButtonAutomationId = "NONE_USE_ENTER_KEY";
 
+    // ── Match Selection Spinner ──────────────────────────────────────────
+    // The LoaderSpinner is always in the dialog tree. When a search is
+    // running it is on-screen (IsOffscreen=false). When idle it is
+    // off-screen (IsOffscreen=true). Detected via ClassName — no AutomationId.
+    public const string LoaderSpinnerClassName = "LoaderSpinner";
+
     // ── Match Selection Grid Columns (0-based) ─────────────────────────
     // Date(0), Team 1(1), Team 2(2), Competition(3), Match Type(4),
     // Venue(5), State(6), Video?(7), Source(8), Live Scorer(9), Dwnld Reqd?(10)
