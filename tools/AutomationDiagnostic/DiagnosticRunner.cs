@@ -474,24 +474,12 @@ internal sealed class DiagnosticRunner : IDisposable
                 return false;
             }
 
-            fileMenu.Click();
-            Thread.Sleep(300);
-
-            // Find the "Open Match..." menu item — retry briefly for menu expansion
             Console.WriteLine("  File menu clicked — looking for Open Match...");
-            AutomationElement? openMatch = null;
-            for (int attempt = 0; attempt < 5 && openMatch == null; attempt++)
-            {
-                openMatch = FindDescendant(fileMenu,
-                    cf.ByAutomationId(KnownElements.OpenMatchMenuItemAutomationId));
-                if (openMatch == null)
-                    Thread.Sleep(200);
-            }
+            var openMatch = ClickMenuItem(fileMenu, KnownElements.OpenMatchMenuItemAutomationId, cf);
 
             if (openMatch == null)
             {
-                // Dump tree to discover what menu items are available
-                Console.WriteLine("  ⚠ 'Open Match...' not found by Name — dumping menu tree for discovery.");
+                Console.WriteLine("  ⚠ 'Open Match...' not found — dumping menu tree for discovery.");
                 var dump = TreeDumper.Dump(fileMenu, maxDepth: 4);
                 Console.WriteLine($"\n  ── UI Tree: step4-file-menu-expanded ──");
                 Console.WriteLine(dump);
@@ -501,8 +489,6 @@ internal sealed class DiagnosticRunner : IDisposable
             }
 
             PrintElement("  Found: ", openMatch);
-            Console.WriteLine("  Clicking 'Open Match...'...");
-            openMatch.Click();
             Console.WriteLine("  ✓ Open Match clicked");
 
             // Wait for match selection dialog to appear
@@ -664,8 +650,18 @@ internal sealed class DiagnosticRunner : IDisposable
                 return false;
             }
             siteItem.Click();
-            Thread.Sleep(300);
+            Thread.Sleep(500);
             Console.WriteLine($"  ✓ Site set to '{_siteName}'");
+
+            // Wait for grid to stabilize after site selection (it triggers async search)
+            Console.WriteLine("  Waiting for grid to stabilize after site selection...");
+            var gridAfterSite = FindDescendant(dialog,
+                cf.ByAutomationId(KnownElements.MatchDataGridAutomationId));
+            if (gridAfterSite != null)
+            {
+                int stableCount = WaitForGridStable(gridAfterSite, cf, timeoutMs: 5000);
+                Console.WriteLine($"  Grid stabilized with {stableCount} row(s)");
+            }
 
             // 3. Set Date From and Date To
             Console.WriteLine($"  Setting date range to '{_searchDate}'...");
@@ -784,10 +780,17 @@ internal sealed class DiagnosticRunner : IDisposable
         try
         {
             var firstRow = rows[0];
-            Console.WriteLine($"  Selecting row: \"{SafeGet(() => firstRow.Name)}\"");
-            firstRow.Click();
-            Console.WriteLine("  ✓ First row selected");
-            Thread.Sleep(300);
+            Console.WriteLine($"  [{Timestamp()}] Selecting row: \"{SafeGet(() => firstRow.Name)}\"");
+
+            // Use SelectionItemPattern for reliable WPF DataGrid selection
+            if (!SelectDataGridRow(firstRow))
+            {
+                PrintFail("Could not select row via SelectionItemPattern or Click.");
+                DumpAndSave("step6-select-failed");
+                return false;
+            }
+            Console.WriteLine($"  [{Timestamp()}] ✓ Row selected");
+            Thread.Sleep(500);
 
             // Extract team names from the selected row's cells
             var cells = FindAllDescendants(firstRow, cf.ByControlType(ControlType.Text));
@@ -828,9 +831,20 @@ internal sealed class DiagnosticRunner : IDisposable
             else
             {
                 PrintElement("  Found: ", openReadOnly);
-                // Use InvokePattern for reliable button activation (mouse Click can miss in WPF)
-                openReadOnly.AsButton().Invoke();
-                Console.WriteLine("  ✓ 'Open Read Only' invoked");
+                Console.WriteLine($"  [{Timestamp()}] IsEnabled={openReadOnly.Properties.IsEnabled.ValueOrDefault}");
+
+                var invokeError = InvokeButtonSafely(openReadOnly);
+                if (invokeError != null)
+                {
+                    Console.WriteLine($"  ⚠ InvokeButtonSafely failed: {invokeError}");
+                    Console.WriteLine("  Falling back to double-click on row...");
+                    firstRow.DoubleClick();
+                    Console.WriteLine("  ✓ Double-clicked first row as fallback");
+                }
+                else
+                {
+                    Console.WriteLine($"  [{Timestamp()}] ✓ 'Open Read Only' invoked");
+                }
             }
 
             PrintPass();
@@ -978,17 +992,17 @@ internal sealed class DiagnosticRunner : IDisposable
 
         try
         {
-            Console.WriteLine("  Clicking Scoring menu...");
-            scoringMenu.Click();
-            Thread.Sleep(200);
+            Console.WriteLine("  Clicking Scoring menu → Match Details/Teams...");
+            var matchDetailsItem = ClickMenuItemByName(
+                scoringMenu, KnownElements.MatchDetailsMenuItemName, cf);
 
-            // Find "Match Details/Teams..." within the expanded Scoring menu
-            var matchDetailsItem = FindDescendant(scoringMenu,
-                cf.ByName(KnownElements.MatchDetailsMenuItemName));
             if (matchDetailsItem == null)
             {
                 // Dump the expanded menu to see what items are available
                 Console.WriteLine("  ⚠ 'Match Details/Teams...' not found — dumping menu items...");
+                // Re-expand to dump
+                scoringMenu.Click();
+                Thread.Sleep(300);
                 var menuItems = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.MenuItem));
                 Console.WriteLine($"  Found {menuItems.Length} MenuItem(s):");
                 foreach (var mi in menuItems)
@@ -999,9 +1013,7 @@ internal sealed class DiagnosticRunner : IDisposable
                 return false;
             }
 
-            Console.WriteLine($"  Found: \"{SafeGet(() => matchDetailsItem.Name)}\"");
-            matchDetailsItem.Click();
-            Console.WriteLine("  ✓ 'Match Details/Teams...' clicked");
+            Console.WriteLine($"  ✓ Found and clicked: \"{SafeGet(() => matchDetailsItem.Name)}\"");
             Thread.Sleep(1000);
 
             // Look for the Match Details dialog
@@ -1177,8 +1189,166 @@ internal sealed class DiagnosticRunner : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Helpers
+    // Helpers — Safe Automation Primitives
     // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Polls for a descendant matching <paramref name="condition"/> to appear,
+    /// retrying up to <paramref name="timeoutMs"/> milliseconds.
+    /// </summary>
+    private static AutomationElement? WaitForElement(
+        AutomationElement parent, ConditionBase condition, int timeoutMs = 2000)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < timeoutMs)
+        {
+            var element = FindDescendant(parent, condition);
+            if (element != null)
+                return element;
+            Thread.Sleep(200);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Clicks a menu item by expanding the parent and searching by AutomationId
+    /// with retry (menus may take time to expand in the automation tree).
+    /// </summary>
+    private static AutomationElement? ClickMenuItem(
+        AutomationElement menuParent, string automationId, ConditionFactory cf, int retries = 5)
+    {
+        menuParent.Click();
+        Thread.Sleep(300);
+
+        for (int attempt = 0; attempt < retries; attempt++)
+        {
+            var item = FindDescendant(menuParent, cf.ByAutomationId(automationId));
+            if (item != null)
+            {
+                item.Click();
+                return item;
+            }
+            Thread.Sleep(200);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Clicks a menu item by expanding the parent and searching by Name
+    /// with retry (menus may take time to expand in the automation tree).
+    /// </summary>
+    private static AutomationElement? ClickMenuItemByName(
+        AutomationElement menuParent, string name, ConditionFactory cf, int retries = 5)
+    {
+        menuParent.Click();
+        Thread.Sleep(300);
+
+        for (int attempt = 0; attempt < retries; attempt++)
+        {
+            var item = FindDescendant(menuParent, cf.ByName(name));
+            if (item != null)
+            {
+                item.Click();
+                return item;
+            }
+            Thread.Sleep(200);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Selects a DataGrid row using SelectionItemPattern (reliable WPF selection),
+    /// falling back to Click() if the pattern is unavailable.
+    /// </summary>
+    private static bool SelectDataGridRow(AutomationElement row)
+    {
+        try
+        {
+            if (row.Patterns.SelectionItem.IsSupported)
+            {
+                row.Patterns.SelectionItem.Pattern.Select();
+                return true;
+            }
+        }
+        catch
+        {
+            // Pattern might claim support but throw — fall through to Click
+        }
+
+        try
+        {
+            row.Click();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Invokes a button safely: checks IsEnabled, tries InvokePattern, falls back to Click.
+    /// Returns a descriptive error message on failure, or null on success.
+    /// </summary>
+    private static string? InvokeButtonSafely(AutomationElement button)
+    {
+        try
+        {
+            bool enabled = button.Properties.IsEnabled.ValueOrDefault;
+            if (!enabled)
+                return "Button is disabled (IsEnabled=false) — likely no row is selected.";
+
+            try
+            {
+                button.AsButton().Invoke();
+                return null;
+            }
+            catch
+            {
+                // InvokePattern failed — try mouse click
+                button.Click();
+                return null;
+            }
+        }
+        catch (Exception ex)
+        {
+            return $"Button invocation failed: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Waits for a DataGrid's row count to stabilize (same count for 2 consecutive polls).
+    /// Returns the stable row count, or -1 on timeout.
+    /// </summary>
+    private static int WaitForGridStable(
+        AutomationElement grid, ConditionFactory cf, int timeoutMs = 5000)
+    {
+        var sw = Stopwatch.StartNew();
+        int lastCount = -1;
+        int stablePolls = 0;
+
+        while (sw.ElapsedMilliseconds < timeoutMs)
+        {
+            var rows = FindAllDescendants(grid, cf.ByControlType(ControlType.DataItem));
+            int count = rows.Length;
+
+            if (count == lastCount && count >= 0)
+            {
+                stablePolls++;
+                if (stablePolls >= 2)
+                    return count;
+            }
+            else
+            {
+                stablePolls = 0;
+                lastCount = count;
+            }
+
+            Thread.Sleep(500);
+        }
+
+        return lastCount;
+    }
 
     private Window[] GetTopLevelWindows()
     {
