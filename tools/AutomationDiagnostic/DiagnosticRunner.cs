@@ -1205,7 +1205,7 @@ internal sealed class DiagnosticRunner : IDisposable
 
     private bool Step8_FindTeamNameElements()
     {
-        PrintStep(8, "Open Match Details/Teams dialog via Scoring menu");
+        PrintStep(8, "Extract team names from Match Details/Teams dialog");
         var cf = _automation.ConditionFactory;
 
         // Click Scoring menu
@@ -1225,9 +1225,7 @@ internal sealed class DiagnosticRunner : IDisposable
 
             if (matchDetailsItem == null)
             {
-                // Dump the expanded menu to see what items are available
                 Console.WriteLine("  ⚠ 'Match Details/Teams...' not found — dumping menu items...");
-                // Re-expand to dump
                 scoringMenu.Click();
                 Thread.Sleep(300);
                 var menuItems = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.MenuItem));
@@ -1236,64 +1234,128 @@ internal sealed class DiagnosticRunner : IDisposable
                     PrintElement("    ", mi);
 
                 DumpAndSave("step8-scoring-menu-items", maxDepth: 8);
-                PrintWait("Review menu items and report the correct name for Match Details/Teams.");
+                PrintFail("Match Details/Teams menu item not found.");
                 return false;
             }
 
             Console.WriteLine($"  ✓ Found and clicked: \"{SafeGet(() => matchDetailsItem.Name)}\"");
             Thread.Sleep(1000);
 
-            // Look for the Match Details dialog
+            // Find the Match Details dialog
             RefreshMainWindow();
-            var allChildWindows = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.Window));
-            Console.WriteLine($"  Found {allChildWindows.Length} child Window(s) after click:");
-            foreach (var w in allChildWindows)
-                PrintElement("    ", w);
+            var dialog = WaitForElement(_mainWindow!,
+                cf.ByName(KnownElements.MatchDetailsDialogName), 5000);
 
-            // Dump the dialog (or entire tree if no dialog found)
-            if (allChildWindows.Length > 0)
+            if (dialog == null)
             {
-                foreach (var w in allChildWindows)
-                {
-                    var name = SafeGet(() => w.Name);
-                    var dump = TreeDumper.Dump(w, maxDepth: 8);
-                    Console.WriteLine($"\n  ── UI Tree: step8-dialog-{SafeName(name)} ──");
-                    Console.WriteLine(dump);
-                    Console.WriteLine($"  ── End ──");
-                }
-            }
-            else
-            {
+                PrintFail("Match Details/Teams dialog did not appear.");
                 DumpAndSave("step8-no-dialog", maxDepth: 8);
+                return false;
             }
 
-            // Also dump from top-level windows in case dialog is a separate window
-            var topWindows = GetTopLevelWindows();
-            if (topWindows.Length > 1)
+            Console.WriteLine("  ✓ Match Details/Teams dialog found");
+
+            // Find both MatchTeamView elements
+            var teamViews = FindAllDescendants(dialog,
+                cf.ByClassName(KnownElements.MatchTeamViewClassName));
+
+            Console.WriteLine($"  Found {teamViews.Length} MatchTeamView(s)");
+
+            if (teamViews.Length < 2)
             {
-                Console.WriteLine($"  Found {topWindows.Length} top-level window(s):");
-                foreach (var tw in topWindows)
-                {
-                    Console.WriteLine($"    \"{SafeGet(() => tw.Title)}\" ClassName=\"{SafeGet(() => tw.ClassName)}\"");
-                    if (tw.Title != _mainWindow!.Title)
-                    {
-                        var dump = TreeDumper.Dump(tw, maxDepth: 8);
-                        Console.WriteLine($"\n  ── UI Tree: step8-topwindow-{SafeName(tw.Title)} ──");
-                        Console.WriteLine(dump);
-                        Console.WriteLine($"  ── End ──");
-                    }
-                }
+                PrintFail($"Expected 2 MatchTeamViews, found {teamViews.Length}.");
+                DumpAndSave("step8-missing-teamviews", maxDepth: 8);
+                CloseMatchDetailsDialog(dialog, cf);
+                return false;
             }
 
-            PrintWait("Review dialog dump and report Home Team / Away Team element identifiers + OK button.");
-            return false;
+            // Extract club and team from each MatchTeamView
+            string[] labels = ["Team 1 (grid order)", "Team 2 (grid order)"];
+            for (int i = 0; i < 2; i++)
+            {
+                var teamView = teamViews[i];
+                var clubCombo = FindDescendant(teamView,
+                    cf.ByAutomationId(KnownElements.ClubComboBoxAutomationId));
+                var teamCombo = FindDescendant(teamView,
+                    cf.ByAutomationId(KnownElements.TeamComboBoxAutomationId));
+
+                var clubValue = ReadComboBoxValue(clubCombo);
+                var teamValue = ReadComboBoxValue(teamCombo);
+
+                Console.WriteLine($"  {labels[i]}:");
+                Console.WriteLine($"    Club: \"{clubValue}\"");
+                Console.WriteLine($"    Team: \"{teamValue}\"");
+            }
+
+            // Close the dialog
+            CloseMatchDetailsDialog(dialog, cf);
+
+            PrintPass("Team data extracted and dialog closed");
+            return PauseForUser();
         }
         catch (Exception ex)
         {
-            PrintFail($"Error navigating to Match Details: {ex.Message}");
+            PrintFail($"Error in Match Details: {ex.Message}");
             DumpAndSave("step8-error");
             return false;
         }
+    }
+
+    private void CloseMatchDetailsDialog(AutomationElement dialog, ConditionFactory cf)
+    {
+        var okButton = FindDescendant(dialog,
+            cf.ByAutomationId(KnownElements.MatchDetailsOkButtonAutomationId));
+
+        if (okButton != null)
+        {
+            Console.WriteLine("  Clicking OK to close Match Details dialog...");
+            var err = InvokeButtonSafely(okButton);
+            if (err != null)
+                Console.WriteLine($"  ⚠ OK button invoke issue: {err}");
+            else
+                Console.WriteLine("  ✓ OK clicked — dialog closing");
+
+            Thread.Sleep(500);
+        }
+        else
+        {
+            Console.WriteLine("  ⚠ OK button not found — dialog may remain open");
+        }
+    }
+
+    private static string ReadComboBoxValue(AutomationElement? comboBox)
+    {
+        if (comboBox == null) return "<not found>";
+
+        // Try Value pattern first (most reliable for WPF ComboBox selected text)
+        try
+        {
+            if (comboBox.Patterns.Value.IsSupported)
+            {
+                var val = comboBox.Patterns.Value.Pattern.Value.Value;
+                if (!string.IsNullOrEmpty(val)) return val;
+            }
+        }
+        catch { /* fall through */ }
+
+        // Try reading the Name property
+        var name = SafeGet(() => comboBox.Name);
+        if (!string.IsNullOrWhiteSpace(name) && name != "<error>") return name;
+
+        // Try SelectedItem from the ComboBox wrapper
+        try
+        {
+            var combo = comboBox.AsComboBox();
+            var selected = combo.SelectedItem;
+            if (selected != null)
+            {
+                var selectedName = SafeGet(() => selected.Name);
+                if (!string.IsNullOrWhiteSpace(selectedName)) return selectedName;
+            }
+        }
+        catch { /* fall through */ }
+
+        return "<could not read value>";
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1302,69 +1364,225 @@ internal sealed class DiagnosticRunner : IDisposable
 
     private bool Step9_FindScoreboardElements()
     {
-        PrintStep(9, "Find scoreboard elements (settings cog, scoreboard window)");
+        PrintStep(9, "Find Main Scoreboard and trigger Refresh All Scoreboards");
         var cf = _automation.ConditionFactory;
+        RefreshMainWindow();
 
-        // Search for the settings cog in the main window
-        Console.WriteLine("  Searching for settings cog / gear icon...");
+        // Search for the "Main Scoreboard" tool window among all ToolWindow panes
+        Console.WriteLine("  Searching for Main Scoreboard tool window...");
+        var allToolWindows = FindAllDescendants(_mainWindow!,
+            cf.ByClassName("ToolWindow"));
 
-        // Try by HelpText
-        if (KnownElements.SettingsCogHelpText != "TODO")
+        AutomationElement? scoreboardPane = null;
+        Console.WriteLine($"  Found {allToolWindows.Length} ToolWindow pane(s):");
+        foreach (var tw in allToolWindows)
         {
-            var cog = FindDescendant(_mainWindow!, cf.ByHelpText(KnownElements.SettingsCogHelpText));
-            Console.WriteLine($"  Settings cog by HelpText: {(cog != null ? "✓ FOUND" : "✗ NOT FOUND")}");
-            if (cog != null) PrintElement("    ", cog);
-        }
+            var twName = SafeGet(() => tw.Name);
+            var twAutoId = SafeGet(() => tw.AutomationId);
+            Console.WriteLine($"    Name=\"{twName}\" AutomationId=\"{twAutoId}\"");
 
-        // Search for the scoreboard window among all top-level windows
-        Console.WriteLine("\n  Searching for scoreboard window among top-level windows...");
-        var allWindows = GetTopLevelWindows();
-
-        bool found = false;
-        foreach (var w in allWindows)
-        {
-            Console.WriteLine($"  Window: \"{w.Title}\" ClassName=\"{w.ClassName}\"");
-            if (KnownElements.ScoreboardWindowClassName != "TODO" &&
-                w.ClassName == KnownElements.ScoreboardWindowClassName)
+            if (twName.Contains("Scoreboard", StringComparison.OrdinalIgnoreCase) &&
+                twName.Contains("Main", StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine("    ✓ Scoreboard window matched by ClassName!");
-                found = true;
-                var dump = TreeDumper.Dump(w, maxDepth: 4);
-                Console.WriteLine($"\n  ── UI Tree: step9-scoreboard-window ──");
-                Console.WriteLine(dump);
-                Console.WriteLine($"  ── End ──");
+                scoreboardPane = tw;
+                Console.WriteLine("    ↑ ✓ MATCHED as Main Scoreboard");
             }
         }
 
-        if (!found && KnownElements.ScoreboardWindowClassName == "TODO")
+        if (scoreboardPane == null)
         {
-            Console.WriteLine("  No known scoreboard ClassName — dumping all windows for analysis.");
-            foreach (var w in allWindows)
+            // Broader search — any tool window with "Scoreboard" in the name
+            foreach (var tw in allToolWindows)
             {
-                var dump = TreeDumper.Dump(w, maxDepth: 4);
-                Console.WriteLine($"\n  ── UI Tree: step9-window-{SafeName(w.Title)} ──");
+                var twName = SafeGet(() => tw.Name);
+                if (twName.Contains("Scoreboard", StringComparison.OrdinalIgnoreCase))
+                {
+                    scoreboardPane = tw;
+                    Console.WriteLine($"  ✓ Fallback match: \"{twName}\"");
+                    break;
+                }
+            }
+        }
+
+        if (scoreboardPane == null)
+        {
+            Console.WriteLine("  ⚠ No scoreboard ToolWindow found — dumping all ToolWindows for analysis...");
+            foreach (var tw in allToolWindows)
+            {
+                var dump = TreeDumper.Dump(tw, maxDepth: 4);
+                Console.WriteLine($"\n  ── ToolWindow: \"{SafeGet(() => tw.Name)}\" ──");
                 Console.WriteLine(dump);
-                Console.WriteLine($"  ── End ──");
+                Console.WriteLine("  ── End ──");
             }
 
-            // Also look for image/picture controls (scoreboard might be rendered as image)
-            var images = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.Image));
-            Console.WriteLine($"\n  Found {images.Length} Image control(s) in main window:");
-            foreach (var img in images)
-                PrintElement("    ", img);
-
-            PrintWait("Review windows and report which is the scoreboard and what identifies the settings cog.");
+            PrintFail("Main Scoreboard tool window not found.");
             return false;
         }
 
-        if (found)
+        Console.WriteLine($"  ✓ Main Scoreboard found: \"{SafeGet(() => scoreboardPane.Name)}\"");
+
+        // Navigate up to the parent ToolWindowContainer to find the title bar
+        var container = WalkUpToClassName(scoreboardPane, "ToolWindowContainer");
+        if (container == null)
         {
-            PrintPass();
-            return PauseForUser();
+            Console.WriteLine("  ⚠ Could not find parent ToolWindowContainer — searching from pane...");
+            container = scoreboardPane;
+        }
+        else
+        {
+            Console.WriteLine($"  ✓ Parent ToolWindowContainer: AutomationId=\"{SafeGet(() => container.AutomationId)}\"");
         }
 
-        PrintFail("Scoreboard window not found with known ClassName.");
-        return false;
+        // Find the PART_TitleBar in the container
+        var titleBar = FindDescendant(container, cf.ByAutomationId("PART_TitleBar"));
+        if (titleBar == null)
+        {
+            Console.WriteLine("  ⚠ PART_TitleBar not found in container — searching broader...");
+            titleBar = FindDescendant(container, cf.ByClassName("TitleBarPanel"));
+        }
+
+        if (titleBar == null)
+        {
+            Console.WriteLine("  ⚠ No title bar found — dumping container for analysis...");
+            var dump = TreeDumper.Dump(container, maxDepth: 5);
+            Console.WriteLine(dump);
+            PrintFail("Title bar not found in scoreboard container.");
+            return false;
+        }
+
+        Console.WriteLine("  ✓ Title bar found");
+
+        // Find buttons in the title bar — the options button has an Image child
+        var titleBarButtons = FindAllDescendants(titleBar, cf.ByControlType(ControlType.Button));
+        Console.WriteLine($"  Found {titleBarButtons.Length} button(s) in title bar:");
+        foreach (var btn in titleBarButtons)
+            PrintElement("    ", btn);
+
+        AutomationElement? optionsButton = null;
+        foreach (var btn in titleBarButtons)
+        {
+            var btnName = SafeGet(() => btn.Name);
+            var helpText = SafeGet(() => btn.HelpText);
+            // Look for Options / gear / settings button — typically has an Image child
+            // and may be named "Options" or have a gear-related HelpText
+            if (btnName.Contains("Option", StringComparison.OrdinalIgnoreCase) ||
+                helpText.Contains("Option", StringComparison.OrdinalIgnoreCase))
+            {
+                optionsButton = btn;
+                break;
+            }
+        }
+
+        // If not found by name, try the button that has an Image child (gear icon)
+        if (optionsButton == null)
+        {
+            foreach (var btn in titleBarButtons)
+            {
+                var images = FindAllDescendants(btn, cf.ByControlType(ControlType.Image));
+                if (images.Length > 0)
+                {
+                    Console.WriteLine($"  ✓ Button with Image child found (likely options/gear):");
+                    PrintElement("    ", btn);
+                    optionsButton = btn;
+                    break;
+                }
+            }
+        }
+
+        if (optionsButton == null)
+        {
+            Console.WriteLine("  ⚠ No options button identified — dumping title bar tree...");
+            var dump = TreeDumper.Dump(titleBar, maxDepth: 4);
+            Console.WriteLine(dump);
+            PrintFail("Options button not found in scoreboard title bar.");
+            return false;
+        }
+
+        Console.WriteLine($"  Clicking options button: \"{SafeGet(() => optionsButton.Name)}\"...");
+        optionsButton.Click();
+        Thread.Sleep(500);
+
+        // Look for popup menu with "Refresh all Scoreboards"
+        RefreshMainWindow();
+        var refreshItem = WaitForElement(_mainWindow!,
+            cf.ByName(KnownElements.RefreshAllScoreboardsMenuItemName), 3000);
+
+        if (refreshItem == null)
+        {
+            // Dump available menu items for discovery
+            Console.WriteLine("  ⚠ 'Refresh all Scoreboards' not found — searching for menu items...");
+            var allMenuItems = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.MenuItem));
+            Console.WriteLine($"  Found {allMenuItems.Length} MenuItem(s) after options click:");
+            foreach (var mi in allMenuItems)
+                PrintElement("    ", mi);
+
+            // Also check for popup/context menu windows
+            var popups = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.Menu));
+            Console.WriteLine($"  Found {popups.Length} Menu element(s):");
+            foreach (var p in popups)
+            {
+                PrintElement("    ", p);
+                var popupDump = TreeDumper.Dump(p, maxDepth: 4);
+                Console.WriteLine(popupDump);
+            }
+
+            DumpAndSave("step9-options-popup", maxDepth: 8);
+            PrintFail("Refresh all Scoreboards menu item not found.");
+            return false;
+        }
+
+        Console.WriteLine($"  ✓ Found: \"{SafeGet(() => refreshItem.Name)}\"");
+        Console.WriteLine("  Clicking Refresh all Scoreboards...");
+        refreshItem.Click();
+        Thread.Sleep(1000);
+
+        // Dump the scoreboard pane contents for screen-grab discovery
+        Console.WriteLine("\n  Dumping Main Scoreboard contents for screen-grab analysis...");
+        RefreshMainWindow();
+        var freshScoreboard = FindDescendant(_mainWindow!,
+            cf.ByName(SafeGet(() => scoreboardPane.Name)));
+
+        if (freshScoreboard != null)
+        {
+            var dump2 = TreeDumper.Dump(freshScoreboard, maxDepth: 6);
+            Console.WriteLine($"\n  ── UI Tree: step9-scoreboard-contents ──");
+            Console.WriteLine(dump2);
+            Console.WriteLine($"  ── End ──");
+        }
+        else
+        {
+            DumpAndSave("step9-scoreboard-after-refresh", maxDepth: 6);
+        }
+
+        PrintPass("Scoreboard found and refresh triggered");
+        return PauseForUser();
+    }
+
+    /// <summary>
+    /// Walks up the automation tree from <paramref name="element"/> until an
+    /// ancestor with the given <paramref name="className"/> is found.
+    /// Returns null if the root is reached without a match.
+    /// </summary>
+    private static AutomationElement? WalkUpToClassName(AutomationElement element, string className)
+    {
+        try
+        {
+            var walker = element.Automation.TreeWalkerFactory.GetRawViewWalker();
+            var current = walker.GetParent(element);
+            int maxSteps = 10;
+            while (current != null && maxSteps-- > 0)
+            {
+                try
+                {
+                    if (current.ClassName == className) return current;
+                }
+                catch { /* some parents may throw */ }
+
+                current = walker.GetParent(current);
+            }
+        }
+        catch { /* tree walker unavailable */ }
+        return null;
     }
 
     // ═══════════════════════════════════════════════════════════════════════

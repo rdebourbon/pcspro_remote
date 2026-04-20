@@ -72,11 +72,20 @@ internal static class KnownElements
     public static string TeamComboBoxAutomationId = "cbxTeam";
     public static string PlayersGridAutomationId = "dgrPlayers";
 
-    // ── Step 4: Streaming Scoreboard (NOT twdScoreSummary) ───────────────
-    // The streaming overlay is accessed via the auto-hide tab on the right.
-    // The actual scoreboard window for screengrabbing is still being discovered.
+    // ── Step 4: Main Scoreboard (ToolWindow within DockSite) ────────────
+    // The "Main Scoreboard" is a ToolWindow pane inside a ToolWindowContainer.
+    // Its parent container has a TitleBarPanel (PART_TitleBar) with an options
+    // button (image child) that opens a popup menu containing "Refresh all
+    // Scoreboards". This is NOT the streaming overlay — it is the in-app
+    // scoreboard panel for screen-grabbing.
+    public static string MainScoreboardToolWindowName = "Main Scoreboard";
+    public static string RefreshAllScoreboardsMenuItemName = "Refresh all Scoreboards";
+
+    // ── Streaming Overlay (auto-hide tab on the right) ───────────────────
     public static string StreamingOverlayTabAutomationId =
         "dockSite.PART_DockHost.RightAutoHideTabGroup[0].AutoHideTabItem[0]";
+
+    // ── Legacy/unused scoreboard identifiers (kept for reference) ────────
     public static string SettingsCogHelpText = "TODO";
     public static string ScoreboardWindowClassName = "TODO";
     public static string ScoreboardWindowName = "TODO";
