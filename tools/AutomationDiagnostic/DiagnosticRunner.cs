@@ -20,7 +20,7 @@ internal sealed class DiagnosticRunner : IDisposable
     private const string ProcessName = "cricket";
     private const int PollIntervalMs = 500;
     private const int SplashTimeoutSeconds = 90;
-    private const int LoginTransitionTimeoutSeconds = 15;
+    private const int LoginTransitionTimeoutSeconds = 30;
     private const int SearchTimeoutSeconds = 20;
     private const int MatchLoadTimeoutSeconds = 30;
 
@@ -30,13 +30,14 @@ internal sealed class DiagnosticRunner : IDisposable
     private readonly string _siteName;
     private readonly string _searchDate;
     private readonly string _outputDirectory;
+    private readonly bool _captureUiTree;
     private readonly UIA3Automation _automation;
     private Application? _app;
     private Window? _mainWindow;
     private string? _titleBeforeMatchOpen;
 
     public DiagnosticRunner(string password, string expectedUsername, string? executablePath,
-        string siteName, string searchDate, string outputDirectory)
+        string siteName, string searchDate, string outputDirectory, bool captureUiTree = false)
     {
         _password = password;
         _expectedUsername = expectedUsername;
@@ -44,6 +45,7 @@ internal sealed class DiagnosticRunner : IDisposable
         _siteName = siteName;
         _searchDate = searchDate;
         _outputDirectory = outputDirectory;
+        _captureUiTree = captureUiTree;
         _automation = new UIA3Automation();
 
         Directory.CreateDirectory(_outputDirectory);
@@ -499,10 +501,7 @@ internal sealed class DiagnosticRunner : IDisposable
             Console.WriteLine("  Dumping all visible windows:");
             foreach (var w in finalWindows)
             {
-                var dump = TreeDumper.Dump(w, maxDepth: 3);
-                Console.WriteLine($"\n  ── UI Tree: step1-window-{SafeName(w.Title)} ──");
-                Console.WriteLine(dump);
-                Console.WriteLine($"  ── End ──");
+                DumpIfEnabled($"step1-window-{SafeName(w.Title)}", w, maxDepth: 3);
             }
         }
 
@@ -543,10 +542,7 @@ internal sealed class DiagnosticRunner : IDisposable
         {
             Console.WriteLine("  No login dialog found — app may already be logged in.");
             Console.WriteLine("  Dumping main window tree for analysis...");
-            var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 4);
-            Console.WriteLine($"\n  ── UI Tree: step2-no-login-dialog ──");
-            Console.WriteLine(dump);
-            Console.WriteLine($"  ── End ──");
+            DumpIfEnabled("step2-no-login-dialog", _mainWindow!, maxDepth: 4);
             PrintWait("Is the login dialog visible? If already logged in, we can skip ahead.");
             return false;
         }
@@ -586,10 +582,7 @@ internal sealed class DiagnosticRunner : IDisposable
 
         if (pwField == null || submitBtn == null)
         {
-            var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 6);
-            Console.WriteLine($"\n  ── UI Tree: step2-missing-elements ──");
-            Console.WriteLine(dump);
-            Console.WriteLine($"  ── End ──");
+            DumpIfEnabled("step2-missing-elements", _mainWindow!, maxDepth: 6);
             PrintFail("Login elements not found.");
             return false;
         }
@@ -669,10 +662,7 @@ internal sealed class DiagnosticRunner : IDisposable
         catch (Exception ex)
         {
             PrintFail($"Interaction error: {ex.Message}");
-            var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 4);
-            Console.WriteLine($"\n  ── UI Tree: step3-login-interact ──");
-            Console.WriteLine(dump);
-            Console.WriteLine($"  ── End ──");
+            DumpIfEnabled("step3-login-interact", _mainWindow!, maxDepth: 4);
             return false;
         }
     }
@@ -1036,10 +1026,7 @@ internal sealed class DiagnosticRunner : IDisposable
             }
 
             // Dump the row subtree for full visibility of cell structure
-            var rowDump = TreeDumper.Dump(firstRow, maxDepth: 4);
-            Console.WriteLine($"\n  ── UI Tree: step6-selected-row ──");
-            Console.WriteLine(rowDump);
-            Console.WriteLine($"  ── End ──");
+            DumpIfEnabled("step6-selected-row", firstRow, maxDepth: 4);
 
             // Click "Open Read Only" — this instance must always open readonly
             // Re-find the button fresh (UI tree may have shifted during enumeration)
@@ -1195,7 +1182,8 @@ internal sealed class DiagnosticRunner : IDisposable
         Console.WriteLine($"  Role 'Read Only': {(roleText != null ? "✓ confirmed" : "⚠ not found")}");
 
         // Dump for analysis (reduced depth — full tree dump is expensive)
-        DumpAndSave("step7-match-loaded", maxDepth: 3);
+        if (_captureUiTree)
+            DumpAndSave("step7-match-loaded", maxDepth: 3);
 
         PrintPass(titleChanged ? "Match loaded — title changed" : "Match loaded — sync confirmed");
         return PauseForUser();
@@ -1535,10 +1523,13 @@ internal sealed class DiagnosticRunner : IDisposable
 
         if (freshScoreboard != null)
         {
-            var dump2 = TreeDumper.Dump(freshScoreboard, maxDepth: 6);
-            Console.WriteLine($"\n  ── UI Tree: step9-scoreboard-contents ──");
-            Console.WriteLine(dump2);
-            Console.WriteLine($"  ── End ──");
+            if (_captureUiTree)
+            {
+                var dump2 = TreeDumper.Dump(freshScoreboard, maxDepth: 6);
+                Console.WriteLine($"\n  ── UI Tree: step9-scoreboard-contents ──");
+                Console.WriteLine(dump2);
+                Console.WriteLine($"  ── End ──");
+            }
         }
         else
         {
@@ -1562,10 +1553,7 @@ internal sealed class DiagnosticRunner : IDisposable
             PrintElement("    ", previewElement);
 
             // Dump the preview element subtree to discover any inner canvas/image controls
-            var previewDump = TreeDumper.Dump(previewElement, maxDepth: 8);
-            Console.WriteLine($"\n  ── UI Tree: ReplayScreenPreview internals ──");
-            Console.WriteLine(previewDump);
-            Console.WriteLine($"  ── End ──");
+            DumpIfEnabled("ReplayScreenPreview internals", previewElement, maxDepth: 8);
 
             CaptureScoreboardImage(previewElement);
         }
@@ -1596,32 +1584,9 @@ internal sealed class DiagnosticRunner : IDisposable
             var bounds = scoreboardElement.BoundingRectangle;
             Console.WriteLine($"    UIA BoundingRect: {bounds.Width}x{bounds.Height} at ({bounds.X},{bounds.Y})");
 
-            // Detect DPI scale factor — UIA returns coordinates in the process's
-            // DPI context. On high-DPI systems with a DPI-unaware process, UIA
-            // virtualizes to logical coords but CopyFromScreen may use physical.
-            // Scale to physical to ensure correct capture area.
-            using var g = System.Drawing.Graphics.FromHwnd(IntPtr.Zero);
-            float dpiScaleX = g.DpiX / 96f;
-            float dpiScaleY = g.DpiY / 96f;
-            Console.WriteLine($"    DPI scale: {dpiScaleX:F2}x{dpiScaleY:F2}");
-
-            System.Drawing.Rectangle captureBounds;
-            if (Math.Abs(dpiScaleX - 1.0f) > 0.01f || Math.Abs(dpiScaleY - 1.0f) > 0.01f)
-            {
-                // Scale UIA logical coords to physical screen coords
-                captureBounds = new System.Drawing.Rectangle(
-                    (int)(bounds.X * dpiScaleX),
-                    (int)(bounds.Y * dpiScaleY),
-                    (int)(bounds.Width * dpiScaleX),
-                    (int)(bounds.Height * dpiScaleY));
-                Console.WriteLine($"    Physical capture: {captureBounds.Width}x{captureBounds.Height} at ({captureBounds.X},{captureBounds.Y})");
-            }
-            else
-            {
-                captureBounds = bounds;
-            }
-
-            var image = Capture.Rectangle(captureBounds);
+            // Process is DPI-aware (SetProcessDPIAware called at startup) so UIA
+            // coordinates and CopyFromScreen both use physical pixels consistently.
+            var image = Capture.Rectangle(bounds);
             image.ToFile(filePath);
 
             var fileInfo = new FileInfo(filePath);
@@ -2480,6 +2445,15 @@ internal sealed class DiagnosticRunner : IDisposable
     {
         try { return parent.FindAllDescendants(condition); }
         catch { return []; }
+    }
+
+    private void DumpIfEnabled(string label, AutomationElement element, int maxDepth = 6)
+    {
+        if (!_captureUiTree) return;
+        var dump = TreeDumper.Dump(element, maxDepth: maxDepth);
+        Console.WriteLine($"\n  ── UI Tree: {label} ──");
+        Console.WriteLine(dump);
+        Console.WriteLine($"  ── End ──");
     }
 
     private void DumpAndSave(string label, int maxDepth = 6)

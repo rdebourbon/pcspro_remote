@@ -1,9 +1,15 @@
+using System.Runtime.InteropServices;
+
 namespace AutomationDiagnostic;
 
 internal static class Program
 {
+    [DllImport("user32.dll")]
+    private static extern bool SetProcessDPIAware();
+
     static int Main(string[] args)
     {
+        SetProcessDPIAware();
         string? password = null;
         string? exePath = null;
         string? username = null;
@@ -11,6 +17,7 @@ internal static class Program
         string? searchDate = null;
         string? outputDir = null;
         bool spinnerDiscovery = false;
+        bool captureUiTree = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -28,6 +35,8 @@ internal static class Program
                 outputDir = args[++i];
             if (args[i] is "--spinner-discovery")
                 spinnerDiscovery = true;
+            if (args[i] is "--capture-ui-tree")
+                captureUiTree = true;
             if (args[i] is "-h" or "--help")
             {
                 PrintUsage();
@@ -66,7 +75,7 @@ internal static class Program
             "diagnosticlogs");
 
         using var runner = new DiagnosticRunner(password, username, exePath,
-            siteName, searchDate, outputDir);
+            siteName, searchDate, outputDir, captureUiTree);
 
         if (spinnerDiscovery)
             runner.RunSpinnerDiscovery();
@@ -90,6 +99,7 @@ internal static class Program
               -d, --date <dd/MM/yyyy> Search date for match filter (default: today)
               -o, --output <dir>     Output directory for execution log (default: beside cricket.exe)
               --spinner-discovery    Run spinner discovery mode (dumps tree before/during/after filters)
+              --capture-ui-tree      Capture happy-path UI tree dumps (off by default to reduce noise)
               -h, --help             Show this help
 
             The tool kills any existing cricket.exe, launches a fresh instance,
