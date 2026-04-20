@@ -485,16 +485,18 @@ internal sealed class DiagnosticRunner : IDisposable
                 return false;
             }
 
-            // Poll for the search button to appear
+            // Poll for the Open Match dialog or DataGrid to appear
             var sw = Stopwatch.StartNew();
             while (sw.Elapsed.TotalSeconds < LoginTransitionTimeoutSeconds)
             {
                 RefreshMainWindow();
-                var searchBtn = FindDescendant(_mainWindow!,
-                    cf.ByAutomationId(KnownElements.MatchSearchButtonAutomationId));
-                if (searchBtn != null)
+
+                // Check for the Open Match dialog by name
+                var openMatchDialog = FindDescendant(_mainWindow!,
+                    cf.ByName(KnownElements.MatchSelectionDialogName));
+                if (openMatchDialog != null)
                 {
-                    Console.WriteLine($"  ✓ Match selection screen detected — search button found");
+                    Console.WriteLine($"  ✓ Open Match dialog detected");
                     PrintPass();
                     return PauseForUser();
                 }
