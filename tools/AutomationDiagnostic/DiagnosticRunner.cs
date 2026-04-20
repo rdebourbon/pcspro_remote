@@ -1192,8 +1192,8 @@ internal sealed class DiagnosticRunner : IDisposable
         var roleText = FindDescendant(_mainWindow!, cf.ByName("Read Only"));
         Console.WriteLine($"  Role 'Read Only': {(roleText != null ? "✓ confirmed" : "⚠ not found")}");
 
-        // Dump for analysis
-        DumpAndSave("step7-match-loaded");
+        // Dump for analysis (reduced depth — full tree dump is expensive)
+        DumpAndSave("step7-match-loaded", maxDepth: 3);
 
         PrintPass(titleChanged ? "Match loaded — title changed" : "Match loaded — sync confirmed");
         return PauseForUser();
@@ -1452,82 +1452,69 @@ internal sealed class DiagnosticRunner : IDisposable
 
         Console.WriteLine("  ✓ Title bar found");
 
-        // Find buttons in the title bar — the options button has an Image child
+        // Ensure the Main Scoreboard tab is active/selected before interacting
+        // with its title bar. The ToolWindowContainer might have multiple tabs.
+        Console.WriteLine("  Ensuring Main Scoreboard tab is active...");
+        ActivateToolWindow(scoreboardPane);
+        Thread.Sleep(300);
+
+        // Find the Settings PopupButton in the title bar
         var titleBarButtons = FindAllDescendants(titleBar, cf.ByControlType(ControlType.Button));
         Console.WriteLine($"  Found {titleBarButtons.Length} button(s) in title bar:");
         foreach (var btn in titleBarButtons)
             PrintElement("    ", btn);
 
-        AutomationElement? optionsButton = null;
+        // Match by ClassName="PopupButton" and HelpText="Settings" (confirmed from log)
+        AutomationElement? settingsButton = null;
         foreach (var btn in titleBarButtons)
         {
-            var btnName = SafeGet(() => btn.Name);
+            var className = SafeGet(() => btn.ClassName);
             var helpText = SafeGet(() => btn.HelpText);
-            // Look for Options / gear / settings button — typically has an Image child
-            // and may be named "Options" or have a gear-related HelpText
-            if (btnName.Contains("Option", StringComparison.OrdinalIgnoreCase) ||
-                helpText.Contains("Option", StringComparison.OrdinalIgnoreCase))
+            if (className == "PopupButton" &&
+                helpText.Contains("Settings", StringComparison.OrdinalIgnoreCase))
             {
-                optionsButton = btn;
+                settingsButton = btn;
+                Console.WriteLine($"  ✓ Settings PopupButton identified: HelpText=\"{helpText}\"");
                 break;
             }
         }
 
-        // If not found by name, try the button that has an Image child (gear icon)
-        if (optionsButton == null)
+        if (settingsButton == null)
         {
-            foreach (var btn in titleBarButtons)
-            {
-                var images = FindAllDescendants(btn, cf.ByControlType(ControlType.Image));
-                if (images.Length > 0)
-                {
-                    Console.WriteLine($"  ✓ Button with Image child found (likely options/gear):");
-                    PrintElement("    ", btn);
-                    optionsButton = btn;
-                    break;
-                }
-            }
-        }
-
-        if (optionsButton == null)
-        {
-            Console.WriteLine("  ⚠ No options button identified — dumping title bar tree...");
+            Console.WriteLine("  ⚠ No Settings PopupButton found — dumping title bar tree...");
             var dump = TreeDumper.Dump(titleBar, maxDepth: 4);
             Console.WriteLine(dump);
-            PrintFail("Options button not found in scoreboard title bar.");
+            PrintFail("Settings PopupButton not found in scoreboard title bar.");
             return false;
         }
 
-        Console.WriteLine($"  Clicking options button: \"{SafeGet(() => optionsButton.Name)}\"...");
-        optionsButton.Click();
-        Thread.Sleep(500);
+        // Try multiple click strategies — PopupButton may not respond to simple Click()
+        Console.WriteLine("  Opening Settings popup menu...");
+        var popupOpened = TryOpenPopupButton(settingsButton, cf);
 
-        // Look for popup menu with "Refresh all Scoreboards"
-        RefreshMainWindow();
-        var refreshItem = WaitForElement(_mainWindow!,
-            cf.ByName(KnownElements.RefreshAllScoreboardsMenuItemName), 3000);
+        if (!popupOpened)
+        {
+            Console.WriteLine("  ⚠ Popup menu did not appear after all click strategies.");
+            // Dump what we can see for diagnosis
+            var titleDump = TreeDumper.Dump(titleBar, maxDepth: 5);
+            Console.WriteLine($"\n  ── Title bar after click attempts ──");
+            Console.WriteLine(titleDump);
+            Console.WriteLine("  ── End ──");
+            PrintFail("Could not open Settings popup menu.");
+            return false;
+        }
+
+        // Search for "Refresh all Scoreboards" — WPF popups may appear at desktop level
+        Console.WriteLine("  Searching for Refresh all Scoreboards...");
+        var refreshItem = FindPopupMenuItem(
+            KnownElements.RefreshAllScoreboardsMenuItemName, cf);
 
         if (refreshItem == null)
         {
-            // Dump available menu items for discovery
-            Console.WriteLine("  ⚠ 'Refresh all Scoreboards' not found — searching for menu items...");
-            var allMenuItems = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.MenuItem));
-            Console.WriteLine($"  Found {allMenuItems.Length} MenuItem(s) after options click:");
-            foreach (var mi in allMenuItems)
-                PrintElement("    ", mi);
-
-            // Also check for popup/context menu windows
-            var popups = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.Menu));
-            Console.WriteLine($"  Found {popups.Length} Menu element(s):");
-            foreach (var p in popups)
-            {
-                PrintElement("    ", p);
-                var popupDump = TreeDumper.Dump(p, maxDepth: 4);
-                Console.WriteLine(popupDump);
-            }
-
-            DumpAndSave("step9-options-popup", maxDepth: 8);
-            PrintFail("Refresh all Scoreboards menu item not found.");
+            // Dump what's visible for discovery
+            Console.WriteLine("  ⚠ 'Refresh all Scoreboards' not found — dumping popup discovery...");
+            DumpPopupDiscovery(cf);
+            PrintFail("Refresh all Scoreboards menu item not found in popup.");
             return false;
         }
 
@@ -1536,11 +1523,13 @@ internal sealed class DiagnosticRunner : IDisposable
         refreshItem.Click();
         Thread.Sleep(1000);
 
-        // Dump the scoreboard pane contents for screen-grab discovery
+        // Dump the scoreboard pane contents for screen-grab analysis
         Console.WriteLine("\n  Dumping Main Scoreboard contents for screen-grab analysis...");
         RefreshMainWindow();
+
+        // Re-find the scoreboard pane (reference may be stale after refresh)
         var freshScoreboard = FindDescendant(_mainWindow!,
-            cf.ByName(SafeGet(() => scoreboardPane.Name)));
+            cf.ByAutomationId("twdReplayScreen"));
 
         if (freshScoreboard != null)
         {
@@ -1583,6 +1572,243 @@ internal sealed class DiagnosticRunner : IDisposable
         }
         catch { /* tree walker unavailable */ }
         return null;
+    }
+
+    /// <summary>
+    /// Attempts to activate a ToolWindow pane so its title bar buttons become
+    /// interactive. Tries SelectionItemPattern first, then Focus, then Click.
+    /// </summary>
+    private static void ActivateToolWindow(AutomationElement toolWindow)
+    {
+        // Try SelectionItemPattern (TabItem-like selection)
+        try
+        {
+            if (toolWindow.Patterns.SelectionItem.IsSupported)
+            {
+                toolWindow.Patterns.SelectionItem.Pattern.Select();
+                Console.WriteLine("    ✓ Activated via SelectionItemPattern");
+                return;
+            }
+        }
+        catch { /* fall through */ }
+
+        // Try Focus
+        try
+        {
+            toolWindow.Focus();
+            Console.WriteLine("    ✓ Focused");
+        }
+        catch { /* focus may fail */ }
+
+        // Click as last resort
+        try
+        {
+            toolWindow.Click();
+            Console.WriteLine("    ✓ Clicked to activate");
+        }
+        catch { /* click may fail */ }
+    }
+
+    /// <summary>
+    /// Tries multiple strategies to open an ActiproSoftware PopupButton:
+    ///   1. ExpandCollapsePattern.Expand()
+    ///   2. InvokePattern.Invoke()
+    ///   3. Focus + Click at center
+    ///   4. Mouse.Click at bounding rect center
+    /// Returns true if any strategy caused a popup to appear.
+    /// </summary>
+    private bool TryOpenPopupButton(AutomationElement button, ConditionFactory cf)
+    {
+        // Strategy 1: ExpandCollapse pattern
+        try
+        {
+            if (button.Patterns.ExpandCollapse.IsSupported)
+            {
+                Console.WriteLine("    Strategy 1: ExpandCollapsePattern.Expand()...");
+                button.Patterns.ExpandCollapse.Pattern.Expand();
+                Thread.Sleep(500);
+                if (IsPopupVisible(cf))
+                {
+                    Console.WriteLine("    ✓ Popup appeared via ExpandCollapse");
+                    return true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"    Strategy 1 failed: {ex.Message}");
+        }
+
+        // Strategy 2: Invoke pattern
+        try
+        {
+            if (button.Patterns.Invoke.IsSupported)
+            {
+                Console.WriteLine("    Strategy 2: InvokePattern.Invoke()...");
+                button.Patterns.Invoke.Pattern.Invoke();
+                Thread.Sleep(500);
+                if (IsPopupVisible(cf))
+                {
+                    Console.WriteLine("    ✓ Popup appeared via Invoke");
+                    return true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"    Strategy 2 failed: {ex.Message}");
+        }
+
+        // Strategy 3: Focus then Click
+        try
+        {
+            Console.WriteLine("    Strategy 3: Focus + Click...");
+            button.Focus();
+            Thread.Sleep(100);
+            button.Click();
+            Thread.Sleep(500);
+            if (IsPopupVisible(cf))
+            {
+                Console.WriteLine("    ✓ Popup appeared via Focus+Click");
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"    Strategy 3 failed: {ex.Message}");
+        }
+
+        // Strategy 4: Direct mouse click at bounding rect center
+        try
+        {
+            Console.WriteLine("    Strategy 4: Mouse.Click at bounding rect center...");
+            var rect = button.BoundingRectangle;
+            var centerX = (int)(rect.X + rect.Width / 2);
+            var centerY = (int)(rect.Y + rect.Height / 2);
+            Console.WriteLine($"    Clicking at ({centerX}, {centerY})...");
+            FlaUI.Core.Input.Mouse.Click(new System.Drawing.Point(centerX, centerY));
+            Thread.Sleep(500);
+            if (IsPopupVisible(cf))
+            {
+                Console.WriteLine("    ✓ Popup appeared via Mouse.Click");
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"    Strategy 4 failed: {ex.Message}");
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks whether a popup/context menu has appeared anywhere in the
+    /// automation tree — searches both the main window and the Desktop.
+    /// </summary>
+    private bool IsPopupVisible(ConditionFactory cf)
+    {
+        // Check main window for new Menu/ContextMenu elements
+        RefreshMainWindow();
+        var menuInWindow = FindDescendant(_mainWindow!,
+            cf.ByName(KnownElements.RefreshAllScoreboardsMenuItemName));
+        if (menuInWindow != null) return true;
+
+        // Check Desktop for popup windows (WPF popups appear here)
+        try
+        {
+            var desktop = _automation.GetDesktop();
+            var popupItem = FindDescendant(desktop,
+                cf.ByName(KnownElements.RefreshAllScoreboardsMenuItemName));
+            if (popupItem != null) return true;
+        }
+        catch { /* desktop access may fail */ }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Searches for a popup menu item by name — checks main window, Desktop,
+    /// and top-level windows (WPF popups can appear in any of these).
+    /// </summary>
+    private AutomationElement? FindPopupMenuItem(string name, ConditionFactory cf)
+    {
+        // Search in main window
+        RefreshMainWindow();
+        var item = FindDescendant(_mainWindow!, cf.ByName(name));
+        if (item != null) return item;
+
+        // Search at Desktop level (WPF context menus render as top-level popups)
+        try
+        {
+            var desktop = _automation.GetDesktop();
+            item = FindDescendant(desktop, cf.ByName(name));
+            if (item != null) return item;
+        }
+        catch { /* desktop access may fail */ }
+
+        // Search top-level windows from the app
+        var topWindows = GetTopLevelWindows();
+        foreach (var tw in topWindows)
+        {
+            item = FindDescendant(tw, cf.ByName(name));
+            if (item != null) return item;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Dumps all available context menus, popups, and menu items from the
+    /// main window, Desktop, and top-level windows for popup discovery.
+    /// </summary>
+    private void DumpPopupDiscovery(ConditionFactory cf)
+    {
+        // Main window menu items
+        var allMenuItems = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.MenuItem));
+        Console.WriteLine($"  Main window: {allMenuItems.Length} MenuItem(s)");
+        foreach (var mi in allMenuItems)
+        {
+            var miName = SafeGet(() => mi.Name);
+            if (!string.IsNullOrWhiteSpace(miName) &&
+                !new[] { "File", "Scoring", "Video", "Statistics", "Live", "Tools", "View", "Help", "System", "Live Scorer" }
+                    .Contains(miName))
+            {
+                PrintElement("    ", mi);
+            }
+        }
+
+        // Desktop-level search for popup/context menu elements
+        try
+        {
+            var desktop = _automation.GetDesktop();
+            var desktopMenus = FindAllDescendants(desktop, cf.ByControlType(ControlType.Menu));
+            Console.WriteLine($"  Desktop: {desktopMenus.Length} Menu element(s)");
+            foreach (var m in desktopMenus)
+            {
+                PrintElement("    ", m);
+                var children = FindAllDescendants(m, cf.ByControlType(ControlType.MenuItem));
+                foreach (var c in children)
+                    PrintElement("      ", c);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Desktop search failed: {ex.Message}");
+        }
+
+        // Top-level windows
+        var topWindows = GetTopLevelWindows();
+        Console.WriteLine($"  Top-level windows: {topWindows.Length}");
+        foreach (var tw in topWindows)
+        {
+            Console.WriteLine($"    \"{tw.Title}\" ClassName=\"{tw.ClassName}\"");
+            if (tw.Title != _mainWindow!.Title)
+            {
+                var dump = TreeDumper.Dump(tw, maxDepth: 4);
+                Console.WriteLine(dump);
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
