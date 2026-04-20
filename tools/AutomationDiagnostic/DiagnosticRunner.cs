@@ -705,7 +705,7 @@ internal sealed class DiagnosticRunner : IDisposable
 
     private bool Step6_SelectFirstMatch()
     {
-        PrintStep(6, "Select first match in grid and click 'Open Read Only'");
+        PrintStep(6, "Select first match in grid, capture team names, and click 'Open Read Only'");
         var cf = _automation.ConditionFactory;
 
         var grid = FindDescendant(_mainWindow!,
@@ -732,6 +732,26 @@ internal sealed class DiagnosticRunner : IDisposable
             firstRow.Click();
             Console.WriteLine("  ✓ First row selected");
             Thread.Sleep(300);
+
+            // Extract team names from the selected row's cells
+            var cells = FindAllDescendants(firstRow, cf.ByControlType(ControlType.Text));
+            Console.WriteLine($"  Row has {cells.Length} Text element(s):");
+            for (int i = 0; i < cells.Length; i++)
+                Console.WriteLine($"    Cell[{i}]: \"{SafeGet(() => cells[i].Name)}\"");
+
+            // Also try getting cells via Custom/Edit control types (WPF DataGridCell)
+            var customCells = FindAllDescendants(firstRow, cf.ByControlType(ControlType.Custom));
+            if (customCells.Length > 0)
+            {
+                Console.WriteLine($"  Row has {customCells.Length} Custom element(s):");
+                for (int i = 0; i < customCells.Length; i++)
+                    PrintElement($"    [{i}] ", customCells[i]);
+            }
+
+            // Dump the row subtree for full visibility of cell structure
+            var rowDump = TreeDumper.Dump(firstRow, maxDepth: 4);
+            var rowPath = TreeDumper.SaveToDesktop(rowDump, "step6-selected-row");
+            Console.WriteLine($"  Row subtree saved to: {rowPath}");
 
             // Click "Open Read Only" — this instance must always open readonly
             var openReadOnly = FindDescendant(_mainWindow!,
@@ -766,29 +786,82 @@ internal sealed class DiagnosticRunner : IDisposable
 
     private bool Step7_WaitForMatchLoad()
     {
-        PrintStep(7, "Wait for match to load (scoreboard/scoring screen appears)");
-        Console.WriteLine($"  Waiting {MatchLoadTimeoutSeconds}s for UI to settle after match selection...");
-        Thread.Sleep(MatchLoadTimeoutSeconds * 1000);
+        PrintStep(7, "Wait for match to load (Open Match dialog closes, scoreboard panels appear)");
+        var cf = _automation.ConditionFactory;
 
-        RefreshMainWindow();
+        var sw = Stopwatch.StartNew();
+        bool dialogGone = false;
+        bool scorePanelFound = false;
 
-        // Dump the current state for analysis
-        var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 4);
-        var path = TreeDumper.SaveToDesktop(dump, "step7-match-loaded");
-        Console.WriteLine($"  Tree saved to: {path}");
-
-        // Also dump all top-level windows (scoreboard may be a separate window)
-        var allWindows = _app!.GetAllTopLevelWindows(_automation);
-        Console.WriteLine($"  Found {allWindows.Length} top-level window(s):");
-        for (int i = 0; i < allWindows.Length; i++)
+        while (sw.Elapsed.TotalSeconds < MatchLoadTimeoutSeconds)
         {
-            Console.WriteLine($"    Window #{i + 1}: \"{allWindows[i].Title}\" " +
-                              $"ClassName=\"{allWindows[i].ClassName}\" " +
-                              $"Size={allWindows[i].BoundingRectangle.Width}x{allWindows[i].BoundingRectangle.Height}");
+            RefreshMainWindow();
+
+            // Check if the Open Match dialog has closed
+            if (!dialogGone)
+            {
+                var dialog = FindDescendant(_mainWindow!,
+                    cf.ByName(KnownElements.MatchSelectionDialogName));
+                if (dialog == null)
+                {
+                    dialogGone = true;
+                    Console.WriteLine($"  ✓ Open Match dialog closed [{sw.Elapsed:mm\\:ss}]");
+                }
+            }
+
+            // Check if the Score Summary panel appeared
+            if (dialogGone && !scorePanelFound)
+            {
+                var scorePanel = FindDescendant(_mainWindow!,
+                    cf.ByAutomationId(KnownElements.ScoreSummaryPaneAutomationId));
+                if (scorePanel != null)
+                {
+                    scorePanelFound = true;
+                    Console.WriteLine($"  ✓ Score Summary panel detected [{sw.Elapsed:mm\\:ss}]");
+                }
+            }
+
+            if (dialogGone && scorePanelFound)
+                break;
+
+            Console.Write($"\r  [{sw.Elapsed:mm\\:ss}] Waiting... dialog={(!dialogGone ? "open" : "closed")} score={(!scorePanelFound ? "pending" : "found")}");
+            Thread.Sleep(PollIntervalMs);
         }
 
-        Console.WriteLine("  (Review tree dumps and identify how to detect match-loaded state)");
-        PrintPass("Assume match loaded — continuing to element discovery");
+        Console.WriteLine();
+
+        if (!dialogGone)
+        {
+            PrintFail("Open Match dialog did not close within timeout.");
+            DumpAndSave("step7-dialog-stuck");
+            return false;
+        }
+
+        // Allow extra settle time for panels to fully render
+        Thread.Sleep(2000);
+        RefreshMainWindow();
+
+        // Report window title (contains short team names)
+        Console.WriteLine($"  Window title: \"{SafeGet(() => _mainWindow!.Title)}\"");
+
+        // Report status bar info
+        var statusBar = FindDescendant(_mainWindow!, cf.ByClassName(KnownElements.StatusBarClassName));
+        if (statusBar != null)
+        {
+            var statusTexts = FindAllDescendants(statusBar, cf.ByControlType(ControlType.Text));
+            Console.WriteLine($"  Status bar ({statusTexts.Length} text elements):");
+            foreach (var t in statusTexts)
+                Console.WriteLine($"    \"{SafeGet(() => t.Name)}\"");
+        }
+
+        // Report role verification
+        var roleText = FindDescendant(_mainWindow!, cf.ByName("Read Only"));
+        Console.WriteLine($"  Role 'Read Only': {(roleText != null ? "✓ confirmed" : "⚠ not found")}");
+
+        // Dump for analysis
+        DumpAndSave("step7-match-loaded");
+
+        PrintPass(scorePanelFound ? "Match loaded with Score Summary panel" : "Dialog closed (panels may still be loading)");
         return PauseForUser();
     }
 
@@ -798,57 +871,96 @@ internal sealed class DiagnosticRunner : IDisposable
 
     private bool Step8_FindTeamNameElements()
     {
-        PrintStep(8, "Find team name elements (scoring menu, home/away ComboBoxes)");
+        PrintStep(8, "Open Match Details/Teams dialog via Scoring menu");
         var cf = _automation.ConditionFactory;
 
-        if (KnownElements.ScoringMenuAutomationId == "TODO")
-        {
-            Console.WriteLine("  No known team name AutomationIds — searching by control type...");
-            Console.WriteLine();
-
-            var menus = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.Menu));
-            var menuItems = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.MenuItem));
-            var combos = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.ComboBox));
-
-            Console.WriteLine($"  Found {menus.Length} Menu(s), {menuItems.Length} MenuItem(s), {combos.Length} ComboBox(es):");
-            foreach (var m in menus)
-                PrintElement("    ", m);
-            foreach (var mi in menuItems)
-                PrintElement("    ", mi);
-            foreach (var c in combos)
-                PrintElement("    ", c);
-
-            var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 6);
-            var path = TreeDumper.SaveToDesktop(dump, "step8-team-names");
-            Console.WriteLine($"\n  Full tree saved to: {path}");
-            PrintWait("Review and report which elements are the scoring menu and team ComboBoxes.");
-            return false;
-        }
-
-        // Verify known IDs
+        // Click Scoring menu
         var scoringMenu = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.ScoringMenuAutomationId));
-        var homeCombo = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.HomeTeamComboBoxAutomationId));
-        var awayCombo = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.AwayTeamComboBoxAutomationId));
-
-        Console.WriteLine($"  Scoring menu: {(scoringMenu != null ? "✓ FOUND" : "✗ NOT FOUND")}");
-        Console.WriteLine($"  Home team combo: {(homeCombo != null ? "✓ FOUND" : "✗ NOT FOUND")}");
-        Console.WriteLine($"  Away team combo: {(awayCombo != null ? "✓ FOUND" : "✗ NOT FOUND")}");
-
-        if (scoringMenu != null) PrintElement("    ", scoringMenu);
-        if (homeCombo != null) PrintElement("    ", homeCombo);
-        if (awayCombo != null) PrintElement("    ", awayCombo);
-
-        if (scoringMenu == null || homeCombo == null || awayCombo == null)
+        if (scoringMenu == null)
         {
-            var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 6);
-            var path = TreeDumper.SaveToDesktop(dump, "step8-missing-elements");
-            Console.WriteLine($"  Tree saved to: {path}");
-            PrintFail("Some team name elements were not found.");
+            PrintFail("Scoring menu not found.");
+            DumpAndSave("step8-no-scoring-menu");
             return false;
         }
 
-        PrintPass();
-        return PauseForUser();
+        try
+        {
+            Console.WriteLine("  Clicking Scoring menu...");
+            scoringMenu.Click();
+            Thread.Sleep(500);
+
+            // Find "Match Details/Teams..." menu item
+            RefreshMainWindow();
+            var matchDetailsItem = FindDescendant(_mainWindow!,
+                cf.ByName(KnownElements.MatchDetailsMenuItemName));
+            if (matchDetailsItem == null)
+            {
+                // Dump the expanded menu to see what items are available
+                Console.WriteLine("  ⚠ 'Match Details/Teams...' not found — dumping menu items...");
+                var menuItems = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.MenuItem));
+                Console.WriteLine($"  Found {menuItems.Length} MenuItem(s):");
+                foreach (var mi in menuItems)
+                    PrintElement("    ", mi);
+
+                DumpAndSave("step8-scoring-menu-items", maxDepth: 8);
+                PrintWait("Review menu items and report the correct name for Match Details/Teams.");
+                return false;
+            }
+
+            Console.WriteLine($"  Found: \"{SafeGet(() => matchDetailsItem.Name)}\"");
+            matchDetailsItem.Click();
+            Console.WriteLine("  ✓ 'Match Details/Teams...' clicked");
+            Thread.Sleep(1000);
+
+            // Look for the Match Details dialog
+            RefreshMainWindow();
+            var allChildWindows = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.Window));
+            Console.WriteLine($"  Found {allChildWindows.Length} child Window(s) after click:");
+            foreach (var w in allChildWindows)
+                PrintElement("    ", w);
+
+            // Dump the dialog (or entire tree if no dialog found)
+            if (allChildWindows.Length > 0)
+            {
+                foreach (var w in allChildWindows)
+                {
+                    var name = SafeGet(() => w.Name);
+                    var dump = TreeDumper.Dump(w, maxDepth: 8);
+                    var path = TreeDumper.SaveToDesktop(dump, $"step8-dialog-{SafeName(name)}");
+                    Console.WriteLine($"  Dialog tree saved to: {path}");
+                }
+            }
+            else
+            {
+                DumpAndSave("step8-no-dialog", maxDepth: 8);
+            }
+
+            // Also dump from top-level windows in case dialog is a separate window
+            var topWindows = _app!.GetAllTopLevelWindows(_automation);
+            if (topWindows.Length > 1)
+            {
+                Console.WriteLine($"  Found {topWindows.Length} top-level window(s):");
+                foreach (var tw in topWindows)
+                {
+                    Console.WriteLine($"    \"{SafeGet(() => tw.Title)}\" ClassName=\"{SafeGet(() => tw.ClassName)}\"");
+                    if (tw.Title != _mainWindow!.Title)
+                    {
+                        var dump = TreeDumper.Dump(tw, maxDepth: 8);
+                        var path = TreeDumper.SaveToDesktop(dump, $"step8-topwindow-{SafeName(tw.Title)}");
+                        Console.WriteLine($"    Tree saved to: {path}");
+                    }
+                }
+            }
+
+            PrintWait("Review dialog dump and report Home Team / Away Team element identifiers + OK button.");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            PrintFail($"Error navigating to Match Details: {ex.Message}");
+            DumpAndSave("step8-error");
+            return false;
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════

@@ -37,17 +37,34 @@ internal static class KnownElements
     public static string StateFilterAutomationId = "cboState";
     public static string MatchSearchButtonAutomationId = "NONE_USE_ENTER_KEY";
 
-    // ── Step 3: Team Names ────────────────────────────────────────────────
+    // ── Match Selection Grid Columns (0-based) ─────────────────────────
+    // Date(0), Team 1(1), Team 2(2), Competition(3), Match Type(4),
+    // Venue(5), State(6), Video?(7), Source(8), Live Scorer(9), Dwnld Reqd?(10)
+    public const int GridColumnTeam1 = 1;
+    public const int GridColumnTeam2 = 2;
+
+    // ── Match Loaded State ───────────────────────────────────────────────
+    public static string ScoreSummaryPaneAutomationId = "twdScoreSummary";
+    public static string PlayControlPaneAutomationId = "twdPlayControl";
+    public static string ScoringPaneAutomationId = "twdScoring";
+    public static string StatusBarClassName = "ScorePanelStatusBar";
+
+    // ── Step 3: Team Names (via Scoring → Match Details/Teams...) ────────
     public static string ScoringMenuAutomationId = "mnuScoring";
-    public static string HomeTeamComboBoxAutomationId = "TODO";
-    public static string AwayTeamComboBoxAutomationId = "TODO";
+    public static string MatchDetailsMenuItemName = "Match Details/Teams...";
+    // The following are discovered from the Match Details dialog — initially TODO
+    public static string MatchDetailsDialogName = "TODO";
+    public static string HomeTeamElementAutomationId = "TODO";
+    public static string AwayTeamElementAutomationId = "TODO";
 
     // ── Step 4: Scoreboard ────────────────────────────────────────────────
+    public static string StreamingOverlayTabAutomationId =
+        "dockSite.PART_DockHost.RightAutoHideTabGroup[0].AutoHideTabItem[0]";
     public static string SettingsCogHelpText = "TODO";
     public static string ScoreboardWindowClassName = "TODO";
     public static string ScoreboardWindowName = "TODO";
 
-    // ── Step 5: Change Match ──────────────────────────────────────────────
+    // ── Step 5: Change Match (File → Open Match... re-use) ───────────────
     public static string FileMenuAutomationId = "mnuFile";
     public static string ChangeMatchElementAutomationId = "TODO";
 }
