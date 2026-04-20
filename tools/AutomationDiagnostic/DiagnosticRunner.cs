@@ -91,6 +91,224 @@ internal sealed class DiagnosticRunner : IDisposable
         }
     }
 
+    /// <summary>
+    /// Spinner discovery mode. Runs Steps 0-4 to reach the Open Match dialog,
+    /// then performs filter actions with UI tree dumps before, during, and after
+    /// each action to identify the loading spinner element.
+    /// </summary>
+    public void RunSpinnerDiscovery()
+    {
+        var logPath = Path.Combine(_outputDirectory,
+            $"pcs-spinner-discovery-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+        var originalOut = Console.Out;
+        using var fileWriter = new StreamWriter(logPath, false, System.Text.Encoding.UTF8)
+        {
+            AutoFlush = true
+        };
+        using var dual = new DualWriter(originalOut, fileWriter);
+        Console.SetOut(dual);
+
+        try
+        {
+            RunSpinnerDiscoverySteps(logPath);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"  💥 UNHANDLED EXCEPTION: {ex.GetType().FullName}: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+            Console.WriteLine($"\n  Spinner discovery log saved to: {logPath}");
+        }
+    }
+
+    private void RunSpinnerDiscoverySteps(string logPath)
+    {
+        Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
+        Console.WriteLine("║  🔍 SPINNER DISCOVERY MODE                                  ║");
+        Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+        Console.WriteLine($"  Log: {logPath}");
+        Console.WriteLine($"  Config: site=\"{_siteName}\" date=\"{_searchDate}\"");
+        Console.WriteLine();
+
+        // Reuse Steps 0-4 to reach the Open Match dialog
+        if (!Step0_AttachToProcess()) return;
+        if (!Step1_WaitForMainWindow()) return;
+        if (!Step2_FindLoginElements()) return;
+        if (!Step3_SubmitCredentials()) return;
+        if (!Step4_WaitForMatchSelection()) return;
+
+        var cf = _automation.ConditionFactory;
+        RefreshMainWindow();
+
+        // Find the Open Match dialog
+        var dialog = FindDescendant(_mainWindow!,
+            cf.ByName(KnownElements.MatchSelectionDialogName));
+        if (dialog == null)
+        {
+            Console.WriteLine("  ❌ Open Match dialog not found — cannot proceed.");
+            return;
+        }
+
+        Console.WriteLine("\n══ PHASE 1: BASELINE (before any filter change) ══");
+        DumpDialogWithIsOffscreen(dialog, cf, "BASELINE");
+
+        // Find site combo
+        var siteComboBoxes = FindAllDescendants(dialog, cf.ByControlType(ControlType.ComboBox));
+        AutomationElement? siteCombo = null;
+        foreach (var combo in siteComboBoxes)
+        {
+            var autoId = SafeGet(() => combo.AutomationId);
+            if (string.IsNullOrEmpty(autoId) || autoId == "<error>")
+            {
+                siteCombo = combo;
+                break;
+            }
+        }
+
+        if (siteCombo == null)
+        {
+            Console.WriteLine("  ❌ Site ComboBox not found.");
+            return;
+        }
+
+        // Select site — dump tree IMMEDIATELY after click (before it settles)
+        Console.WriteLine($"\n══ PHASE 2: SELECT SITE '{_siteName}' ══");
+        Console.WriteLine($"  [{Timestamp()}] Clicking site dropdown...");
+        siteCombo.Click();
+        Thread.Sleep(500);
+
+        var siteItem = FindDescendant(_mainWindow!, cf.ByName(_siteName));
+        if (siteItem == null)
+        {
+            Console.WriteLine($"  ❌ Site '{_siteName}' not found in dropdown.");
+            return;
+        }
+
+        Console.WriteLine($"  [{Timestamp()}] Clicking site item '{_siteName}'...");
+        siteItem.Click();
+
+        // Dump IMMEDIATELY — spinner should be visible now
+        Console.WriteLine($"  [{Timestamp()}] Dumping tree 100ms after site selection...");
+        Thread.Sleep(100);
+        DumpDialogWithIsOffscreen(dialog, cf, "SITE_SELECTED_100ms");
+
+        // Dump again at 500ms
+        Thread.Sleep(400);
+        Console.WriteLine($"  [{Timestamp()}] Dumping tree 500ms after site selection...");
+        DumpDialogWithIsOffscreen(dialog, cf, "SITE_SELECTED_500ms");
+
+        // Dump again at 2s
+        Thread.Sleep(1500);
+        Console.WriteLine($"  [{Timestamp()}] Dumping tree 2s after site selection...");
+        DumpDialogWithIsOffscreen(dialog, cf, "SITE_SELECTED_2000ms");
+
+        // Wait for it to settle and dump once more
+        Thread.Sleep(3000);
+        Console.WriteLine($"  [{Timestamp()}] Dumping tree 5s after site selection (should be settled)...");
+        DumpDialogWithIsOffscreen(dialog, cf, "SITE_SELECTED_5000ms");
+
+        // Now set Date From
+        Console.WriteLine($"\n══ PHASE 3: SET DATE FROM '{_searchDate}' ══");
+        var datePickers = FindAllDescendants(dialog, cf.ByClassName("DatePicker"));
+        if (datePickers.Length < 2)
+        {
+            Console.WriteLine("  ❌ Could not find 2 DatePickers.");
+            return;
+        }
+
+        var dateFromTextBox = FindDescendant(datePickers[0], cf.ByAutomationId("PART_TextBox"));
+        if (dateFromTextBox == null)
+        {
+            Console.WriteLine("  ❌ Date From TextBox not found.");
+            return;
+        }
+
+        Console.WriteLine($"  [{Timestamp()}] Clicking Date From and typing '{_searchDate}'...");
+        dateFromTextBox.Click();
+        Thread.Sleep(200);
+        FlaUI.Core.Input.Keyboard.TypeSimultaneously(
+            FlaUI.Core.WindowsAPI.VirtualKeyShort.CONTROL,
+            FlaUI.Core.WindowsAPI.VirtualKeyShort.KEY_A);
+        FlaUI.Core.Input.Keyboard.Type(_searchDate);
+        Thread.Sleep(200);
+
+        Console.WriteLine($"  [{Timestamp()}] Pressing Tab to commit Date From...");
+        FlaUI.Core.Input.Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.TAB);
+
+        // Dump IMMEDIATELY after Tab — spinner should appear
+        Thread.Sleep(100);
+        Console.WriteLine($"  [{Timestamp()}] Dumping tree 100ms after Date From Tab...");
+        DumpDialogWithIsOffscreen(dialog, cf, "DATE_FROM_TAB_100ms");
+
+        Thread.Sleep(400);
+        Console.WriteLine($"  [{Timestamp()}] Dumping tree 500ms after Date From Tab...");
+        DumpDialogWithIsOffscreen(dialog, cf, "DATE_FROM_TAB_500ms");
+
+        Thread.Sleep(1500);
+        Console.WriteLine($"  [{Timestamp()}] Dumping tree 2s after Date From Tab...");
+        DumpDialogWithIsOffscreen(dialog, cf, "DATE_FROM_TAB_2000ms");
+
+        Thread.Sleep(3000);
+        Console.WriteLine($"  [{Timestamp()}] Dumping tree 5s after Date From Tab (should be settled)...");
+        DumpDialogWithIsOffscreen(dialog, cf, "DATE_FROM_TAB_5000ms");
+
+        Console.WriteLine("\n══ SPINNER DISCOVERY COMPLETE ══");
+        Console.WriteLine("Review the dumps above. Look for elements whose IsOffscreen");
+        Console.WriteLine("property changes between the _100ms and _5000ms dumps.");
+    }
+
+    /// <summary>
+    /// Dumps all descendants of the dialog, including IsOffscreen property,
+    /// to help discover the spinner element.
+    /// </summary>
+    private static void DumpDialogWithIsOffscreen(
+        AutomationElement dialog, ConditionFactory cf, string label)
+    {
+        Console.WriteLine($"\n  ── DUMP: {label} ──");
+
+        void DumpElement(AutomationElement el, int depth)
+        {
+            if (depth > 6) return;
+
+            AutomationElement[] children;
+            try { children = el.FindAllChildren(); }
+            catch { return; }
+
+            var indent = new string(' ', (depth + 1) * 2);
+            foreach (var child in children)
+            {
+                var automationId = SafeGet(() => child.AutomationId);
+                var name = SafeGet(() => child.Name);
+                var className = SafeGet(() => child.ClassName);
+                var controlType = SafeGet(() => child.ControlType.ToString());
+                bool isOffscreen = false;
+                try { isOffscreen = child.Properties.IsOffscreen.ValueOrDefault; }
+                catch { /* ignore */ }
+
+                var hasId = !string.IsNullOrWhiteSpace(automationId);
+                var hasName = !string.IsNullOrWhiteSpace(name);
+                var marker = hasId ? "★" : "·";
+                var offscreenFlag = isOffscreen ? " [OFFSCREEN]" : "";
+
+                Console.Write($"{indent}{marker} [{controlType}]");
+                if (hasId) Console.Write($"  AutomationId=\"{automationId}\"");
+                if (hasName) Console.Write($"  Name=\"{(name!.Length > 60 ? name[..60] + "…" : name)}\"");
+                Console.Write($"  ClassName=\"{className}\"");
+                Console.Write($"  IsOffscreen={isOffscreen}{offscreenFlag}");
+                Console.WriteLine();
+
+                DumpElement(child, depth + 1);
+            }
+        }
+
+        DumpElement(dialog, 0);
+        Console.WriteLine($"  ── END: {label} ──");
+    }
+
     private void RunSteps(string logPath)
     {
         PrintHeader();

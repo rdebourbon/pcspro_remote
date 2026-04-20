@@ -10,6 +10,7 @@ internal static class Program
         string? siteName = null;
         string? searchDate = null;
         string? outputDir = null;
+        bool spinnerDiscovery = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -25,6 +26,8 @@ internal static class Program
                 searchDate = args[++i];
             if (args[i] is "-o" or "--output" && i + 1 < args.Length)
                 outputDir = args[++i];
+            if (args[i] is "--spinner-discovery")
+                spinnerDiscovery = true;
             if (args[i] is "-h" or "--help")
             {
                 PrintUsage();
@@ -64,7 +67,11 @@ internal static class Program
 
         using var runner = new DiagnosticRunner(password, username, exePath,
             siteName, searchDate, outputDir);
-        runner.Run();
+
+        if (spinnerDiscovery)
+            runner.RunSpinnerDiscovery();
+        else
+            runner.Run();
         return 0;
     }
 
@@ -82,6 +89,7 @@ internal static class Program
               -s, --site <name>      Site/club name for match filter (default: High Halstow CC)
               -d, --date <dd/MM/yyyy> Search date for match filter (default: today)
               -o, --output <dir>     Output directory for execution log (default: beside cricket.exe)
+              --spinner-discovery    Run spinner discovery mode (dumps tree before/during/after filters)
               -h, --help             Show this help
 
             The tool kills any existing cricket.exe, launches a fresh instance,
