@@ -1537,58 +1537,52 @@ internal sealed class DiagnosticRunner : IDisposable
     private static bool WaitForSpinnerIdle(
         AutomationElement dialog, ConditionFactory cf, int timeoutMs = 30000)
     {
+        // Discovery finding: LoaderSpinner is dynamically added/removed from
+        // the tree — it does NOT toggle IsOffscreen. When present, a search is
+        // in progress. When absent, the search is complete.
+        // It appears as a direct child of the dialog window (sibling of
+        // AllMatchesView), with a companion TextBlock "Retrieving Matches on
+        // Server...".
+
         // Brief delay so spinner can appear before we start polling
-        Thread.Sleep(200);
+        Thread.Sleep(300);
 
-        // Try to find spinner element — check both known class names
-        AutomationElement? spinner = FindDescendant(dialog,
-            cf.ByClassName(KnownElements.LoaderSpinnerClassName));
-        string spinnerType = "LoaderSpinner";
+        var sw = Stopwatch.StartNew();
+        bool spinnerSeen = false;
 
-        if (spinner == null)
+        while (sw.ElapsedMilliseconds < timeoutMs)
         {
-            spinner = FindDescendant(dialog, cf.ByClassName("FontAwesomeSpinner"));
-            spinnerType = "FontAwesomeSpinner";
-        }
+            var spinner = FindDescendant(dialog,
+                cf.ByClassName(KnownElements.LoaderSpinnerClassName));
 
-        if (spinner != null)
-        {
-            Console.WriteLine($"  [{Timestamp()}] Found spinner: ClassName=\"{spinnerType}\", " +
-                $"Name=\"{SafeGet(() => spinner.Name)}\", " +
-                $"IsOffscreen={spinner.Properties.IsOffscreen.ValueOrDefault}");
-
-            var sw = Stopwatch.StartNew();
-            while (sw.ElapsedMilliseconds < timeoutMs)
+            if (spinner != null)
             {
-                bool isOffscreen = spinner.Properties.IsOffscreen.ValueOrDefault;
-                if (isOffscreen)
+                if (!spinnerSeen)
                 {
-                    Console.WriteLine($"  [{Timestamp()}] {spinnerType} is offscreen — search idle");
-                    return true;
+                    Console.WriteLine($"  [{Timestamp()}] LoaderSpinner detected — search in progress");
+                    spinnerSeen = true;
                 }
 
-                Console.Write($"\r  [{Timestamp()}] {spinnerType} visible — search in progress...  ");
-                Thread.Sleep(200);
+                Console.Write($"\r  [{Timestamp()}] LoaderSpinner present — waiting for removal...  ");
+                Thread.Sleep(300);
             }
-
-            Console.WriteLine();
-            Console.WriteLine($"  [{Timestamp()}] ⚠ {spinnerType} still visible after {timeoutMs}ms timeout");
-            return false;
+            else
+            {
+                if (spinnerSeen)
+                {
+                    Console.WriteLine($"\r  [{Timestamp()}] LoaderSpinner removed — search complete          ");
+                }
+                else
+                {
+                    Console.WriteLine($"  [{Timestamp()}] No LoaderSpinner found — search not active or already complete");
+                }
+                return true;
+            }
         }
 
-        // No spinner element found — fall back to grid stabilization
-        Console.WriteLine($"  [{Timestamp()}] No spinner element found in dialog — falling back to grid stabilization");
-        var grid = FindDescendant(dialog,
-            cf.ByAutomationId(KnownElements.MatchDataGridAutomationId));
-        if (grid != null)
-        {
-            int stableCount = WaitForGridStable(grid, cf, timeoutMs: Math.Min(timeoutMs, 10000));
-            Console.WriteLine($"  [{Timestamp()}] Grid stabilized with {stableCount} row(s)");
-            return stableCount >= 0;
-        }
-
-        Console.WriteLine($"  [{Timestamp()}] No grid found either — proceeding anyway");
-        return true;
+        Console.WriteLine();
+        Console.WriteLine($"  [{Timestamp()}] ⚠ LoaderSpinner still present after {timeoutMs}ms timeout");
+        return false;
     }
 
     /// <summary>
