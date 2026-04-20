@@ -413,8 +413,8 @@ internal sealed class DiagnosticRunner : IDisposable
             Console.WriteLine("  ✓ Submit button clicked");
 
             // Wait briefly, then check if login failed (error message appeared)
-            Console.WriteLine("  Waiting 3s for login response...");
-            Thread.Sleep(3000);
+            Console.WriteLine("  Waiting for login response...");
+            Thread.Sleep(1000);
 
             var loginDialog = FindDescendant(_mainWindow!, cf.ByAutomationId(KnownElements.LoginDialogAutomationId));
             if (loginDialog != null)
@@ -474,21 +474,18 @@ internal sealed class DiagnosticRunner : IDisposable
             }
 
             fileMenu.Click();
-            Thread.Sleep(500);
+            Thread.Sleep(200);
 
-            // Dump the expanded File menu to discover the menu items
-            Console.WriteLine("  File menu clicked — dumping menu items...");
-            RefreshMainWindow();
-
-            // Find the "Open Match..." menu item
-            var openMatch = FindDescendant(_mainWindow!,
+            // Find the "Open Match..." menu item within the expanded File menu
+            Console.WriteLine("  File menu clicked — looking for Open Match...");
+            var openMatch = FindDescendant(fileMenu,
                 cf.ByName(KnownElements.OpenMatchMenuItemName));
 
             if (openMatch == null)
             {
                 // Dump tree to discover what menu items are available
-                Console.WriteLine("  ⚠ 'Open Match...' not found by Name — dumping tree for discovery.");
-                var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 6);
+                Console.WriteLine("  ⚠ 'Open Match...' not found by Name — dumping menu tree for discovery.");
+                var dump = TreeDumper.Dump(fileMenu, maxDepth: 4);
                 Console.WriteLine($"\n  ── UI Tree: step4-file-menu-expanded ──");
                 Console.WriteLine(dump);
                 Console.WriteLine($"  ── End ──");
@@ -503,7 +500,7 @@ internal sealed class DiagnosticRunner : IDisposable
 
             // Wait for match selection dialog to appear
             Console.WriteLine($"  Waiting up to {LoginTransitionTimeoutSeconds}s for match selection dialog...");
-            Thread.Sleep(3000); // give it a moment to open
+            Thread.Sleep(500); // brief pause before polling
 
             RefreshMainWindow();
 
@@ -940,11 +937,10 @@ internal sealed class DiagnosticRunner : IDisposable
         {
             Console.WriteLine("  Clicking Scoring menu...");
             scoringMenu.Click();
-            Thread.Sleep(500);
+            Thread.Sleep(200);
 
-            // Find "Match Details/Teams..." menu item
-            RefreshMainWindow();
-            var matchDetailsItem = FindDescendant(_mainWindow!,
+            // Find "Match Details/Teams..." within the expanded Scoring menu
+            var matchDetailsItem = FindDescendant(scoringMenu,
                 cf.ByName(KnownElements.MatchDetailsMenuItemName));
             if (matchDetailsItem == null)
             {
