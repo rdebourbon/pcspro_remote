@@ -704,21 +704,19 @@ internal sealed class DiagnosticRunner : IDisposable
                 Console.WriteLine($"  ✓ {label} set to '{_searchDate}'");
             }
 
-            // 4. Press Enter to trigger search
-            Console.WriteLine("  Pressing Enter to trigger search...");
-            dialog.Focus();
-            Thread.Sleep(200);
-            FlaUI.Core.Input.Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.ENTER);
+            // 4. Tab-out already triggered the search (focus loss is sufficient)
+            Console.WriteLine("  Focus loss triggers search — waiting for grid to stabilize...");
             Thread.Sleep(500);
 
-            Console.WriteLine($"  Waiting up to {SearchTimeoutSeconds}s for results...");
+            Console.WriteLine($"  Waiting up to {SearchTimeoutSeconds}s for stable results...");
 
-            // Poll for data grid to populate
+            // Poll for data grid to populate AND stabilize
             var sw = Stopwatch.StartNew();
+            int lastRowCount = -1;
+            int stablePolls = 0;
             while (sw.Elapsed.TotalSeconds < SearchTimeoutSeconds)
             {
                 Thread.Sleep(PollIntervalMs);
-                Console.Write($"\r  [{sw.Elapsed:mm\\:ss}] Waiting for search results...");
 
                 RefreshMainWindow();
                 var grid = FindDescendant(_mainWindow!,
@@ -726,20 +724,31 @@ internal sealed class DiagnosticRunner : IDisposable
                 if (grid != null)
                 {
                     var rows = FindAllDescendants(grid, cf.ByControlType(ControlType.DataItem));
-                    if (rows.Length > 0)
+                    Console.Write($"\r  [{Timestamp()}] Grid has {rows.Length} row(s), stable={stablePolls}/3  ");
+
+                    if (rows.Length > 0 && rows.Length == lastRowCount)
                     {
-                        Console.WriteLine();
-                        Console.WriteLine($"  ✓ DataGrid found with {rows.Length} row(s)");
-                        foreach (var row in rows.Take(5))
-                            Console.WriteLine($"    Row: \"{SafeGet(() => row.Name)}\"");
-                        PrintPass();
-                        return PauseForUser();
+                        stablePolls++;
+                        if (stablePolls >= 3) // stable for 3 consecutive polls
+                        {
+                            Console.WriteLine();
+                            Console.WriteLine($"  ✓ DataGrid stabilized with {rows.Length} row(s)");
+                            foreach (var row in rows.Take(5))
+                                Console.WriteLine($"    Row: \"{SafeGet(() => row.Name)}\"");
+                            PrintPass();
+                            return PauseForUser();
+                        }
                     }
+                    else
+                    {
+                        stablePolls = 0;
+                    }
+                    lastRowCount = rows.Length;
                 }
             }
 
             Console.WriteLine();
-            PrintFail("Search results did not appear within timeout. Grid may be empty or spinner still active.");
+            PrintFail("Search results did not stabilize within timeout. Grid may be empty or still refreshing.");
             DumpAndSave("step5-search-timeout", maxDepth: 8);
             return false;
         }
