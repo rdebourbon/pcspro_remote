@@ -9,6 +9,7 @@ internal static class Program
         string? username = null;
         string? siteName = null;
         string? searchDate = null;
+        string? outputDir = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -22,6 +23,8 @@ internal static class Program
                 siteName = args[++i];
             if (args[i] is "-d" or "--date" && i + 1 < args.Length)
                 searchDate = args[++i];
+            if (args[i] is "-o" or "--output" && i + 1 < args.Length)
+                outputDir = args[++i];
             if (args[i] is "-h" or "--help")
             {
                 PrintUsage();
@@ -72,7 +75,12 @@ internal static class Program
             searchDate = string.IsNullOrEmpty(input) ? today : input;
         }
 
-        using var runner = new DiagnosticRunner(password, username, exePath, siteName, searchDate);
+        outputDir ??= Path.Combine(
+            Path.GetDirectoryName(exePath) ?? Environment.CurrentDirectory,
+            "diagnosticlogs");
+
+        using var runner = new DiagnosticRunner(password, username, exePath,
+            siteName, searchDate, outputDir);
         runner.Run();
         return 0;
     }
@@ -90,17 +98,17 @@ internal static class Program
               -p, --password <pwd>   PCS Pro login password
               -s, --site <name>      Site/club name for match filter (default: High Halstow CC)
               -d, --date <dd/MM/yyyy> Search date for match filter (default: today)
+              -o, --output <dir>     Output directory for execution log (default: beside cricket.exe)
               -h, --help             Show this help
 
             The tool kills any existing cricket.exe, launches a fresh instance,
-            then attempts each automation step in sequence. When a step fails,
-            it dumps the UI tree for that screen to the Desktop.
+            then runs the full automation flow without pausing. All output and
+            UI tree dumps are captured in a single execution log file.
 
             Example:
               AutomationDiagnostic -e "C:\PcsPro\cricket.exe" -u "myuser" -p "mypass"
               AutomationDiagnostic -e "C:\PcsPro\cricket.exe" -p "mypass" -s "High Halstow CC" -d "20/04/2026"
-
-            Tree dumps are saved to the Desktop as pcs-diag-*.txt
+              AutomationDiagnostic -e "C:\PcsPro\cricket.exe" -p "mypass" -o "D:\logs"
             """);
     }
 }

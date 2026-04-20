@@ -44,6 +44,8 @@ internal static class KnownElements
     public const int GridColumnTeam2 = 2;
 
     // ── Match Loaded State ───────────────────────────────────────────────
+    // twdScoreSummary is a match-loaded detection signal only — it is NOT
+    // the streaming scoreboard overlay that needs to be screengrabbed.
     public static string ScoreSummaryPaneAutomationId = "twdScoreSummary";
     public static string PlayControlPaneAutomationId = "twdPlayControl";
     public static string ScoringPaneAutomationId = "twdScoring";
@@ -52,12 +54,20 @@ internal static class KnownElements
     // ── Step 3: Team Names (via Scoring → Match Details/Teams...) ────────
     public static string ScoringMenuAutomationId = "mnuScoring";
     public static string MatchDetailsMenuItemName = "Match Details/Teams...";
-    // The following are discovered from the Match Details dialog — initially TODO
-    public static string MatchDetailsDialogName = "TODO";
-    public static string HomeTeamElementAutomationId = "TODO";
-    public static string AwayTeamElementAutomationId = "TODO";
+    // Match Details dialog: AutomationId="window", Name="Match Details/Teams"
+    public static string MatchDetailsDialogName = "Match Details/Teams";
+    public static string MatchDetailsOkButtonAutomationId = "btnAction";
+    // Each team is a MatchTeamView (AutomationId="matchTeamView") inside an
+    // ItemsControl. First = home, second = away. Both have same AutomationId.
+    public static string MatchTeamViewAutomationId = "matchTeamView";
+    public static string MatchTeamViewClassName = "MatchTeamView";
+    public static string ClubComboBoxAutomationId = "cboClub";
+    public static string TeamComboBoxAutomationId = "cbxTeam";
+    public static string PlayersGridAutomationId = "dgrPlayers";
 
-    // ── Step 4: Scoreboard ────────────────────────────────────────────────
+    // ── Step 4: Streaming Scoreboard (NOT twdScoreSummary) ───────────────
+    // The streaming overlay is accessed via the auto-hide tab on the right.
+    // The actual scoreboard window for screengrabbing is still being discovered.
     public static string StreamingOverlayTabAutomationId =
         "dockSite.PART_DockHost.RightAutoHideTabGroup[0].AutoHideTabItem[0]";
     public static string SettingsCogHelpText = "TODO";

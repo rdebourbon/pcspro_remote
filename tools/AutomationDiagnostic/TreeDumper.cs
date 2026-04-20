@@ -28,19 +28,6 @@ internal static class TreeDumper
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Saves tree dump to a file on the Desktop and returns the file path.
-    /// </summary>
-    public static string SaveToDesktop(string content, string stepName)
-    {
-        var safeName = stepName.Replace(" ", "-").Replace("/", "-");
-        var path = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-            $"pcs-diag-{safeName}-{DateTime.Now:HHmmss}.txt");
-        File.WriteAllText(path, content, Encoding.UTF8);
-        return path;
-    }
-
     private static void DumpChildren(AutomationElement parent, StringBuilder sb, int maxDepth, int depth)
     {
         if (depth > maxDepth) return;

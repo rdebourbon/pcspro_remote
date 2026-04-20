@@ -27,19 +27,23 @@ internal sealed class DiagnosticRunner : IDisposable
     private readonly string? _executablePath;
     private readonly string _siteName;
     private readonly string _searchDate;
+    private readonly string _outputDirectory;
     private readonly UIA3Automation _automation;
     private Application? _app;
     private Window? _mainWindow;
 
     public DiagnosticRunner(string password, string expectedUsername, string? executablePath,
-        string siteName, string searchDate)
+        string siteName, string searchDate, string outputDirectory)
     {
         _password = password;
         _expectedUsername = expectedUsername;
         _executablePath = executablePath;
         _siteName = siteName;
         _searchDate = searchDate;
+        _outputDirectory = outputDirectory;
         _automation = new UIA3Automation();
+
+        Directory.CreateDirectory(_outputDirectory);
     }
 
     public void Dispose()
@@ -49,11 +53,38 @@ internal sealed class DiagnosticRunner : IDisposable
 
     /// <summary>
     /// Runs the full diagnostic flow. Stops at the first step that fails
-    /// and dumps the UI tree at that point.
+    /// and dumps the UI tree at that point. All console output is mirrored
+    /// to a single execution log file in the output directory.
     /// </summary>
     public void Run()
     {
+        var logPath = Path.Combine(_outputDirectory,
+            $"pcs-diag-run-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+        var originalOut = Console.Out;
+        using var fileWriter = new StreamWriter(logPath, false, System.Text.Encoding.UTF8)
+        {
+            AutoFlush = true
+        };
+        using var dual = new DualWriter(originalOut, fileWriter);
+        Console.SetOut(dual);
+
+        try
+        {
+            RunSteps(logPath);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+            Console.WriteLine($"\n  Execution log saved to: {logPath}");
+        }
+    }
+
+    private void RunSteps(string logPath)
+    {
         PrintHeader();
+        Console.WriteLine($"  Log: {logPath}");
+        Console.WriteLine($"  Config: site=\"{_siteName}\" date=\"{_searchDate}\"");
+        Console.WriteLine();
 
         // Step 0: Attach to process
         if (!Step0_AttachToProcess()) return;
@@ -233,8 +264,9 @@ internal sealed class DiagnosticRunner : IDisposable
             foreach (var w in finalWindows)
             {
                 var dump = TreeDumper.Dump(w, maxDepth: 3);
-                var path = TreeDumper.SaveToDesktop(dump, $"step1-window-{SafeName(w.Title)}");
-                Console.WriteLine($"  → {path}");
+                Console.WriteLine($"\n  ── UI Tree: step1-window-{SafeName(w.Title)} ──");
+                Console.WriteLine(dump);
+                Console.WriteLine($"  ── End ──");
             }
         }
 
@@ -276,8 +308,9 @@ internal sealed class DiagnosticRunner : IDisposable
             Console.WriteLine("  No login dialog found — app may already be logged in.");
             Console.WriteLine("  Dumping main window tree for analysis...");
             var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 4);
-            var path = TreeDumper.SaveToDesktop(dump, "step2-no-login-dialog");
-            Console.WriteLine($"  Tree saved to: {path}");
+            Console.WriteLine($"\n  ── UI Tree: step2-no-login-dialog ──");
+            Console.WriteLine(dump);
+            Console.WriteLine($"  ── End ──");
             PrintWait("Is the login dialog visible? If already logged in, we can skip ahead.");
             return false;
         }
@@ -318,8 +351,9 @@ internal sealed class DiagnosticRunner : IDisposable
         if (pwField == null || submitBtn == null)
         {
             var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 6);
-            var path = TreeDumper.SaveToDesktop(dump, "step2-missing-elements");
-            Console.WriteLine($"  Tree saved to: {path}");
+            Console.WriteLine($"\n  ── UI Tree: step2-missing-elements ──");
+            Console.WriteLine(dump);
+            Console.WriteLine($"  ── End ──");
             PrintFail("Login elements not found.");
             return false;
         }
@@ -393,8 +427,9 @@ internal sealed class DiagnosticRunner : IDisposable
         {
             PrintFail($"Interaction error: {ex.Message}");
             var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 4);
-            var path = TreeDumper.SaveToDesktop(dump, "step3-login-interact");
-            Console.WriteLine($"  Tree saved to: {path}");
+            Console.WriteLine($"\n  ── UI Tree: step3-login-interact ──");
+            Console.WriteLine(dump);
+            Console.WriteLine($"  ── End ──");
             return false;
         }
     }
@@ -439,8 +474,9 @@ internal sealed class DiagnosticRunner : IDisposable
                 // Dump tree to discover what menu items are available
                 Console.WriteLine("  ⚠ 'Open Match...' not found by Name — dumping tree for discovery.");
                 var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 6);
-                var path = TreeDumper.SaveToDesktop(dump, "step4-file-menu-expanded");
-                Console.WriteLine($"  Full tree saved to: {path}");
+                Console.WriteLine($"\n  ── UI Tree: step4-file-menu-expanded ──");
+                Console.WriteLine(dump);
+                Console.WriteLine($"  ── End ──");
                 PrintWait("Review the file menu dump — look for the Open Match menu item name.");
                 return false;
             }
@@ -460,8 +496,9 @@ internal sealed class DiagnosticRunner : IDisposable
             {
                 Console.WriteLine("  No known search button AutomationId — dumping tree for discovery.");
                 var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 8);
-                var path = TreeDumper.SaveToDesktop(dump, "step4-match-selection");
-                Console.WriteLine($"  Full tree saved to: {path}");
+                Console.WriteLine($"\n  ── UI Tree: step4-match-selection ──");
+                Console.WriteLine(dump);
+                Console.WriteLine($"  ── End ──");
 
                 // Also search for DataGrid controls which might be the match list
                 var dataGrids = FindAllDescendants(_mainWindow!, cf.ByControlType(ControlType.DataGrid));
@@ -750,8 +787,9 @@ internal sealed class DiagnosticRunner : IDisposable
 
             // Dump the row subtree for full visibility of cell structure
             var rowDump = TreeDumper.Dump(firstRow, maxDepth: 4);
-            var rowPath = TreeDumper.SaveToDesktop(rowDump, "step6-selected-row");
-            Console.WriteLine($"  Row subtree saved to: {rowPath}");
+            Console.WriteLine($"\n  ── UI Tree: step6-selected-row ──");
+            Console.WriteLine(rowDump);
+            Console.WriteLine($"  ── End ──");
 
             // Click "Open Read Only" — this instance must always open readonly
             var openReadOnly = FindDescendant(_mainWindow!,
@@ -926,8 +964,9 @@ internal sealed class DiagnosticRunner : IDisposable
                 {
                     var name = SafeGet(() => w.Name);
                     var dump = TreeDumper.Dump(w, maxDepth: 8);
-                    var path = TreeDumper.SaveToDesktop(dump, $"step8-dialog-{SafeName(name)}");
-                    Console.WriteLine($"  Dialog tree saved to: {path}");
+                    Console.WriteLine($"\n  ── UI Tree: step8-dialog-{SafeName(name)} ──");
+                    Console.WriteLine(dump);
+                    Console.WriteLine($"  ── End ──");
                 }
             }
             else
@@ -946,8 +985,9 @@ internal sealed class DiagnosticRunner : IDisposable
                     if (tw.Title != _mainWindow!.Title)
                     {
                         var dump = TreeDumper.Dump(tw, maxDepth: 8);
-                        var path = TreeDumper.SaveToDesktop(dump, $"step8-topwindow-{SafeName(tw.Title)}");
-                        Console.WriteLine($"    Tree saved to: {path}");
+                        Console.WriteLine($"\n  ── UI Tree: step8-topwindow-{SafeName(tw.Title)} ──");
+                        Console.WriteLine(dump);
+                        Console.WriteLine($"  ── End ──");
                     }
                 }
             }
@@ -997,8 +1037,9 @@ internal sealed class DiagnosticRunner : IDisposable
                 Console.WriteLine("    ✓ Scoreboard window matched by ClassName!");
                 found = true;
                 var dump = TreeDumper.Dump(w, maxDepth: 4);
-                var path = TreeDumper.SaveToDesktop(dump, "step9-scoreboard-window");
-                Console.WriteLine($"    Tree saved to: {path}");
+                Console.WriteLine($"\n  ── UI Tree: step9-scoreboard-window ──");
+                Console.WriteLine(dump);
+                Console.WriteLine($"  ── End ──");
             }
         }
 
@@ -1008,8 +1049,9 @@ internal sealed class DiagnosticRunner : IDisposable
             foreach (var w in allWindows)
             {
                 var dump = TreeDumper.Dump(w, maxDepth: 4);
-                var path = TreeDumper.SaveToDesktop(dump, $"step9-window-{SafeName(w.Title)}");
-                Console.WriteLine($"  → {path}");
+                Console.WriteLine($"\n  ── UI Tree: step9-window-{SafeName(w.Title)} ──");
+                Console.WriteLine(dump);
+                Console.WriteLine($"  ── End ──");
             }
 
             // Also look for image/picture controls (scoreboard might be rendered as image)
@@ -1058,8 +1100,9 @@ internal sealed class DiagnosticRunner : IDisposable
             }
 
             var dump = TreeDumper.Dump(_mainWindow!, maxDepth: 5);
-            var path = TreeDumper.SaveToDesktop(dump, "step10-change-match");
-            Console.WriteLine($"\n  Full tree saved to: {path}");
+            Console.WriteLine($"\n  ── UI Tree: step10-change-match ──");
+            Console.WriteLine(dump);
+            Console.WriteLine($"  ── End ──");
             PrintWait("Review and report which element triggers the change-match action.");
             return false;
         }
@@ -1107,8 +1150,9 @@ internal sealed class DiagnosticRunner : IDisposable
     {
         RefreshMainWindow();
         var dump = TreeDumper.Dump(_mainWindow!, maxDepth: maxDepth);
-        var path = TreeDumper.SaveToDesktop(dump, label);
-        Console.WriteLine($"  Tree saved to: {path}");
+        Console.WriteLine($"\n  ── UI Tree Dump: {label} ──");
+        Console.WriteLine(dump);
+        Console.WriteLine($"  ── End: {label} ──");
     }
 
     private static void PrintElement(string indent, AutomationElement e)
@@ -1143,10 +1187,6 @@ internal sealed class DiagnosticRunner : IDisposable
     private static bool PauseForUser()
     {
         Console.WriteLine();
-        Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.Write("  Press Enter to continue to next step (or Ctrl+C to stop)...");
-        Console.ResetColor();
-        Console.ReadLine();
         return true;
     }
 
