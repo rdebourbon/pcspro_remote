@@ -40,6 +40,10 @@ TestResults/
 *.coverage
 *.coveragexml
 
+# Node.js (build-time tooling only)
+node_modules/
+package-lock.json
+
 # Publish output
 publish/
 publish-*/

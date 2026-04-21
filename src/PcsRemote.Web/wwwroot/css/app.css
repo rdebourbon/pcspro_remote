@@ -44,6 +44,13 @@ body {
     padding: 1.25rem 1rem;
 }
 
+/* ---- Club logo (header) ---- */
+.hhcc-logo {
+    height: 40px;
+    width: auto;
+    margin-right: 0.5rem;
+}
+
 /* ---- Connected user count (header) ---- */
 .connected-user-count {
     font-size: 0.8rem;
