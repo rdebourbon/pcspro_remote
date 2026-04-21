@@ -268,6 +268,31 @@ public class MockPcsProAutomationService : IPcsProAutomationService
         }
     }
 
+    public Task DismissAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("DismissAsync starting from {State}", _currentState);
+
+        if (!_semaphore.Wait(0))
+            throw new InvalidOperationException("A lifecycle operation is already in progress.");
+
+        try
+        {
+            if (_currentState != PcsProState.Error)
+                throw new InvalidOperationException(
+                    $"DismissAsync requires Error state; current state is {_currentState}.");
+
+            LastErrorReason = null;
+            Transition(PcsProState.NotRunning);
+            _logger.LogInformation("DismissAsync complete — transitioned to {State}", PcsProState.NotRunning);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+
+        return Task.CompletedTask;
+    }
+
     public async Task RetryAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("RetryAsync starting from {State}", _currentState);

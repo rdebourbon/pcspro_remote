@@ -17,10 +17,13 @@ public sealed class OperationCoordinatorService : IOperationCoordinatorService
     public bool IsOperationInProgress => Volatile.Read(ref _inProgress) == 1;
 
     /// <inheritdoc/>
+    public string? CurrentOperationDescription => null; // Placeholder — full implementation in S-005.
+
+    /// <inheritdoc/>
     public event EventHandler<bool>? OperationInProgressChanged;
 
     /// <inheritdoc/>
-    public bool BeginOperation()
+    public bool BeginOperation(string? description = null)
     {
         // Transition 0 → 1. If the field was already 1 the exchange returns 1 (original value)
         // meaning the call was a no-op: do not raise the event and return false so the caller

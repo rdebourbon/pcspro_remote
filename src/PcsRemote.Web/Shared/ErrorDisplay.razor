@@ -18,6 +18,10 @@
                 @onclick="OnRetryClickedAsync">
             &#x27F3; Retry
         </button>
+        <button class="error-display__dismiss-btn"
+                @onclick="OnDismissClickedAsync">
+            &#x2715; Dismiss
+        </button>
     </div>
 }
 
@@ -26,6 +30,7 @@
     private string? _errorReason;
     private bool _operationInProgress;
     private bool _manualModeActive;
+    private bool _dismissing;
     private bool _disposed;
 
     protected override void OnInitialized()
@@ -38,6 +43,27 @@
         _errorReason = AutomationService.LastErrorReason;
         _manualModeActive = ManualModeService.IsManualModeActive;
         _operationInProgress = CoordinatorService.IsOperationInProgress;
+    }
+
+    private async Task OnDismissClickedAsync()
+    {
+        if (_dismissing)
+            return;
+
+        _dismissing = true;
+        try
+        {
+            await AutomationService.DismissAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogError(ex, "Dismiss operation failed");
+            NotificationService.Notify(NotificationSeverity.Error, "Dismiss failed");
+        }
+        finally
+        {
+            _dismissing = false;
+        }
     }
 
     private async Task OnRetryClickedAsync()

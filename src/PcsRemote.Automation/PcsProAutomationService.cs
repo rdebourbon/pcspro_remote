@@ -1427,6 +1427,56 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     }
 
     /// <inheritdoc/>
+    public async Task DismissAsync(CancellationToken ct = default)
+    {
+        // Step 1: Log entry.
+        _logger.LogInformation("DismissAsync called; current state {State}", CurrentState);
+
+        // Step 2: State guard — only valid from Error.
+        if (CurrentState != PcsProState.Error)
+            throw new InvalidOperationException(
+                $"DismissAsync called from {CurrentState} — only valid from Error state.");
+
+        // Step 3: Stop health poll BEFORE acquiring _operationLock (same pattern as StopAsync).
+        await StopHealthPollAsync().ConfigureAwait(false);
+
+        // Step 4: Fire Dismiss trigger under lock (Error → NotRunning), clear last error reason.
+        await _operationLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            _stateMachine.Fire(PcsProTrigger.Dismiss);
+            _lastErrorReason = null;
+        }
+        finally
+        {
+            _operationLock.Release();
+        }
+
+        // Step 5: Flush state events — subscribers observe NotRunning.
+        FlushStateChangedEvents();
+
+        // Step 6: Cancel and await crash watcher.
+        if (_crashWatcherCts is not null)
+        {
+            _logger.LogDebug("DismissAsync cancelling crash watcher");
+            _crashWatcherCts.Cancel();
+            if (_crashWatcherTask is not null)
+                await _crashWatcherTask.ConfigureAwait(false);
+            _crashWatcherCts.Dispose();
+            _crashWatcherCts = null;
+            _crashWatcherTask = null;
+        }
+
+        // No process termination — NotRunning means "not managing lifecycle".
+        // No re-launch — unlike RetryAsync, dismiss returns to quiescent state only.
+        // Dispose the process handle (process has already exited/crashed in Error state).
+        _process?.Dispose();
+        _process = null;
+
+        _logger.LogInformation("DismissAsync complete; current state {State}", CurrentState);
+    }
+
+    /// <inheritdoc/>
     public async Task RetryAsync(CancellationToken ct = default)
     {
         // Step 1: Log entry.

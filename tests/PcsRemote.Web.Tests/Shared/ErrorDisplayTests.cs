@@ -341,4 +341,228 @@ public sealed class ErrorDisplayTests
                     "ErrorDisplay must render empty when state leaves Error (H-SC-7 flow)"));
         }
     }
+
+    // ── S-004 TC-1: Error state renders dismiss button ────────────────────────
+
+    [TestMethod]
+    public void ErrorState_RendersDismissButton()
+    {
+        var (cut, _, _, _, _, _, ctx) = Build(PcsProState.Error);
+        using (ctx)
+        {
+            cut.Find(".error-display__dismiss-btn").Should().NotBeNull();
+        }
+    }
+
+    // ── S-004 TC-2: Non-Error state does not render dismiss button ────────────
+
+    [TestMethod]
+    [DataRow(PcsProState.NotRunning)]
+    [DataRow(PcsProState.Launching)]
+    [DataRow(PcsProState.LoginScreen)]
+    [DataRow(PcsProState.MatchSelection)]
+    [DataRow(PcsProState.MatchSelectionSearching)]
+    [DataRow(PcsProState.MatchSelectionReady)]
+    [DataRow(PcsProState.MatchLoaded)]
+    public void NonErrorState_DismissButtonNotRendered(PcsProState state)
+    {
+        var (cut, _, _, _, _, _, ctx) = Build(state);
+        using (ctx)
+        {
+            cut.FindAll(".error-display__dismiss-btn").Should().BeEmpty(
+                "Dismiss button must not render in non-Error states");
+        }
+    }
+
+    // ── S-004 TC-3: Dismiss click calls DismissAsync, no coordinator ──────────
+
+    [TestMethod]
+    public void DismissClick_CallsDismissAsync()
+    {
+        var (cut, autoMock, _, coordinatorMock, _, _, ctx) = Build(PcsProState.Error);
+        using (ctx)
+        {
+            autoMock.Setup(a => a.DismissAsync(It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+
+            cut.Find(".error-display__dismiss-btn").Click();
+
+            cut.WaitForAssertion(() =>
+            {
+                autoMock.Verify(a => a.DismissAsync(It.IsAny<CancellationToken>()), Times.Once);
+                coordinatorMock.Verify(c => c.BeginOperation(It.IsAny<string?>()), Times.Never,
+                    "Dismiss must not acquire coordinator lock");
+                coordinatorMock.Verify(c => c.MarkComplete(), Times.Never,
+                    "Dismiss must not call MarkComplete");
+            });
+        }
+    }
+
+    // ── S-004 TC-4: DismissAsync throws → notification shown ──────────────────
+
+    [TestMethod]
+    public void DismissClick_DismissAsyncThrows_ShowsNotification()
+    {
+        var (cut, autoMock, _, _, _, notifications, ctx) = Build(PcsProState.Error);
+        using (ctx)
+        {
+            autoMock.Setup(a => a.DismissAsync(It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("dismiss boom"));
+
+            cut.Find(".error-display__dismiss-btn").Click();
+
+            cut.WaitForAssertion(() =>
+            {
+                notifications.Should().ContainSingle(n =>
+                    n.Severity == NotificationSeverity.Error &&
+                    n.Summary != null &&
+                    n.Summary.Contains("Dismiss failed"));
+            });
+        }
+    }
+
+    // ── S-004 TC-5: Dismiss enabled + works when coordinator locked ───────────
+
+    [TestMethod]
+    public void DismissClick_WhenCoordinatorLocked_StillCallsDismissAsync()
+    {
+        var (cut, autoMock, _, coordinatorMock, _, _, ctx) = Build(PcsProState.Error, operationInProgress: true);
+        using (ctx)
+        {
+            autoMock.Setup(a => a.DismissAsync(It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+
+            var btn = cut.Find(".error-display__dismiss-btn");
+            btn.HasAttribute("disabled").Should().BeFalse(
+                "Dismiss must remain enabled regardless of coordinator lock");
+
+            btn.Click();
+
+            cut.WaitForAssertion(() =>
+            {
+                autoMock.Verify(a => a.DismissAsync(It.IsAny<CancellationToken>()), Times.Once);
+                coordinatorMock.Verify(c => c.BeginOperation(It.IsAny<string?>()), Times.Never);
+                coordinatorMock.Verify(c => c.MarkComplete(), Times.Never);
+            });
+        }
+    }
+
+    // ── S-004 TC-6: Dismiss enabled + works when manual mode active ───────────
+
+    [TestMethod]
+    public void DismissClick_WhenManualModeActive_StillCallsDismissAsync()
+    {
+        var (cut, autoMock, manualModeMock, _, _, notifications, ctx) = Build(PcsProState.Error, manualModeActive: true);
+        using (ctx)
+        {
+            manualModeMock.Setup(s => s.IsManualModeActive).Returns(true);
+            autoMock.Setup(a => a.DismissAsync(It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+
+            var btn = cut.Find(".error-display__dismiss-btn");
+            btn.HasAttribute("disabled").Should().BeFalse(
+                "Dismiss must remain enabled regardless of manual mode");
+
+            btn.Click();
+
+            cut.WaitForAssertion(() =>
+            {
+                autoMock.Verify(a => a.DismissAsync(It.IsAny<CancellationToken>()), Times.Once);
+                notifications.Should().BeEmpty(
+                    "Dismiss must not show manual-mode warning notification");
+            });
+        }
+    }
+
+    // ── S-004 TC-7: Dismiss does not call LaunchAndLoginAsync ──────────────────
+
+    [TestMethod]
+    public void DismissClick_DoesNotCallLaunchAndLogin()
+    {
+        var (cut, autoMock, _, _, _, _, ctx) = Build(PcsProState.Error);
+        using (ctx)
+        {
+            autoMock.Setup(a => a.DismissAsync(It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+
+            cut.Find(".error-display__dismiss-btn").Click();
+
+            cut.WaitForAssertion(() =>
+            {
+                autoMock.Verify(a => a.LaunchAndLoginAsync(It.IsAny<CancellationToken>()), Times.Never,
+                    "Dismiss must not trigger a re-launch — this is the defining distinction from Retry");
+            });
+        }
+    }
+
+    // ── S-004 TC-8: After dismiss + StateChanged, error display disappears ────
+
+    [TestMethod]
+    public void DismissSuccess_StateChangesToNotRunning_ErrorDisplayDisappears()
+    {
+        var (cut, autoMock, _, _, _, _, ctx) = Build(PcsProState.Error);
+        using (ctx)
+        {
+            autoMock.Setup(a => a.DismissAsync(It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+
+            cut.Find(".error-display__dismiss-btn").Click();
+
+            // Simulate the state change that DismissAsync causes
+            autoMock.Raise(a => a.StateChanged += null, autoMock.Object, PcsProState.NotRunning);
+
+            cut.WaitForAssertion(() =>
+                cut.FindAll(".error-display").Should().BeEmpty(
+                    "Error display must disappear after successful dismiss"));
+        }
+    }
+
+    // ── S-004 TC-9: Double-click suppression while in-flight ──────────────────
+
+    [TestMethod]
+    public void DismissClick_WhileInFlight_SuppressesSecondCall()
+    {
+        var (cut, autoMock, _, _, _, _, ctx) = Build(PcsProState.Error);
+        using (ctx)
+        {
+            var tcs = new TaskCompletionSource();
+            autoMock.Setup(a => a.DismissAsync(It.IsAny<CancellationToken>()))
+                .Returns(tcs.Task);
+
+            cut.Find(".error-display__dismiss-btn").Click();
+            cut.Find(".error-display__dismiss-btn").Click();
+
+            tcs.SetResult();
+
+            cut.WaitForAssertion(() =>
+                autoMock.Verify(a => a.DismissAsync(It.IsAny<CancellationToken>()), Times.Once,
+                    "Second click while dismiss is in-flight must be suppressed by _dismissing guard"));
+        }
+    }
+
+    // ── S-004 TC-10: Guard resets after failure, allows retry ──────────────────
+
+    [TestMethod]
+    public void DismissClick_AfterFailure_GuardResetsAndAllowsRetry()
+    {
+        var (cut, autoMock, _, _, _, _, ctx) = Build(PcsProState.Error);
+        using (ctx)
+        {
+            // First click throws
+            autoMock.Setup(a => a.DismissAsync(It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("first attempt fails"));
+
+            cut.Find(".error-display__dismiss-btn").Click();
+
+            // Second click succeeds
+            autoMock.Setup(a => a.DismissAsync(It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+
+            cut.Find(".error-display__dismiss-btn").Click();
+
+            cut.WaitForAssertion(() =>
+                autoMock.Verify(a => a.DismissAsync(It.IsAny<CancellationToken>()), Times.Exactly(2),
+                    "Guard must reset after failure so subsequent dismiss attempt succeeds"));
+        }
+    }
 }
