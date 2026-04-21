@@ -5,7 +5,11 @@ namespace PcsRemote.Core;
 /// Pre-load display fields (HomeTeam, AwayTeam, MatchType, MatchDate) are populated
 /// by GetTodaysMatchesAsync; their defaults are sentinels — not valid fixture data.
 /// </summary>
-/// <param name="MatchId">The PlayCricket fixture identifier.</param>
+/// <param name="MatchId">
+/// Uniquely identifies the match. When populated by <see cref="PcsRemote.Automation.MatchRowParser"/>,
+/// this is a synthesized composite key (e.g., "2024-06-15_Home XI_Away XI_Club T20") — not a
+/// PlayCricket fixture identifier.
+/// </param>
 /// <param name="HomeTeam">Display name of the home team. Default "Home XI" (sentinel).</param>
 /// <param name="AwayTeam">Display name of the away team. Default "Away XI" (sentinel).</param>
 /// <param name="MatchType">Short match-type label, e.g. "Club T20". Default "Friendly" (sentinel).</param>

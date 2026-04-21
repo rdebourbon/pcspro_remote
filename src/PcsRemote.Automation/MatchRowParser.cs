@@ -1,3 +1,4 @@
+using System.Globalization;
 using PcsRemote.Core;
 
 namespace PcsRemote.Automation;
@@ -7,20 +8,22 @@ namespace PcsRemote.Automation;
 /// All methods are pure functions with no side effects or clock dependencies.
 /// </summary>
 /// <remarks>
-/// The exact DataGrid row text format is unknown until garage PC discovery (I-U-5).
-/// The <c>TODO_REPLACE_ON_GARAGE_PC</c> format constant must be updated once the actual
-/// format is discovered via Inspect.exe.
+/// Row text is pipe-delimited, produced by <see cref="FlaUiMatchSelectionAutomation.ReadDataGridRowTexts"/>.
+/// Column order: Date(0) | Team 1(1) | Team 2(2) | Competition(3) | Match Type(4) | ...
 /// </remarks>
 internal static class MatchRowParser
 {
-    // I-U-5: The exact row text format must be discovered on the garage PC via Inspect.exe.
-    // Replace this constant with the actual delimiter / format pattern once known.
-    private const string RowFormatPattern = "TODO_REPLACE_ON_GARAGE_PC";
+    private const char Delimiter = '|';
+    private const int MinSegmentCount = 5;
+    private const int DateColumnIndex = 0;
+    private const int MatchTypeColumnIndex = 4;
+    private const string DateFormat = "dd/MM/yyyy";
+    private static readonly CultureInfo EnGb = CultureInfo.GetCultureInfo("en-GB");
 
     /// <summary>
     /// Attempts to parse a raw DataGrid row text string into a <see cref="MatchInfo"/> record.
     /// </summary>
-    /// <param name="rowText">The raw text content of a DataGrid row.</param>
+    /// <param name="rowText">The pipe-delimited text content of a DataGrid row.</param>
     /// <param name="result">
     /// When this method returns <see langword="true"/>, contains the parsed <see cref="MatchInfo"/>.
     /// When this method returns <see langword="false"/>, contains <see langword="null"/>.
@@ -34,13 +37,29 @@ internal static class MatchRowParser
         result = null;
 
         if (string.IsNullOrWhiteSpace(rowText))
+        {
             return false;
+        }
 
-        // TODO_REPLACE_ON_GARAGE_PC: implement parsing once the actual row text format
-        // is discovered via Inspect.exe. Until then, this method always returns false so
-        // that the service correctly handles "zero parseable rows" in stub mode.
-        _ = RowFormatPattern; // suppress unused-constant warning until format is known
-        return false;
+        var segments = rowText.Split(Delimiter);
+        if (segments.Length < MinSegmentCount)
+        {
+            return false;
+        }
+
+        var dateText = segments[DateColumnIndex].Trim();
+        if (!DateOnly.TryParseExact(dateText, DateFormat, EnGb, DateTimeStyles.None, out var matchDate))
+        {
+            return false;
+        }
+
+        var homeTeam = segments[KnownElements.GridColumnTeam1].Trim();
+        var awayTeam = segments[KnownElements.GridColumnTeam2].Trim();
+        var matchType = segments[MatchTypeColumnIndex].Trim();
+        var matchId = $"{matchDate:yyyy-MM-dd}_{homeTeam}_{awayTeam}_{matchType}";
+
+        result = new MatchInfo(matchId, homeTeam, awayTeam, matchType, matchDate);
+        return true;
     }
 
     /// <summary>

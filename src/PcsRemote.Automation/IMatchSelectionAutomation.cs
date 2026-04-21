@@ -48,9 +48,11 @@ internal interface IMatchSelectionAutomation
     IReadOnlyList<string> ReadDataGridRowTexts();
 
     /// <summary>
-    /// Locates the DataGrid row corresponding to the given match (using <see cref="MatchInfo.MatchId"/>)
-    /// and clicks "Open Read-Only."
-    /// AutomationId placeholders must be replaced during garage PC development (I-U-5).
+    /// Locates the DataGrid row whose team names and match type match the given
+    /// <see cref="MatchInfo"/> and clicks "Open Read-Only."
+    /// The row is matched by <see cref="MatchInfo.HomeTeam"/>, <see cref="MatchInfo.AwayTeam"/>,
+    /// and <see cref="MatchInfo.MatchType"/> — not by <see cref="MatchInfo.MatchId"/> (which is a
+    /// synthesized composite key not present in the grid).
     /// </summary>
     /// <remarks><b>Interaction method — may throw.</b></remarks>
     void SelectAndOpenMatch(MatchInfo match);

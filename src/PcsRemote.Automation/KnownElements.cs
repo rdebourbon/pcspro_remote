@@ -45,10 +45,17 @@ internal static class KnownElements
     public const string MatchSearchButtonAutomationId = "NONE_USE_ENTER_KEY";
 
     // ── Match Selection Spinner ──────────────────────────────────────────
-    // The LoaderSpinner is always in the dialog tree. When a search is
-    // running it is on-screen (IsOffscreen=false). When idle it is
-    // off-screen (IsOffscreen=true). Detected via ClassName — no AutomationId.
+    // The LoaderSpinner is dynamically added/removed from the automation
+    // tree — it is NOT always present. When a search is in progress, the
+    // spinner element exists in the tree (presence = searching). When the
+    // search completes, it is removed entirely (absence = complete).
+    // Detected via ClassName — no AutomationId.
     public const string LoaderSpinnerClassName = "LoaderSpinner";
+
+    // ── Match Selection Filter Controls ──────────────────────────────────
+    public const string ClearFiltersLinkName = "Clear Filters";
+    public const string DatePickerClassName = "DatePicker";
+    public const string DatePickerTextBoxAutomationId = "PART_TextBox";
 
     // ── Match Selection Grid Columns (0-based) ─────────────────────────
     // Date(0), Team 1(1), Team 2(2), Competition(3), Match Type(4),

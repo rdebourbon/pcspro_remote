@@ -21,4 +21,10 @@ internal sealed class PcsProOptions
     /// gitignored configuration, environment variable, or .NET User Secrets.
     /// </summary>
     public string Password { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The site/club name used to filter the match selection ComboBox (e.g., "Ashtead CC").
+    /// When empty or null, the site filter step is skipped during match search.
+    /// </summary>
+    public string SiteName { get; set; } = string.Empty;
 }

@@ -6,38 +6,50 @@ namespace PcsRemote.Automation.Tests;
 [TestClass]
 public sealed class MatchRowParserTests
 {
-    // -----------------------------------------------------------------------
-    // AC-24 — TryParse returns true for well-formed row text
-    // Note: Since MatchRowParser.TryParse always returns false in stub mode
-    // (format is TODO_REPLACE_ON_GARAGE_PC), this test documents the expected
-    // behaviour once the format constant is filled in during garage PC development.
-    // The test is written now to capture the contract and will green once TryParse
-    // is implemented.
-    // -----------------------------------------------------------------------
+    // ── TryParse — valid input ────────────────────────────────────────────
 
     [TestMethod]
     public void TryParse_WhenWellFormedRow_ReturnsTrueAndPopulatesMatchInfo()
     {
-        // Arrange: once the actual row format is known (I-U-5), replace this placeholder
-        // with a real row text string that conforms to the discovered format.
-        const string WellFormedRow = "TODO_REPLACE_ON_GARAGE_PC";
+        const string row = "15/06/2025|Ashtead CC 1st XI|Reigate CC 1st XI|Surrey Championship|League|The Green|In Progress|Yes|Online|J Smith|No";
 
-        // Act
-        var success = MatchRowParser.TryParse(WellFormedRow, out var result);
+        var success = MatchRowParser.TryParse(row, out var result);
 
-        // Assert: this test is expected to FAIL until TryParse is implemented.
-        // Once the format is known, uncomment the assertion below and remove this comment.
-        // success.Should().BeTrue();
-        // result.Should().NotBeNull();
-        // result!.MatchId.Should().NotBeNullOrWhiteSpace();
-
-        // Current stub always returns false — document the expected false state.
-        success.Should().BeFalse("TryParse is not yet implemented (TODO_REPLACE_ON_GARAGE_PC)");
+        success.Should().BeTrue();
+        result.Should().NotBeNull();
+        result!.HomeTeam.Should().Be("Ashtead CC 1st XI");
+        result.AwayTeam.Should().Be("Reigate CC 1st XI");
+        result.MatchType.Should().Be("League");
+        result.MatchDate.Should().Be(new DateOnly(2025, 6, 15));
     }
 
-    // -----------------------------------------------------------------------
-    // AC-25 — TryParse returns false for malformed or empty row text (never throws)
-    // -----------------------------------------------------------------------
+    [TestMethod]
+    public void TryParse_MatchId_IsDeterministicCompositeKey()
+    {
+        const string row = "15/06/2025|Home XI|Away XI|Competition|Club T20|Venue|State|No|Online|Scorer|No";
+
+        MatchRowParser.TryParse(row, out var result);
+
+        result.Should().NotBeNull();
+        result!.MatchId.Should().Be("2025-06-15_Home XI_Away XI_Club T20");
+    }
+
+    [TestMethod]
+    public void TryParse_WhenMinimumSegments_ReturnsTrueWithCorrectFields()
+    {
+        const string row = "01/01/2025|Team A|Team B|Comp|Friendly";
+
+        var success = MatchRowParser.TryParse(row, out var result);
+
+        success.Should().BeTrue();
+        result.Should().NotBeNull();
+        result!.HomeTeam.Should().Be("Team A");
+        result.AwayTeam.Should().Be("Team B");
+        result.MatchType.Should().Be("Friendly");
+        result.MatchDate.Should().Be(new DateOnly(2025, 1, 1));
+    }
+
+    // ── TryParse — invalid input ──────────────────────────────────────────
 
     [TestMethod]
     public void TryParse_WhenEmpty_ReturnsFalseAndDoesNotThrow()
@@ -58,17 +70,34 @@ public sealed class MatchRowParserTests
     }
 
     [TestMethod]
-    public void TryParse_WhenMalformedRow_ReturnsFalseAndDoesNotThrow()
+    public void TryParse_WhenTooFewSegments_ReturnsFalse()
     {
-        var success = MatchRowParser.TryParse("garbage data that does not match any format", out var result);
+        var success = MatchRowParser.TryParse("15/06/2025|Team A|Team B|Comp", out var result);
 
         success.Should().BeFalse();
         result.Should().BeNull();
     }
 
-    // -----------------------------------------------------------------------
-    // AC-26 — FilterToday returns only entries matching today's date
-    // -----------------------------------------------------------------------
+    [TestMethod]
+    public void TryParse_WhenInvalidDate_ReturnsFalse()
+    {
+        var success = MatchRowParser.TryParse("not-a-date|Team A|Team B|Comp|League", out var result);
+
+        success.Should().BeFalse();
+        result.Should().BeNull();
+    }
+
+    [TestMethod]
+    public void TryParse_WhenWrongDateFormat_ReturnsFalse()
+    {
+        // US date format should fail — expects dd/MM/yyyy
+        var success = MatchRowParser.TryParse("06/15/2025|Team A|Team B|Comp|League", out var result);
+
+        success.Should().BeFalse();
+        result.Should().BeNull();
+    }
+
+    // ── FilterToday ──────────────────────────────────────────────────────
 
     [TestMethod]
     public void FilterToday_WhenSomeMatchesToday_ReturnsOnlyTodaysMatches()
@@ -87,10 +116,6 @@ public sealed class MatchRowParserTests
         result.Should().HaveCount(2);
         result.Select(m => m.MatchId).Should().BeEquivalentTo(["1", "3"]);
     }
-
-    // -----------------------------------------------------------------------
-    // AC-27 — FilterToday returns empty list when no entries match today (does not throw)
-    // -----------------------------------------------------------------------
 
     [TestMethod]
     public void FilterToday_WhenNoMatchesForToday_ReturnsEmptyList()

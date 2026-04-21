@@ -1,60 +1,533 @@
+using System.Diagnostics;
+using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Definitions;
+using FlaUI.Core.Input;
+using FlaUI.Core.WindowsAPI;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PcsRemote.Core;
 
 namespace PcsRemote.Automation;
 
 /// <summary>
 /// FlaUI-based implementation of <see cref="IMatchSelectionAutomation"/>.
+/// Ported from diagnostic tool Steps 4–6.
 /// </summary>
-/// <remarks>
-/// <para>
-/// The AutomationId constants below (I-U-5) must be discovered on the garage PC via
-/// Inspect.exe during S-004 delivery and replaced before this class can perform real
-/// interactions. Interaction methods throw <see cref="NotImplementedException"/> until
-/// the garage PC session is complete.
-/// </para>
-/// <para>
-/// Once I-U-5 values are known, replace each <c>TODO_REPLACE_ON_GARAGE_PC</c> placeholder
-/// and implement each method body using <c>FlaUI.Core</c> / <c>FlaUI.UIA3</c>.
-/// </para>
-/// </remarks>
 internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
 {
-    // I-U-5: AutomationId values discovered on the garage PC via Inspect.exe.
-    // Replace the placeholder strings with the actual values found using Inspect.exe.
-    private const string MatchSearchButtonAutomationId = "TODO_REPLACE_ON_GARAGE_PC";
-    private const string MatchDataGridAutomationId = "TODO_REPLACE_ON_GARAGE_PC";
+    private const int SpinnerPollIntervalMs = 300;
+    private const int SpinnerTimeoutMs = 30_000;
+    private const int DialogPollTimeoutMs = 15_000;
+    private const int KeyboardPauseMs = 200;
+
+    private readonly PcsProWindowLocator _locator;
+    private readonly ILogger<FlaUiMatchSelectionAutomation> _logger;
+    private readonly PcsProOptions _options;
+
+    public FlaUiMatchSelectionAutomation(
+        PcsProWindowLocator locator,
+        ILogger<FlaUiMatchSelectionAutomation> logger,
+        IOptions<PcsProOptions> options)
+    {
+        _locator = locator;
+        _logger = logger;
+        _options = options.Value;
+    }
 
     /// <inheritdoc/>
-    public void OpenMatchDialogAndSearch() =>
-        throw new NotImplementedException(
-            "FlaUiMatchSelectionAutomation.OpenMatchDialogAndSearch is not yet implemented. " +
-            $"Search button AutomationId: '{MatchSearchButtonAutomationId}'.");
+    public void OpenMatchDialogAndSearch()
+    {
+        var window = _locator.FindMainWindow()
+            ?? throw new InvalidOperationException("PCS Pro main window not found.");
+
+        var cf = _locator.Automation.ConditionFactory;
+
+        NavigateToOpenMatchDialog(window, cf);
+
+        var dialog = WaitForMatchSelectionDialog(window, cf);
+
+        ClickClearFilters(dialog, cf);
+
+        if (!string.IsNullOrEmpty(_options.SiteName))
+        {
+            SetSiteFilter(dialog, cf, window);
+            WaitForSpinnerIdle(dialog, cf, "site selection");
+        }
+
+        SetDateFilter(dialog, cf, isDateFrom: true);
+        WaitForSpinnerIdle(dialog, cf, "Date From");
+
+        SetDateFilter(dialog, cf, isDateFrom: false);
+    }
 
     /// <inheritdoc/>
-    /// <remarks>Returns <see langword="false"/> until the garage PC implementation is available (I-U-5).</remarks>
-    public bool IsSpinnerVisible() => false;
+    public bool IsSpinnerVisible()
+    {
+        try
+        {
+            var window = _locator.FindMainWindow();
+            if (window == null)
+            {
+                return false;
+            }
+
+            var cf = _locator.Automation.ConditionFactory;
+            var dialog = UIAutomationHelpers.FindDescendant(
+                window,
+                cf.ByName(KnownElements.MatchSelectionDialogName));
+
+            if (dialog == null)
+            {
+                return false;
+            }
+
+            var spinner = UIAutomationHelpers.FindDescendant(
+                dialog,
+                cf.ByClassName(KnownElements.LoaderSpinnerClassName));
+
+            return spinner != null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "IsSpinnerVisible failed with exception");
+            return false;
+        }
+    }
 
     /// <inheritdoc/>
-    /// <remarks>Returns <see langword="false"/> until the garage PC implementation is available (I-U-5).</remarks>
-    public bool IsUnexpectedDialogPresent() => false;
+    public bool IsUnexpectedDialogPresent()
+    {
+        try
+        {
+            var window = _locator.FindMainWindow();
+            if (window == null)
+            {
+                return false;
+            }
+
+            var cf = _locator.Automation.ConditionFactory;
+            var childWindows = UIAutomationHelpers.FindAllDescendants(
+                window,
+                cf.ByControlType(ControlType.Window));
+
+            foreach (var childWindow in childWindows)
+            {
+                if (IsMatchSelectionDialog(childWindow))
+                {
+                    continue;
+                }
+
+                if (IsLoginDialog(childWindow, cf))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "IsUnexpectedDialogPresent failed with exception");
+            return false;
+        }
+    }
 
     /// <inheritdoc/>
-    /// <remarks>No-op until the garage PC implementation is available (I-U-5).</remarks>
-    public void TryCloseUnexpectedDialog() { }
+    public void TryCloseUnexpectedDialog()
+    {
+        try
+        {
+            var window = _locator.FindMainWindow();
+            if (window == null)
+            {
+                return;
+            }
+
+            var cf = _locator.Automation.ConditionFactory;
+            var childWindows = UIAutomationHelpers.FindAllDescendants(
+                window,
+                cf.ByControlType(ControlType.Window));
+
+            foreach (var childWindow in childWindows)
+            {
+                if (IsMatchSelectionDialog(childWindow) || IsLoginDialog(childWindow, cf))
+                {
+                    continue;
+                }
+
+                _logger.LogWarning(
+                    "Attempting to close unexpected dialog: {DialogName}",
+                    SafeGetName(childWindow));
+
+                var closeBtn = UIAutomationHelpers.FindButtonByChildText(childWindow, "Cancel", cf, _logger)
+                    ?? UIAutomationHelpers.FindButtonByChildText(childWindow, "Close", cf, _logger)
+                    ?? UIAutomationHelpers.FindButtonByChildText(childWindow, "OK", cf, _logger)
+                    ?? UIAutomationHelpers.FindDescendant(childWindow, cf.ByControlType(ControlType.Button));
+
+                if (closeBtn != null)
+                {
+                    UIAutomationHelpers.InvokeButtonSafely(closeBtn, _logger);
+                }
+
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "TryCloseUnexpectedDialog failed with exception");
+        }
+    }
 
     /// <inheritdoc/>
-    public IReadOnlyList<string> ReadDataGridRowTexts() =>
-        throw new NotImplementedException(
-            "FlaUiMatchSelectionAutomation.ReadDataGridRowTexts is not yet implemented. " +
-            $"DataGrid AutomationId: '{MatchDataGridAutomationId}'.");
+    public IReadOnlyList<string> ReadDataGridRowTexts()
+    {
+        var window = _locator.FindMainWindow()
+            ?? throw new InvalidOperationException("PCS Pro main window not found.");
+
+        var cf = _locator.Automation.ConditionFactory;
+        var dialog = UIAutomationHelpers.FindDescendant(
+            window,
+            cf.ByName(KnownElements.MatchSelectionDialogName))
+            ?? throw new InvalidOperationException("Open Match dialog not found.");
+
+        var grid = UIAutomationHelpers.FindDescendant(
+            dialog,
+            cf.ByAutomationId(KnownElements.MatchDataGridAutomationId))
+            ?? throw new InvalidOperationException(
+                $"DataGrid not found (AutomationId=\"{KnownElements.MatchDataGridAutomationId}\").");
+
+        var rows = UIAutomationHelpers.FindAllDescendants(grid, cf.ByControlType(ControlType.DataItem));
+        var result = new List<string>(rows.Length);
+
+        foreach (var row in rows)
+        {
+            var textElements = UIAutomationHelpers.FindAllDescendants(row, cf.ByControlType(ControlType.Text));
+            var cellValues = textElements.Select(t => SafeGetName(t));
+            result.Add(string.Join("|", cellValues));
+        }
+
+        _logger.LogDebug("Read {RowCount} DataGrid row(s)", result.Count);
+        return result;
+    }
 
     /// <inheritdoc/>
-    public void SelectAndOpenMatch(MatchInfo match) =>
-        throw new NotImplementedException(
-            "FlaUiMatchSelectionAutomation.SelectAndOpenMatch is not yet implemented. " +
-            $"DataGrid AutomationId: '{MatchDataGridAutomationId}'.");
+    public void SelectAndOpenMatch(MatchInfo match)
+    {
+        var window = _locator.FindMainWindow()
+            ?? throw new InvalidOperationException("PCS Pro main window not found.");
+
+        var cf = _locator.Automation.ConditionFactory;
+        var dialog = UIAutomationHelpers.FindDescendant(
+            window,
+            cf.ByName(KnownElements.MatchSelectionDialogName))
+            ?? throw new InvalidOperationException("Open Match dialog not found.");
+
+        var grid = UIAutomationHelpers.FindDescendant(
+            dialog,
+            cf.ByAutomationId(KnownElements.MatchDataGridAutomationId))
+            ?? throw new InvalidOperationException("DataGrid not found.");
+
+        var targetRow = FindMatchingRow(grid, match, cf);
+
+        SelectRow(targetRow);
+        Thread.Sleep(KeyboardPauseMs);
+
+        var openBtn = UIAutomationHelpers.FindDescendant(
+            dialog,
+            cf.ByAutomationId(KnownElements.OpenReadOnlyButtonAutomationId))
+            ?? throw new InvalidOperationException(
+                $"'Open Read Only' button not found (AutomationId=\"{KnownElements.OpenReadOnlyButtonAutomationId}\").");
+
+        var error = UIAutomationHelpers.InvokeButtonSafely(openBtn, _logger);
+        if (error != null)
+        {
+            throw new InvalidOperationException($"Open Read Only invocation failed: {error}");
+        }
+
+        _logger.LogInformation(
+            "Selected and opened match: {HomeTeam} vs {AwayTeam} ({MatchType})",
+            match.HomeTeam,
+            match.AwayTeam,
+            match.MatchType);
+    }
 
     /// <inheritdoc/>
-    /// <remarks>Returns <see langword="false"/> until the garage PC implementation is available (I-U-5).</remarks>
-    public bool IsMatchLoaded() => false;
+    public bool IsMatchLoaded()
+    {
+        try
+        {
+            var window = _locator.FindMainWindow();
+            if (window == null)
+            {
+                return false;
+            }
+
+            var cf = _locator.Automation.ConditionFactory;
+            var scoreSummary = UIAutomationHelpers.FindDescendant(
+                window,
+                cf.ByAutomationId(KnownElements.ScoreSummaryPaneAutomationId));
+
+            return scoreSummary != null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "IsMatchLoaded failed with exception");
+            return false;
+        }
+    }
+
+    // ── Private helpers ──────────────────────────────────────────────────
+
+    private void NavigateToOpenMatchDialog(AutomationElement window, FlaUI.Core.Conditions.ConditionFactory cf)
+    {
+        var fileMenu = UIAutomationHelpers.FindDescendant(
+            window,
+            cf.ByAutomationId(KnownElements.FileMenuAutomationId))
+            ?? throw new InvalidOperationException("File menu not found.");
+
+        fileMenu.Click();
+        Thread.Sleep(KeyboardPauseMs);
+
+        var openMatchItem = UIAutomationHelpers.WaitForElement(
+            () => UIAutomationHelpers.FindDescendant(
+                window,
+                cf.ByAutomationId(KnownElements.OpenMatchMenuItemAutomationId)),
+            timeoutMs: 2000);
+
+        if (openMatchItem == null)
+        {
+            throw new InvalidOperationException("'Open Match...' menu item not found.");
+        }
+
+        UIAutomationHelpers.InvokeButtonSafely(openMatchItem, _logger);
+        _logger.LogDebug("File → Open Match... clicked");
+    }
+
+    private AutomationElement WaitForMatchSelectionDialog(
+        AutomationElement window,
+        FlaUI.Core.Conditions.ConditionFactory cf)
+    {
+        var dialog = UIAutomationHelpers.WaitForElement(
+            () => UIAutomationHelpers.FindDescendant(
+                window,
+                cf.ByName(KnownElements.MatchSelectionDialogName)),
+            timeoutMs: DialogPollTimeoutMs);
+
+        return dialog
+            ?? throw new InvalidOperationException(
+                $"Open Match dialog did not appear within {DialogPollTimeoutMs}ms.");
+    }
+
+    private void ClickClearFilters(AutomationElement dialog, FlaUI.Core.Conditions.ConditionFactory cf)
+    {
+        var clearFilters = UIAutomationHelpers.FindDescendant(
+            dialog,
+            cf.ByName(KnownElements.ClearFiltersLinkName))
+            ?? throw new InvalidOperationException("'Clear Filters' link not found.");
+
+        clearFilters.Click();
+        Thread.Sleep(KeyboardPauseMs);
+        _logger.LogDebug("Clear Filters clicked");
+    }
+
+    private void SetSiteFilter(
+        AutomationElement dialog,
+        FlaUI.Core.Conditions.ConditionFactory cf,
+        AutomationElement window)
+    {
+        var comboBoxes = UIAutomationHelpers.FindAllDescendants(
+            dialog,
+            cf.ByControlType(ControlType.ComboBox));
+
+        AutomationElement? siteCombo = null;
+        foreach (var combo in comboBoxes)
+        {
+            try
+            {
+                var autoId = combo.AutomationId;
+                if (string.IsNullOrEmpty(autoId))
+                {
+                    siteCombo = combo;
+                    break;
+                }
+            }
+            catch
+            {
+                siteCombo = combo;
+                break;
+            }
+        }
+
+        if (siteCombo == null)
+        {
+            throw new InvalidOperationException("Site ComboBox not found.");
+        }
+
+        siteCombo.Click();
+        Thread.Sleep(KeyboardPauseMs);
+
+        // Site dropdown items may appear as children of the main window (popup)
+        var siteItem = UIAutomationHelpers.FindDescendant(window, cf.ByName(_options.SiteName))
+            ?? throw new InvalidOperationException(
+                $"Site '{_options.SiteName}' not found in dropdown.");
+
+        siteItem.Click();
+        Thread.Sleep(KeyboardPauseMs);
+
+        _logger.LogDebug("Site filter set to {SiteName}", _options.SiteName);
+    }
+
+    private void SetDateFilter(
+        AutomationElement dialog,
+        FlaUI.Core.Conditions.ConditionFactory cf,
+        bool isDateFrom)
+    {
+        var datePickers = UIAutomationHelpers.FindAllDescendants(
+            dialog,
+            cf.ByClassName(KnownElements.DatePickerClassName));
+
+        if (datePickers.Length < 2)
+        {
+            throw new InvalidOperationException(
+                $"Expected 2 DatePicker controls, found {datePickers.Length}.");
+        }
+
+        int index = isDateFrom ? 0 : 1;
+        var label = isDateFrom ? "Date From" : "Date To";
+
+        var textBox = UIAutomationHelpers.FindDescendant(
+            datePickers[index],
+            cf.ByAutomationId(KnownElements.DatePickerTextBoxAutomationId))
+            ?? throw new InvalidOperationException(
+                $"{label}: PART_TextBox not found inside DatePicker.");
+
+        textBox.Click();
+        Thread.Sleep(KeyboardPauseMs);
+
+        Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_A);
+        string dateText = DateTime.Today.ToString("dd/MM/yyyy");
+        Keyboard.Type(dateText);
+        Thread.Sleep(KeyboardPauseMs);
+
+        Keyboard.Press(VirtualKeyShort.TAB);
+        Thread.Sleep(KeyboardPauseMs);
+
+        _logger.LogDebug("{DateLabel} set to {DateValue}", label, dateText);
+    }
+
+    private void WaitForSpinnerIdle(
+        AutomationElement dialog,
+        FlaUI.Core.Conditions.ConditionFactory cf,
+        string context)
+    {
+        Thread.Sleep(SpinnerPollIntervalMs);
+
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < SpinnerTimeoutMs)
+        {
+            var spinner = UIAutomationHelpers.FindDescendant(
+                dialog,
+                cf.ByClassName(KnownElements.LoaderSpinnerClassName));
+
+            if (spinner == null)
+            {
+                _logger.LogDebug("Spinner cleared after {Context}", context);
+                return;
+            }
+
+            Thread.Sleep(SpinnerPollIntervalMs);
+        }
+
+        _logger.LogWarning(
+            "Spinner did not clear within {TimeoutMs}ms after {Context}",
+            SpinnerTimeoutMs,
+            context);
+    }
+
+    private AutomationElement FindMatchingRow(
+        AutomationElement grid,
+        MatchInfo match,
+        FlaUI.Core.Conditions.ConditionFactory cf)
+    {
+        var rows = UIAutomationHelpers.FindAllDescendants(grid, cf.ByControlType(ControlType.DataItem));
+
+        foreach (var row in rows)
+        {
+            var textElements = UIAutomationHelpers.FindAllDescendants(row, cf.ByControlType(ControlType.Text));
+            if (textElements.Length < 5)
+            {
+                continue;
+            }
+
+            string team1 = SafeGetName(textElements[KnownElements.GridColumnTeam1]);
+            string team2 = SafeGetName(textElements[KnownElements.GridColumnTeam2]);
+            string matchType = SafeGetName(textElements[4]);
+
+            if (string.Equals(team1, match.HomeTeam, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(team2, match.AwayTeam, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(matchType, match.MatchType, StringComparison.OrdinalIgnoreCase))
+            {
+                return row;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"No DataGrid row matched: {match.HomeTeam} vs {match.AwayTeam} ({match.MatchType}).");
+    }
+
+    private static void SelectRow(AutomationElement row)
+    {
+        try
+        {
+            if (row.Patterns.SelectionItem.IsSupported)
+            {
+                row.Patterns.SelectionItem.Pattern.Select();
+                return;
+            }
+        }
+        catch
+        {
+            // Fall through to Click
+        }
+
+        row.Click();
+    }
+
+    private static bool IsMatchSelectionDialog(AutomationElement childWindow)
+    {
+        try
+        {
+            return string.Equals(
+                childWindow.Name,
+                KnownElements.MatchSelectionDialogName,
+                StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsLoginDialog(AutomationElement childWindow, FlaUI.Core.Conditions.ConditionFactory cf)
+    {
+        var passwordField = UIAutomationHelpers.FindDescendant(
+            childWindow,
+            cf.ByAutomationId(KnownElements.LoginPasswordFieldAutomationId));
+
+        return passwordField != null;
+    }
+
+    private static string SafeGetName(AutomationElement element)
+    {
+        try
+        {
+            return element.Name ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
 }
