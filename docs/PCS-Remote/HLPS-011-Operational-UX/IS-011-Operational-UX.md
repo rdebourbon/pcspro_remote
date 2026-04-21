@@ -248,6 +248,6 @@ Build: 0 errors, 0 warnings.
 
 | ID | Source | Description | Priority |
 |----|--------|-------------|----------|
-| FU-1 | S-008 Code Review (Sonnet 4.6 F-001 + GPT 5.4 CR-2) | `WatchForCrashAsync` and `FireHealthTimeoutAsync` bypass the central error handler and emit no automation log entries. R-4/AC-5 gap for monitoring-triggered error transitions. | Medium |
-| FU-2 | S-009 Code Review (GPT 5.4 CR-1) | TC-1 does not assert Retry button remains available post-dismiss (AC-1 v0.4 requirement added during retroactive spec review). | Low |
+| FU-1 | S-008 Code Review (Sonnet 4.6 F-001 + GPT 5.4 CR-2) | `WatchForCrashAsync` and `FireHealthTimeoutAsync` bypass the central error handler and emit no automation log entries. R-4/AC-5 gap for monitoring-triggered error transitions. | ✅ Fixed |
+| FU-2 | S-009 Code Review (GPT 5.4 CR-1) | TC-1 does not assert Retry button remains available post-dismiss (AC-1 v0.4 requirement added during retroactive spec review). | ✅ Fixed |
 

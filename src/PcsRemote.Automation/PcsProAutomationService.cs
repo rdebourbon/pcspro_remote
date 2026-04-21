@@ -686,6 +686,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
 
         FlushStateChangedEvents();
         FlushHealthAlertEvents();
+        _logService.AddEntry(reason, AutomationLogOutcome.Failure);
     }
 
     private async Task WatchForCrashAsync(IProcessHandle process, CancellationToken crashCt)
@@ -729,9 +730,8 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             _operationLock.Release();
         }
         FlushStateChangedEvents();
+        _logService.AddEntry("PCS Pro exited unexpectedly", AutomationLogOutcome.Failure);
     }
-
-    // ---- S-003: Login automation ----------------------------------------
 
     /// <summary>
     /// Polls for login dialog visibility, submits credentials, and waits for match

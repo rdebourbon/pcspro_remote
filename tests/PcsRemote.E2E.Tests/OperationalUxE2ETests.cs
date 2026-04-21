@@ -117,6 +117,12 @@ public class OperationalUxE2ETests
             await _page2.Locator(".error-display")
                 .WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 10_000 });
 
+            // Both browsers must show Retry alongside Dismiss (SC-1: separate actions).
+            await _page1.Locator(".error-display__retry-btn")
+                .WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 3_000 });
+            await _page2.Locator(".error-display__retry-btn")
+                .WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 3_000 });
+
             // Click dismiss on page1.
             mockOptions.Value.ForcedErrorMode = MockForcedErrorMode.None;
             await _page1.Locator(".error-display__dismiss-btn").ClickAsync();
