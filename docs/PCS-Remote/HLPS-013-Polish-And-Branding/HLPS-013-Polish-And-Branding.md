@@ -3,7 +3,7 @@
 | Field       | Value |
 |-------------|-------|
 | **Status**  | APPROVED |
-| **Version** | 0.2 |
+| **Version** | 0.3 |
 | **Author**  | Copilot |
 | **Created** | 2026-04-21 |
 
@@ -15,7 +15,7 @@ PCS Remote is functionally complete (HLPS-001 through HLPS-012 delivered), but f
 
 1. **Wrong-user login (GAP-002):** If PCS Pro's login dialog shows a pre-populated username that does not match the configured expected username, the automation blindly enters the password and submits. This fails silently or logs in as the wrong account. The automation should detect the mismatch, click "Switch User", and re-enter the correct credentials automatically — no operator involvement.
 
-2. **Team name formatting (GAP-009):** YouTube broadcast titles use raw team names from the PCS Pro UI (e.g. "High Halstow CC - 1st XI"). The club wants the home-club prefix stripped from the home team name so titles read naturally (e.g. "1st XI vs Otford CC - 1st XI"). Away-team names are kept as-is. Additionally, `BroadcastTitleRenderer` only supports `{HomeTeam}` / `{AwayTeam}` tokens — `{HomeClub}` / `{AwayClub}` tokens are not yet implemented because club names come from a different lifecycle stage than match selection. These deferred items are:
+2. **Team name formatting (GAP-009):** YouTube broadcast titles use raw team names from the PCS Pro UI (e.g. "High Halstow CC - 1st XI"). The club wants the configured club name stripped from whichever team(s) it appears in, so titles read naturally (e.g. "1st XI vs Otford CC - 1st XI"). The team matching the configured club name should always appear first in the title — the order of teams in the PCS Pro dialog is unreliable and must not dictate title order. Additionally, `BroadcastTitleRenderer` only supports `{HomeTeam}` / `{AwayTeam}` tokens — `{HomeClub}` / `{AwayClub}` tokens are not yet implemented because club names come from a different lifecycle stage than match selection. These deferred items are:
    - **DEF-001:** BroadcastTitleRenderer needs access to club names, which are only available in `MatchTeams` (populated post-load), not `MatchInfo` (populated pre-load from match selection grid).
    - **DEF-002:** `MatchInfo` record has no club name fields — they must be added or a composite type used.
    - **DEF-004:** Web UI display of club names as a dedicated element (deferred — not in this HLPS).
@@ -37,7 +37,7 @@ PCS Remote is functionally complete (HLPS-001 through HLPS-012 delivered), but f
 | A-3 | The expected username is the club's own PCS Pro account — a single fixed value stored in configuration. |
 | A-4 | Club logo is provided as `HHCC logo.svg` in `D:\Local\WinUIAutomationTester\resources\`. It will be served as SVG in the Web UI header and rasterised to PNG/ICO for the favicon. |
 | A-5 | The provided `PCSPRO icon.ico` (in `D:\Local\WinUIAutomationTester\resources\`) is a visual style reference only. A new "PCS Remote" icon must be created in the same style. |
-| A-6 | HHCC prefix stripping applies to the home team only (asymmetric). The home team is identified by matching its club name against a configurable "home club" value. Away-team names are displayed as-is. |
+| A-6 | Club name stripping is symmetric — the configured club name is stripped from both team names when matched as an anchored prefix. The team(s) matching the club name appear first in the broadcast title. If neither team matches, names pass through in their original order. If both match, both are stripped. |
 | A-7 | PCS Pro UI is always English on the target garage PC. Element names (e.g. "Switch User") are English strings. |
 | A-8 | This is a single-tenant deployment — branding assets (logo, favicon, icon) are committed to the repository, not runtime-configurable. |
 
@@ -67,7 +67,7 @@ PCS Remote is functionally complete (HLPS-001 through HLPS-012 delivered), but f
 | 3 | If mismatch: click "Switch User", wait for clean login dialog, enter correct credentials | GAP-002 |
 | 4 | Add `PcsPro:ExpectedUsername` configuration key | GAP-002 |
 | 5 | Configurable home club name for team name formatting | GAP-009 |
-| 6 | Strip home-club prefix from home team display name (e.g. "High Halstow CC - 1st XI" → "1st XI") | GAP-009 |
+| 6 | Strip configured club name prefix from team display names and reorder so the club team appears first (e.g. "High Halstow CC - 1st XI" vs "Otford CC" → "1st XI vs Otford CC") | GAP-009 |
 | 7 | Add `{HomeClub}` / `{AwayClub}` tokens to BroadcastTitleRenderer | GAP-009, DEF-001 |
 | 8 | Bridge club names from `MatchTeams` into BroadcastTitleRenderer (resolve DEF-001/DEF-002 data flow) | DEF-001, DEF-002 |
 | 9 | Add "YouTube Setup..." tray context menu item that launches OAuth flow | GAP-013 |
@@ -90,7 +90,7 @@ PCS Remote is functionally complete (HLPS-001 through HLPS-012 delivered), but f
 | SC-1 | When the login dialog username does not match `PcsPro:ExpectedUsername`, automation clicks "Switch User" and re-enters credentials without operator involvement. |
 | SC-2 | When the login dialog username matches, is blank (first launch), or `PcsPro:ExpectedUsername` is not configured, existing login flow is unchanged. |
 | SC-3 | If switch-user fails after 1 retry (C-8), the automation surfaces an error to the UI and does not enter an infinite loop. |
-| SC-4 | YouTube broadcast titles strip the configured home-club prefix from the home team name (anchored prefix match). Away-team names are unmodified. If neither team's club matches the configured home club, all names pass through unmodified. |
+| SC-4 | Club name stripping follows this matrix: (1) One team matches club name → strip that team, place it first in title; (2) Dialog order reversed from club-first → reorder so club team is first; (3) Neither team matches → names unchanged, original order; (4) Both teams match → strip both. Stripping uses anchored prefix match. |
 | SC-5 | Prefix stripping is idempotent — a team name that does not contain the prefix is returned unchanged. |
 | SC-6 | `{HomeClub}` and `{AwayClub}` tokens render correctly in broadcast title templates. |
 | SC-7 | "YouTube Setup..." tray menu item launches OAuth consent in the default browser and stores the token via the existing `DpapiFileDataStore` path. |
@@ -135,7 +135,7 @@ PCS Remote is functionally complete (HLPS-001 through HLPS-012 delivered), but f
 | Problem statement §4 says "PNG" but A-4 says SVG | GPT F-001, Sonnet F-01 | HIGH | Accept | Fixed: §4 now says "SVG" with rasterised favicon |
 | Unknowns skip U-2 | Opus F-5, Sonnet F-02 | HIGH | Accept | Fixed: renumbered U-3 → U-2 |
 | A-1/A-2 "unverified" | Sonnet F-03 | HIGH | Reject | User provided these values directly — they are confirmed facts, not unverified assumptions |
-| Away-team stripping ambiguity | Opus F-1 | MAJOR | Accept | Fixed: A-6 clarifies home-only (asymmetric). SC-4 specifies anchored prefix match. SC-5 adds idempotency. |
+| Away-team stripping ambiguity | Opus F-1 | MAJOR | Accept | Fixed: A-6 clarifies symmetric stripping + club-first ordering (v0.3 update per user correction). SC-4 specifies full 4-case matrix. SC-5 adds idempotency. |
 | Infinite switch-user loop | Opus F-2 | MAJOR | Accept | Fixed: C-8 bounds retry to 1. SC-3 defines failure escalation. |
 | English locale assumption | Opus F-3 | MAJOR | Accept | Fixed: A-7 added. |
 | Credential logging risk | Opus F-4 | MAJOR | Accept | Fixed: C-6 added — log comparison result only, never values. |

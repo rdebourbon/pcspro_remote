@@ -70,21 +70,22 @@ All steps are independently buildable and testable. Each step results in a squas
 
 ---
 
-## S-003 — Home-Club Prefix Stripping
+## S-003 — Club Name Stripping & Title Ordering
 
-**What:** Add a configurable home-club name setting. Implement anchored prefix stripping that removes the home-club name from the home team's display name when it appears as a leading prefix. Stripping applies to the home team only (asymmetric — A-6). Away-team names pass through unmodified. If neither team's club matches the configured home club, all names pass through unchanged. Stripping is idempotent.
+**What:** Add a configurable club name setting. Implement anchored prefix stripping that removes the configured club name from whichever team name(s) it appears in (symmetric — A-6). The team matching the club name is placed first in the broadcast title regardless of dialog order. If neither team matches, names pass through unchanged in their original order. If both match, both are stripped. Stripping is idempotent.
 
-**Why:** GAP-009 scope items 5–6. The club wants broadcast titles to read "1st XI vs Otford CC - 1st XI" rather than "High Halstow CC - 1st XI vs Otford CC - 1st XI".
+**Why:** GAP-009 scope items 5–6. The club wants broadcast titles to read "1st XI vs Otford CC - 1st XI" rather than "High Halstow CC - 1st XI vs Otford CC - 1st XI", and the club team should always appear first regardless of which position it occupies in the PCS Pro dialog.
 
 **Dependencies:** None.
 
 **Verification intent:**
-- Home team with matching prefix → prefix stripped (SC-4).
-- Home team without prefix → name unchanged (SC-5, idempotency).
-- Away team with matching prefix → name unchanged (asymmetric).
-- Neither team matches configured home club → all names unchanged (SC-4 fallback).
-- Home club not configured → no stripping applied.
-- Prefix stripping logic ships with unit tests covering all cases above (SC-10).
+- One team matches club name → stripped and placed first (SC-4 case 1).
+- Dialog order has non-club team first → reorder so club team is first (SC-4 case 2).
+- Neither team matches → names unchanged, original order (SC-4 case 3).
+- Both teams match → both stripped (SC-4 case 4).
+- Team name that does not contain the prefix → returned unchanged (SC-5, idempotency).
+- Club name not configured → no stripping or reordering applied.
+- Stripping logic ships with unit tests covering all matrix cases (SC-10).
 
 **HLPS traceability:** SC-4, SC-5, A-6, C-2.
 
