@@ -14,15 +14,18 @@ public sealed class PcsProHub : Hub
     private readonly IPcsProAutomationService _automationService;
     private readonly IManualModeService _manualModeService;
     private readonly IOperationCoordinatorService _coordinatorService;
+    private readonly IAutomationLogService _logService;
 
     public PcsProHub(
         IPcsProAutomationService automationService,
         IManualModeService manualModeService,
-        IOperationCoordinatorService coordinatorService)
+        IOperationCoordinatorService coordinatorService,
+        IAutomationLogService logService)
     {
         _automationService = automationService;
         _manualModeService = manualModeService;
         _coordinatorService = coordinatorService;
+        _logService = logService;
     }
 
     public override async Task OnConnectedAsync()
@@ -31,6 +34,7 @@ public sealed class PcsProHub : Hub
         await Clients.Caller.SendAsync(PcsProHubConstants.ReceiveManualModeUpdate, _manualModeService.IsManualModeActive);
         await Clients.Caller.SendAsync(PcsProHubConstants.ReceiveOperationInProgressUpdate, _coordinatorService.IsOperationInProgress);
         await Clients.Caller.SendAsync(PcsProHubConstants.ReceiveOperationDescriptionUpdate, _coordinatorService.CurrentOperationDescription);
+        await Clients.Caller.SendAsync(PcsProHubConstants.ReceiveAutomationLogSnapshot, _logService.GetRecentEntries());
         await base.OnConnectedAsync();
     }
 }

@@ -33,12 +33,14 @@ public static class WebApplicationBuilderExtensions
         builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
         builder.Services.AddSingleton<IManualModeService, ManualModeService>();
         builder.Services.AddSingleton<IOperationCoordinatorService, OperationCoordinatorService>();
+        builder.Services.AddSingleton<IAutomationLogService, AutomationLogService>();
         builder.Services.AddServerSideBlazor();
         builder.Services.AddScoped<CircuitHandler, PcsProCircuitHandler>();
         builder.Services.AddSingleton<IScoreboardService, ScoreboardService>();
         builder.Services.AddHostedService<PcsProStateBroadcaster>();
         builder.Services.AddHostedService<ManualModeBroadcaster>();
         builder.Services.AddHostedService<OperationInProgressBroadcaster>();
+        builder.Services.AddHostedService<AutomationLogBroadcaster>();
         builder.Services.AddHostedService<ScoreboardPollingService>();
         builder.Services.AddHostedService<AutoLaunchService>();
         // AddApplicationPart ensures _Host.cshtml and Blazor components in PcsRemote.Web

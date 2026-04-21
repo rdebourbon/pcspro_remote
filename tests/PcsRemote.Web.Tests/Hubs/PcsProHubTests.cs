@@ -12,6 +12,7 @@ public class PcsProHubTests
     private Mock<IPcsProAutomationService> _automationServiceMock = null!;
     private Mock<IManualModeService> _manualModeServiceMock = null!;
     private Mock<IOperationCoordinatorService> _coordinatorServiceMock = null!;
+    private Mock<IAutomationLogService> _logServiceMock = null!;
     private Mock<IHubCallerClients> _clientsMock = null!;
     private Mock<ISingleClientProxy> _callerMock = null!;
 
@@ -21,6 +22,7 @@ public class PcsProHubTests
         _automationServiceMock = new Mock<IPcsProAutomationService>();
         _manualModeServiceMock = new Mock<IManualModeService>();
         _coordinatorServiceMock = new Mock<IOperationCoordinatorService>();
+        _logServiceMock = new Mock<IAutomationLogService>();
         _clientsMock = new Mock<IHubCallerClients>();
         _callerMock = new Mock<ISingleClientProxy>();
 
@@ -28,6 +30,7 @@ public class PcsProHubTests
         _automationServiceMock.Setup(s => s.CurrentState).Returns(PcsProState.MatchSelection);
         _manualModeServiceMock.Setup(s => s.IsManualModeActive).Returns(false);
         _coordinatorServiceMock.Setup(s => s.IsOperationInProgress).Returns(false);
+        _logServiceMock.Setup(s => s.GetRecentEntries()).Returns(Array.Empty<AutomationLogEntry>());
     }
 
     private PcsProHub CreateHub()
@@ -35,7 +38,8 @@ public class PcsProHubTests
         var hub = new PcsProHub(
             _automationServiceMock.Object,
             _manualModeServiceMock.Object,
-            _coordinatorServiceMock.Object);
+            _coordinatorServiceMock.Object,
+            _logServiceMock.Object);
         hub.Clients = _clientsMock.Object;
         return hub;
     }
@@ -126,6 +130,31 @@ public class PcsProHubTests
             c => c.SendCoreAsync(
                 PcsProHubConstants.ReceiveOperationInProgressUpdate,
                 It.Is<object[]>(args => args.Length == 1 && (bool)args[0] == false),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // TC-10 (S-006)  OnConnectedAsync — sends log snapshot to late-joiner
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task OnConnectedAsync_SendsAutomationLogSnapshotToCaller()
+    {
+        var entries = new List<AutomationLogEntry>
+        {
+            new(DateTimeOffset.UtcNow, "Entry A", AutomationLogOutcome.Info),
+            new(DateTimeOffset.UtcNow, "Entry B", AutomationLogOutcome.Success)
+        };
+        _logServiceMock.Setup(s => s.GetRecentEntries()).Returns(entries.AsReadOnly());
+
+        using var hub = CreateHub();
+        await hub.OnConnectedAsync();
+
+        _callerMock.Verify(
+            c => c.SendCoreAsync(
+                PcsProHubConstants.ReceiveAutomationLogSnapshot,
+                It.Is<object[]>(args => args.Length == 1),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
