@@ -28,9 +28,11 @@ Refer to the diagnostic tool (`tools/AutomationDiagnostic/DiagnosticRunner.cs` a
 
 ---
 
-## Tier 1 — Must-Ship
+## Tier 1 — Must-Ship ✅ COMPLETE
 
-### S-001 — KnownElements Registry and DPI-Aware Startup
+### S-001 — KnownElements Registry and DPI-Aware Startup ✅
+
+**Status:** DELIVERED — commit `bfb7802`
 
 **What changes:** Two foundational pieces that all subsequent steps depend on.
 
@@ -126,9 +128,11 @@ Note: This step uses the current `string` return type. The structured return typ
 
 ---
 
-## Tier 2 — Should-Ship
+## Tier 2 — Should-Ship ✅ COMPLETE
 
-### S-008 — Login Timeout Configurable
+### S-008 — Login Timeout Configurable ✅
+
+**Status:** DELIVERED — commit `0edb725`
 
 **What changes:** The login screen timeout moves from a compile-time constant in the Core layer to a configurable value with a default of 30 seconds. Existing tests that depend on the old value are updated.
 
@@ -140,9 +144,11 @@ Note: This step uses the current `string` return type. The structured return typ
 
 ---
 
-### S-009 — Streaming Automation
+### S-009 — Streaming Automation ✅
 
-**What changes:** A new streaming automation interface is created in Core with a corresponding FlaUI implementation in the Automation project. The existing inline stubs in the automation service are replaced with delegation to the new interface. A mock implementation is also provided.
+**Status:** DELIVERED — commit `d73a001`
+
+**What changes:** A new streaming automation interface is created in the Automation project with a corresponding FlaUI implementation. The existing inline stubs in the automation service are replaced with full service-level orchestration (state guard, idempotency, concurrency guard, error handling, logging). 101 automation tests pass.
 
 **Why:** HLPS-010 §2.7. Unblocks IS-009 S-003 by resolving SA-U-2 and SA-U-3. Addresses H-SC-2 and H-SC-5.
 
