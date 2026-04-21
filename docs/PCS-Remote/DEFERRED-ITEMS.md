@@ -32,8 +32,8 @@ Items identified during adversarial reviews that were accepted but deferred to l
 
 | ID | Title | Source | Deferred From | Target | Notes |
 |---|---|---|---|---|---|
-| DEF-001 | BroadcastTitleRenderer club token integration | S-010 spec R1 (Opus + GPT) | SPEC-S-010 | Future step | `{HomeClub}` / `{AwayClub}` tokens require a data-flow bridge between `MatchInfo` (pre-load, from MatchRowParser) and `MatchTeams` (post-load, from GetTeamNamesAsync). The renderer currently takes only `MatchInfo`. Requires either: (a) change renderer to accept `MatchTeams` too, or (b) a composite type, or (c) `MatchInfo` enrichment after team name read. |
-| DEF-002 | `MatchInfo` club name fields | S-010 spec R1 (Opus + GPT) | SPEC-S-010 | With DEF-001 | `MatchInfo` does not carry club names — they come from a different lifecycle stage. Adding club fields requires defining a population path. |
+| DEF-001 | ~~BroadcastTitleRenderer club token integration~~ | S-010 spec R1 (Opus + GPT) | SPEC-S-010 | **Resolved (S-004)** | Resolved in HLPS-013 S-004: added `HomeClub`/`AwayClub` to `MatchInfo`, enriched after `GetTeamNamesAsync`, `OrderClubNamesForTitle` aligns with S-003 reorder. |
+| DEF-002 | ~~`MatchInfo` club name fields~~ | S-010 spec R1 (Opus + GPT) | SPEC-S-010 | **Resolved (S-004)** | Resolved in HLPS-013 S-004: `MatchInfo` now carries `HomeClub = ""` and `AwayClub = ""` with default empty strings; populated after team names read. |
 | DEF-003 | FlaUI stub implementations pending garage PC | IS-006 S-006 code review | S-006 delivery | Garage PC visit | `FlaUiScoreboardAutomation` and `FlaUiChangeMatchAutomation` have implementation stubs for methods that need garage PC testing (I-U-5, I-U-6). |
 | DEF-004 | Web UI club name display | S-010 spec | SPEC-S-010 | Future HLPS | Club names will be available in `MatchTeams` after S-010 but the Web UI won't display them separately. Requires UI design. |
 | DEF-005 | Live stream status health signal | S-012 spec R1 (Opus + GPT) | SPEC-S-012 | Future HLPS | HLPS-010 §2.9 lists live stream status (button child text in `LiveStreamingControls`) as a monitored signal. Requires heavier FlaUI reads in the poll. Deferred to keep S-012 poll lightweight. |
@@ -73,7 +73,8 @@ These were explicitly scoped out of earlier HLPS and remain unassigned:
 - GAP-013: YouTube setup tray shortcut (replace `--youtube-setup` CLI with right-click menu item)
 - GAP-015: Club logo PNG (branding — Web UI, favicon, tray icon, installer; awaiting asset)
 - GAP-016: Custom tray host icon (text-based design at 16x16/24x24/32x32)
-- DEF-001/DEF-002/DEF-004: BroadcastTitleRenderer club token integration + Web UI club name display
+- ~~DEF-001/DEF-002~~: Resolved in S-004
+- DEF-004: Web UI club name display (future HLPS)
 
 ---
 
