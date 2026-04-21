@@ -24,6 +24,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     private readonly ITeamNamesAutomation _teamNamesAutomation;
     private readonly IScoreboardAutomation _scoreboardAutomation;
     private readonly IChangeMatchAutomation _changeMatchAutomation;
+    private readonly IStreamingAutomation _streamingAutomation;
     private readonly PcsProStateMachine _stateMachine;
 
     /// <summary>
@@ -86,6 +87,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         _teamNamesAutomation = automationDependencies.TeamNamesAutomation;
         _scoreboardAutomation = automationDependencies.ScoreboardAutomation;
         _changeMatchAutomation = automationDependencies.ChangeMatchAutomation;
+        _streamingAutomation = automationDependencies.StreamingAutomation;
 
         _stateMachine = new PcsProStateMachine();
         _stateMachine.OnTransitioned(newState =>
@@ -1268,16 +1270,112 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     }
 
     /// <inheritdoc/>
-    public Task StartStreamingAsync(CancellationToken ct = default)
+    public async Task StartStreamingAsync(CancellationToken ct = default)
     {
-        throw new NotImplementedException(
-            "StartStreamingAsync will be implemented in IS-009 S-003 (FlaUI streaming automation).");
+        _logger.LogInformation("StartStreamingAsync starting; current state {State}", CurrentState);
+
+        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
+            throw new InvalidOperationException(
+                "A match-loaded operation is already in progress.");
+
+        try
+        {
+            await StartStreamingCoreAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+        }
+    }
+
+    private async Task StartStreamingCoreAsync(CancellationToken ct)
+    {
+        if (_stateMachine.CurrentState != PcsProState.MatchLoaded)
+            throw new InvalidOperationException(
+                $"StartStreamingAsync requires state {PcsProState.MatchLoaded} " +
+                $"but current state is {_stateMachine.CurrentState}.");
+
+        if (_streamingAutomation.IsStreamingActive())
+        {
+            _logger.LogDebug("StartStreamingAsync: streaming already active — no-op");
+            return;
+        }
+
+        ct.ThrowIfCancellationRequested();
+
+        try
+        {
+            _streamingAutomation.ClickStartLiveStream();
+            ct.ThrowIfCancellationRequested();
+            _streamingAutomation.HandleConsentDialogs();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "StartStreamingAsync failed during FlaUI automation");
+            await FireErrorUnderLockAsync(
+                PcsProTrigger.UnexpectedDialog,
+                $"Streaming start failed: {ex.Message}").ConfigureAwait(false);
+            return;
+        }
+
+        _logger.LogInformation("StartStreamingAsync completed successfully");
     }
 
     /// <inheritdoc/>
-    public Task StopStreamingAsync(CancellationToken ct = default)
+    public async Task StopStreamingAsync(CancellationToken ct = default)
     {
-        throw new NotImplementedException(
-            "StopStreamingAsync will be implemented in IS-009 S-003 (FlaUI streaming automation).");
+        _logger.LogInformation("StopStreamingAsync starting; current state {State}", CurrentState);
+
+        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
+            throw new InvalidOperationException(
+                "A match-loaded operation is already in progress.");
+
+        try
+        {
+            await StopStreamingCoreAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+        }
+    }
+
+    private async Task StopStreamingCoreAsync(CancellationToken ct)
+    {
+        if (_stateMachine.CurrentState != PcsProState.MatchLoaded)
+            throw new InvalidOperationException(
+                $"StopStreamingAsync requires state {PcsProState.MatchLoaded} " +
+                $"but current state is {_stateMachine.CurrentState}.");
+
+        if (!_streamingAutomation.IsStreamingActive())
+        {
+            _logger.LogDebug("StopStreamingAsync: streaming not active — no-op");
+            return;
+        }
+
+        ct.ThrowIfCancellationRequested();
+
+        try
+        {
+            _streamingAutomation.ClickStopLiveStream();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "StopStreamingAsync failed during FlaUI automation");
+            await FireErrorUnderLockAsync(
+                PcsProTrigger.UnexpectedDialog,
+                $"Streaming stop failed: {ex.Message}").ConfigureAwait(false);
+            return;
+        }
+
+        _logger.LogInformation("StopStreamingAsync completed successfully");
     }
 }

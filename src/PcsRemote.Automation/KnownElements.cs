@@ -103,6 +103,19 @@ internal static class KnownElements
     public const string StreamingOverlayTabAutomationId =
         "dockSite.PART_DockHost.RightAutoHideTabGroup[0].AutoHideTabItem[0]";
 
+    // ── S-009: Live Streaming Controls (from diagnostic Step 11) ────────
+    // Video Display ToolWindow contains the Live Streaming Controls panel.
+    // Streaming buttons have no Name — the label is in a child TextBlock.
+    public const string VideoDisplayToolWindowAutomationId = "twdVideoCapture";
+    public const string LiveStreamingControlsAutomationId = "LiveStreamingControls";
+    public const string StartLiveStreamButtonText = "Start Live Stream";
+    public const string StopLiveStreamButtonText = "Stop Live";
+    public const string VideoConsentDialogNamePattern = "Video Consent";
+    public const string VideoConsentedButtonName = "Video Consented";
+    public const string VideoConsentedButtonFallbackAutomationId = "btnAction";
+    public const string MatchCentreDialogNamePattern = "Match Centre";
+    public const string MatchCentreDialogFallbackPattern = "Add Live Stream";
+
     // ── Step 5: Change Match (File → Open Match... re-use) ───────────────
     // Change match uses File → Open Match... (same as Step 2). No separate element needed.
     public const string FileMenuAutomationId = "mnuFile";

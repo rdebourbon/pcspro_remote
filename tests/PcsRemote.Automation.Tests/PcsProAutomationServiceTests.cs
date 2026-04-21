@@ -21,7 +21,8 @@ public sealed class PcsProAutomationServiceTests
         IMatchSelectionAutomation? matchSelectionAutomation = null,
         ITeamNamesAutomation? teamNamesAutomation = null,
         IScoreboardAutomation? scoreboardAutomation = null,
-        IChangeMatchAutomation? changeMatchAutomation = null)
+        IChangeMatchAutomation? changeMatchAutomation = null,
+        IStreamingAutomation? streamingAutomation = null)
     {
         var options = Options.Create(new PcsProOptions
         {
@@ -34,7 +35,8 @@ public sealed class PcsProAutomationServiceTests
             matchSelectionAutomation ?? new FakeMatchSelectionAutomation(),
             teamNamesAutomation ?? new FakeTeamNamesAutomation(),
             scoreboardAutomation ?? new FakeScoreboardAutomation(),
-            changeMatchAutomation ?? new FakeChangeMatchAutomation());
+            changeMatchAutomation ?? new FakeChangeMatchAutomation(),
+            streamingAutomation ?? new FakeStreamingAutomation());
         return new PcsProAutomationService(
             options,
             NullLogger<PcsProAutomationService>.Instance,
@@ -61,7 +63,8 @@ public sealed class PcsProAutomationServiceTests
             new FakeMatchSelectionAutomation(),
             new FakeTeamNamesAutomation(),
             new FakeScoreboardAutomation(),
-            new FakeChangeMatchAutomation());
+            new FakeChangeMatchAutomation(),
+            new FakeStreamingAutomation());
         return new PcsProAutomationService(
             options,
             NullLogger<PcsProAutomationService>.Instance,
@@ -81,7 +84,8 @@ public sealed class PcsProAutomationServiceTests
             IMatchSelectionAutomation? matchSelectionAutomation = null,
             ITeamNamesAutomation? teamNamesAutomation = null,
             IScoreboardAutomation? scoreboardAutomation = null,
-            IChangeMatchAutomation? changeMatchAutomation = null)
+            IChangeMatchAutomation? changeMatchAutomation = null,
+            IStreamingAutomation? streamingAutomation = null)
     {
         var handle = new FakeProcessHandle { MainWindowVisible = true };
         var pm = new FakeProcessManager { StartedHandle = handle };
@@ -92,7 +96,8 @@ public sealed class PcsProAutomationServiceTests
             matchSelectionAutomation ?? new FakeMatchSelectionAutomation(),
             teamNamesAutomation ?? new FakeTeamNamesAutomation(),
             scoreboardAutomation ?? new FakeScoreboardAutomation(),
-            changeMatchAutomation ?? new FakeChangeMatchAutomation());
+            changeMatchAutomation ?? new FakeChangeMatchAutomation(),
+            streamingAutomation ?? new FakeStreamingAutomation());
         await svc.LaunchAndLoginAsync();
         return (svc, handle);
     }
@@ -679,7 +684,8 @@ public sealed class PcsProAutomationServiceTests
                 new FakeMatchSelectionAutomation(),
                 new FakeTeamNamesAutomation(),
                 new FakeScoreboardAutomation(),
-                new FakeChangeMatchAutomation()));
+                new FakeChangeMatchAutomation(),
+                new FakeStreamingAutomation()));
 
         await svc.LaunchAndLoginAsync();
 
@@ -1803,6 +1809,128 @@ public sealed class PcsProAutomationServiceTests
         svc.CurrentState.Should().Be(PcsProState.Error,
             because: "window polling timed out; Timeout trigger fires Error");
         pm.StartCallCount.Should().Be(2, because: "retry did start a second process");
+    }
+
+    // -----------------------------------------------------------------------
+    // S-009 Streaming Automation — delegation tests
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // AC-8 / AC-12 — StartStreamingAsync delegates to IStreamingAutomation
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task StartStreamingAsync_DelegatesToClickStartAndHandleConsent()
+    {
+        var fake = new FakeStreamingAutomation();
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(
+            streamingAutomation: fake);
+
+        // Drive to MatchLoaded state
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)! // field exists on this type
+            .GetValue(svc)!; // constructor always assigns a non-null PcsProStateMachine
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+        machine.Fire(PcsProTrigger.MatchOpened);
+
+        await svc.StartStreamingAsync();
+
+        fake.ClickStartLiveStreamCalled.Should().BeTrue(
+            because: "StartStreamingAsync must delegate to IStreamingAutomation.ClickStartLiveStream");
+        fake.HandleConsentDialogsCalled.Should().BeTrue(
+            because: "StartStreamingAsync must delegate to IStreamingAutomation.HandleConsentDialogs");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-8 / AC-12 — StopStreamingAsync delegates to IStreamingAutomation
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task StopStreamingAsync_DelegatesToClickStop()
+    {
+        var fake = new FakeStreamingAutomation { StreamingActive = true };
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(
+            streamingAutomation: fake);
+
+        // Drive to MatchLoaded state
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)! // field exists on this type
+            .GetValue(svc)!; // constructor always assigns a non-null PcsProStateMachine
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+        machine.Fire(PcsProTrigger.MatchOpened);
+
+        await svc.StopStreamingAsync();
+
+        fake.ClickStopLiveStreamCalled.Should().BeTrue(
+            because: "StopStreamingAsync must delegate to IStreamingAutomation.ClickStopLiveStream");
+    }
+
+    // -----------------------------------------------------------------------
+    // S-009 — Wrong state throws InvalidOperationException
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task StartStreamingAsync_WhenNotInMatchLoadedState_ThrowsInvalidOperationException()
+    {
+        var svc = CreateService(new FakeProcessManager(), new FakeTimeProvider());
+
+        await svc.Invoking(s => s.StartStreamingAsync())
+            .Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [TestMethod]
+    public async Task StopStreamingAsync_WhenNotInMatchLoadedState_ThrowsInvalidOperationException()
+    {
+        var svc = CreateService(new FakeProcessManager(), new FakeTimeProvider());
+
+        await svc.Invoking(s => s.StopStreamingAsync())
+            .Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    // -----------------------------------------------------------------------
+    // S-009 — Idempotency: no-op when already in target state
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task StartStreamingAsync_WhenAlreadyStreaming_IsNoOp()
+    {
+        var fake = new FakeStreamingAutomation { StreamingActive = true };
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(
+            streamingAutomation: fake);
+
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)! // field exists on this type
+            .GetValue(svc)!; // constructor always assigns a non-null PcsProStateMachine
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+        machine.Fire(PcsProTrigger.MatchOpened);
+
+        await svc.StartStreamingAsync();
+
+        fake.ClickStartLiveStreamCalled.Should().BeFalse(
+            because: "StartStreamingAsync should be a no-op when streaming is already active");
+    }
+
+    [TestMethod]
+    public async Task StopStreamingAsync_WhenNotStreaming_IsNoOp()
+    {
+        var fake = new FakeStreamingAutomation { StreamingActive = false };
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(
+            streamingAutomation: fake);
+
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)! // field exists on this type
+            .GetValue(svc)!; // constructor always assigns a non-null PcsProStateMachine
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+        machine.Fire(PcsProTrigger.MatchOpened);
+
+        await svc.StopStreamingAsync();
+
+        fake.ClickStopLiveStreamCalled.Should().BeFalse(
+            because: "StopStreamingAsync should be a no-op when not streaming");
     }
 }
 

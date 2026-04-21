@@ -34,6 +34,7 @@ public static class AutomationServiceCollectionExtensions
         services.AddSingleton<ITeamNamesAutomation, FlaUiTeamNamesAutomation>();
         services.AddSingleton<IScoreboardAutomation, FlaUiScoreboardAutomation>();
         services.AddSingleton<IChangeMatchAutomation, FlaUiChangeMatchAutomation>();
+        services.AddSingleton<IStreamingAutomation, FlaUiStreamingAutomation>();
         services.AddSingleton<AutomationDependencies>();
         services.AddSingleton<IPcsProAutomationService, PcsProAutomationService>();
         return services;

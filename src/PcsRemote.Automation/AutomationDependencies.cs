@@ -10,9 +10,11 @@ namespace PcsRemote.Automation;
 /// <param name="TeamNamesAutomation">FlaUI interactions for team name extraction (S-005).</param>
 /// <param name="ScoreboardAutomation">FlaUI and Win32 interactions for scoreboard refresh and capture (S-006).</param>
 /// <param name="ChangeMatchAutomation">FlaUI interactions for changing the loaded match (S-006).</param>
+/// <param name="StreamingAutomation">FlaUI interactions for start/stop live streaming (S-009).</param>
 internal sealed record AutomationDependencies(
     ILoginAutomation LoginAutomation,
     IMatchSelectionAutomation MatchSelectionAutomation,
     ITeamNamesAutomation TeamNamesAutomation,
     IScoreboardAutomation ScoreboardAutomation,
-    IChangeMatchAutomation ChangeMatchAutomation);
+    IChangeMatchAutomation ChangeMatchAutomation,
+    IStreamingAutomation StreamingAutomation);
