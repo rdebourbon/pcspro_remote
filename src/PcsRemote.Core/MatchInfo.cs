@@ -19,4 +19,6 @@ public record MatchInfo(
     string HomeTeam = "Home XI",
     string AwayTeam = "Away XI",
     string MatchType = "Friendly",
-    DateOnly MatchDate = default);
+    DateOnly MatchDate = default,
+    string HomeClub = "",
+    string AwayClub = "");

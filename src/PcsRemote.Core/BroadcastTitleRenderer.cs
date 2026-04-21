@@ -57,6 +57,8 @@ public sealed class BroadcastTitleRenderer
         {
             "HomeTeam" => match.HomeTeam ?? "",
             "AwayTeam" => match.AwayTeam ?? "",
+            "HomeClub" => match.HomeClub ?? "",
+            "AwayClub" => match.AwayClub ?? "",
             "MatchType" => match.MatchType ?? "",
             "Date" => FormatDate(match.MatchDate, format),
             _ => regexMatch.Value

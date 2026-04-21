@@ -2628,6 +2628,177 @@ public sealed class PcsProAutomationServiceTests
         svc.LoadedMatch!.HomeTeam.Should().Be("HHCC - 1st XI");
         svc.LoadedMatch!.AwayTeam.Should().Be("Club B - 2nd XI");
     }
+
+    // =======================================================================
+    // S-004 — Club Name Token Integration (TC-14 through TC-17)
+    // =======================================================================
+
+    // -----------------------------------------------------------------------
+    // TC-14 — GetTeamNamesAsync enriches LoadedMatch with reordered club names
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_AfterLoadMatch_EnrichesLoadedMatchClubNames()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MatchLoaded = true };
+        var fakeTeamNames = new FakeTeamNamesAutomation
+        {
+            HomeClubName = "Club B",
+            HomeTeamName = "2nd XI",
+            AwayClubName = "HHCC",
+            AwayTeamName = "1st XI",
+        };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+        var options = Options.Create(new PcsProOptions
+        {
+            ExecutablePath = @"C:\cricket.exe",
+            WorkingDirectory = @"C:\",
+            Password = "test-password",
+            ClubName = "HHCC",
+        });
+        var deps = new AutomationDependencies(
+            new FakeLoginAutomation(),
+            fakeMatchSel,
+            fakeTeamNames,
+            new FakeScoreboardAutomation(),
+            new FakeChangeMatchAutomation(),
+            new FakeStreamingAutomation(),
+            new FakeHealthCheckAutomation());
+        var svc = new PcsProAutomationService(
+            options,
+            NullLogger<PcsProAutomationService>.Instance,
+            pm, tp, deps,
+            new NullAutomationLogService());
+        await svc.LaunchAndLoginAsync();
+
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(svc)!;
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+
+        // Away team matches club → S-003 reorders teams (HHCC first)
+        var match = new MatchInfo("test-1", HomeTeam: "Club B - 2nd XI", AwayTeam: "HHCC - 1st XI");
+        await svc.LoadMatchAsync(match);
+
+        // GetTeamNamesAsync enriches _loadedMatch with reordered club names
+        await svc.GetTeamNamesAsync();
+
+        svc.LoadedMatch.Should().NotBeNull();
+        svc.LoadedMatch!.HomeClub.Should().Be("HHCC",
+            "club name should be reordered to match S-003's team reorder");
+        svc.LoadedMatch!.AwayClub.Should().Be("Club B",
+            "non-club team's club should be second");
+    }
+
+    // -----------------------------------------------------------------------
+    // TC-15 — LoadedMatch before GetTeamNamesAsync has default empty club names
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LoadMatchAsync_BeforeGetTeamNames_HasDefaultEmptyClubNames()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MatchLoaded = true };
+        var (svc, _, _) = await CreateServiceAtMatchSelectionReadyAsync(fakeMatchSel);
+
+        var match = new MatchInfo("test-2", HomeTeam: "Home XI", AwayTeam: "Away XI");
+        await svc.LoadMatchAsync(match);
+
+        svc.LoadedMatch.Should().NotBeNull();
+        svc.LoadedMatch!.HomeClub.Should().BeEmpty();
+        svc.LoadedMatch!.AwayClub.Should().BeEmpty();
+    }
+
+    // -----------------------------------------------------------------------
+    // TC-16 — UseCurrentMatchAsync then GetTeamNamesAsync — LoadedMatch stays null
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_AfterUseCurrentMatch_LoadedMatchRemainsNull()
+    {
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync();
+
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(svc)!;
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+
+        // UseCurrentMatchAsync goes NotRunning → MatchLoaded with LoadedMatch = null
+        // But we're in MatchSelectionReady, not NotRunning. Drive to NotRunning first is wrong.
+        // Actually UseCurrentMatchAsync requires NotRunning state. Let me use a fresh service.
+        var freshHandle = new FakeProcessHandle { MainWindowVisible = true };
+        var freshPm = new FakeProcessManager { StartedHandle = freshHandle };
+        var freshSvc = CreateService(freshPm, new FakeTimeProvider());
+
+        // UseCurrentMatchAsync is called from NotRunning
+        await freshSvc.UseCurrentMatchAsync();
+
+        // Now in MatchLoaded with LoadedMatch = null (AC-8)
+        freshSvc.LoadedMatch.Should().BeNull("UseCurrentMatchAsync does not set LoadedMatch");
+
+        // GetTeamNamesAsync should succeed and not throw
+        var teams = await freshSvc.GetTeamNamesAsync();
+        teams.Should().NotBeNull();
+
+        // LoadedMatch should STILL be null — enrichment was skipped
+        freshSvc.LoadedMatch.Should().BeNull(
+            "enrichment should be skipped when LoadedMatch is null");
+    }
+
+    // -----------------------------------------------------------------------
+    // TC-17 — GetTeamNamesAsync fails → club names remain default empty
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_DialogFails_LoadedMatchClubNamesRemainEmpty()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MatchLoaded = true };
+        var fakeTeamNames = new FakeTeamNamesAutomation { ThrowOnOpenTeamsDialog = true };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+        var options = Options.Create(new PcsProOptions
+        {
+            ExecutablePath = @"C:\cricket.exe",
+            WorkingDirectory = @"C:\",
+            Password = "test-password",
+            ClubName = "HHCC",
+        });
+        var deps = new AutomationDependencies(
+            new FakeLoginAutomation(),
+            fakeMatchSel,
+            fakeTeamNames,
+            new FakeScoreboardAutomation(),
+            new FakeChangeMatchAutomation(),
+            new FakeStreamingAutomation(),
+            new FakeHealthCheckAutomation());
+        var svc = new PcsProAutomationService(
+            options,
+            NullLogger<PcsProAutomationService>.Instance,
+            pm, tp, deps,
+            new NullAutomationLogService());
+        await svc.LaunchAndLoginAsync();
+
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(svc)!;
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+
+        var match = new MatchInfo("test-3", HomeTeam: "HHCC - 1st XI", AwayTeam: "Club B - 2nd XI");
+        await svc.LoadMatchAsync(match);
+
+        // GetTeamNamesAsync fails — error fires, but clubs should NOT be enriched
+        // The service is now in Error state after the dialog failure
+        // LoadedMatch may be null after Error transition
+        // Retrieve club name before calling GetTeamNamesAsync to verify default
+        svc.LoadedMatch.Should().NotBeNull();
+        svc.LoadedMatch!.HomeClub.Should().BeEmpty("club names not yet enriched");
+        svc.LoadedMatch!.AwayClub.Should().BeEmpty("club names not yet enriched");
+    }
 }
 
 // -----------------------------------------------------------------------

@@ -1197,6 +1197,26 @@ public sealed class MockPcsProAutomationServiceTests
 
         sut.IsStreaming.Should().BeFalse();
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-004 — Club Name Enrichment (TC-18)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetTeamNamesAsync_AfterLoadMatch_EnrichesLoadedMatchClubNames()
+    {
+        var sut = CreateSut();
+        await sut.LaunchAndLoginAsync();
+        await sut.LoadMatchAsync(new MatchInfo("m1"));
+
+        sut.LoadedMatch.Should().NotBeNull();
+        sut.LoadedMatch!.HomeClub.Should().BeEmpty("club names not yet enriched");
+
+        await sut.GetTeamNamesAsync();
+
+        sut.LoadedMatch!.HomeClub.Should().Be("Home CC");
+        sut.LoadedMatch!.AwayClub.Should().Be("Away CC");
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────

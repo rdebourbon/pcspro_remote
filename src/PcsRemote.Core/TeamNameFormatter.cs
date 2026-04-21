@@ -48,7 +48,31 @@ public static class TeamNameFormatter
         return (team1 ?? "", team2 ?? "");
     }
 
-    private static bool MatchesClubPrefix(string? teamName, string clubName)
+    /// <summary>
+    /// Reorders two club names to match <see cref="FormatForTitle"/>'s swap logic.
+    /// If only the away (second) club matches the configured club name, clubs are swapped;
+    /// otherwise original order is preserved.
+    /// </summary>
+    public static (string First, string Second) OrderClubNamesForTitle(
+        string? homeClub, string? awayClub, string? clubName)
+    {
+        if (string.IsNullOrEmpty(clubName))
+        {
+            return (homeClub ?? "", awayClub ?? "");
+        }
+
+        bool homeMatches = MatchesClubPrefix(homeClub, clubName);
+        bool awayMatches = MatchesClubPrefix(awayClub, clubName);
+
+        if (!homeMatches && awayMatches)
+        {
+            return (awayClub ?? "", homeClub ?? "");
+        }
+
+        return (homeClub ?? "", awayClub ?? "");
+    }
+
+    internal static bool MatchesClubPrefix(string? teamName, string clubName)
     {
         if (string.IsNullOrEmpty(teamName))
         {

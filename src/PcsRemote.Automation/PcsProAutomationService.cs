@@ -1318,6 +1318,16 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             _logger.LogInformation(
                 "GetTeamNamesAsync succeeded — Home={HomeClub}/{HomeTeam} Away={AwayClub}/{AwayTeam}",
                 homeTeam.ClubName, homeTeam.TeamName, awayTeam.ClubName, awayTeam.TeamName);
+
+            // S-004 — Enrich LoadedMatch with club names, ordered to match S-003's team reorder.
+            var current = _loadedMatch;
+            if (current is not null)
+            {
+                var (firstClub, secondClub) = TeamNameFormatter.OrderClubNamesForTitle(
+                    homeTeam.ClubName, awayTeam.ClubName, _options.ClubName);
+                _loadedMatch = current with { HomeClub = firstClub, AwayClub = secondClub };
+            }
+
             return new MatchTeams(homeTeam, awayTeam);
         }
         catch (OperationCanceledException)

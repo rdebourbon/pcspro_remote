@@ -163,6 +163,68 @@ public class BroadcastTitleRendererTests
             .Which.LogLevel.Should().Be(LogLevel.Warning);
     }
 
+    // --- S-004: Club name token tests ---
+
+    [TestMethod]
+    public void Render_HomeClubToken_SubstitutedCorrectly()
+    {
+        var match = new MatchInfo("1", HomeClub: "High Halstow CC");
+        var result = _renderer.Render("{HomeClub}", match);
+
+        result.Should().Be("High Halstow CC");
+    }
+
+    [TestMethod]
+    public void Render_AwayClubToken_SubstitutedCorrectly()
+    {
+        var match = new MatchInfo("1", AwayClub: "Cobham CC");
+        var result = _renderer.Render("{AwayClub}", match);
+
+        result.Should().Be("Cobham CC");
+    }
+
+    [TestMethod]
+    public void Render_TemplateWithoutClubTokens_IdenticalOutput()
+    {
+        var result = _renderer.Render("{HomeTeam} vs {AwayTeam}", _match);
+
+        result.Should().Be("High Halstow vs Cobham");
+    }
+
+    [TestMethod]
+    public void Render_MixedOldAndNewTokens_AllResolved()
+    {
+        var match = new MatchInfo(
+            "1",
+            HomeTeam: "1st XI",
+            AwayTeam: "Cobham 1st XI",
+            HomeClub: "High Halstow CC",
+            AwayClub: "Cobham CC");
+
+        var result = _renderer.Render(
+            "{HomeClub} {HomeTeam} vs {AwayClub} {AwayTeam}", match);
+
+        result.Should().Be("High Halstow CC 1st XI vs Cobham CC Cobham 1st XI");
+    }
+
+    [TestMethod]
+    public void Render_EmptyHomeClub_SubstitutedAsEmpty()
+    {
+        var match = new MatchInfo("1", HomeClub: "");
+        var result = _renderer.Render("{HomeClub}", match);
+
+        result.Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public void Render_DefaultHomeClub_SubstitutedAsEmpty()
+    {
+        var match = new MatchInfo("1");
+        var result = _renderer.Render("{HomeClub}", match);
+
+        result.Should().BeEmpty();
+    }
+
     private sealed class CapturingLogger<T> : ILogger<T>
     {
         public List<LogEntry> Entries { get; } = [];

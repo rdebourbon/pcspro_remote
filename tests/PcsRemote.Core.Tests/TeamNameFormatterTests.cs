@@ -174,4 +174,76 @@ public class TeamNameFormatterTests
         first.Should().Be("1st XI");
         second.Should().BeEmpty();
     }
+
+    // --- S-004: OrderClubNamesForTitle tests ---
+
+    [TestMethod]
+    public void OrderClubNamesForTitle_HomeMatches_NoSwap()
+    {
+        var (first, second) = TeamNameFormatter.OrderClubNamesForTitle(
+            "HHCC", "Cobham CC", "HHCC");
+
+        first.Should().Be("HHCC");
+        second.Should().Be("Cobham CC");
+    }
+
+    [TestMethod]
+    public void OrderClubNamesForTitle_AwayMatches_Swapped()
+    {
+        var (first, second) = TeamNameFormatter.OrderClubNamesForTitle(
+            "Cobham CC", "HHCC", "HHCC");
+
+        first.Should().Be("HHCC");
+        second.Should().Be("Cobham CC");
+    }
+
+    [TestMethod]
+    public void OrderClubNamesForTitle_NeitherMatches_NoSwap()
+    {
+        var (first, second) = TeamNameFormatter.OrderClubNamesForTitle(
+            "Club A", "Club B", "HHCC");
+
+        first.Should().Be("Club A");
+        second.Should().Be("Club B");
+    }
+
+    [TestMethod]
+    public void OrderClubNamesForTitle_BothMatch_NoSwap()
+    {
+        var (first, second) = TeamNameFormatter.OrderClubNamesForTitle(
+            "HHCC", "HHCC", "HHCC");
+
+        first.Should().Be("HHCC");
+        second.Should().Be("HHCC");
+    }
+
+    [TestMethod]
+    public void OrderClubNamesForTitle_NullClubName_NoSwap()
+    {
+        var (first, second) = TeamNameFormatter.OrderClubNamesForTitle(
+            "HHCC", "Cobham CC", null);
+
+        first.Should().Be("HHCC");
+        second.Should().Be("Cobham CC");
+    }
+
+    [TestMethod]
+    public void OrderClubNamesForTitle_EmptyClubName_NoSwap()
+    {
+        var (first, second) = TeamNameFormatter.OrderClubNamesForTitle(
+            "HHCC", "Cobham CC", "");
+
+        first.Should().Be("HHCC");
+        second.Should().Be("Cobham CC");
+    }
+
+    [TestMethod]
+    public void OrderClubNamesForTitle_NullHomeClub_AwayDoesNotMatch_NoSwap()
+    {
+        var (first, second) = TeamNameFormatter.OrderClubNamesForTitle(
+            null, "Cobham CC", "HHCC");
+
+        first.Should().BeEmpty();
+        second.Should().Be("Cobham CC");
+    }
 }
