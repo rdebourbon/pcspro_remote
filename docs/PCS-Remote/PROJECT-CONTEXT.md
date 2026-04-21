@@ -31,7 +31,7 @@ ASP.NET Core + Blazor Server
   ├── SignalR Hub (scoreboard image broadcast, explicit events)
   ├── PCS Pro Automation Service
   │     ├── State Machine (Stateless NuGet)
-  │     ├── Scoreboard Capture (PrintWindow Win32 API)
+  │     ├── Scoreboard Capture (FlaUI Capture.Rectangle, DPI-aware)
   │     └── FlaUI (UIA3 automation)
   ├── System Tray Host (NotifyIcon, manual mode toggle)
   └── Configuration & Logging (Serilog)
@@ -53,7 +53,7 @@ LED Scoreboard
 
 4. **FlaUI (UIA3)**: Modern UIAutomation library. Uses accessible properties (AutomationId, Name, ClassName) — never coordinates. WPF-native.
 
-5. **PrintWindow Win32 API**: Captures WPF window content off-screen via `PW_RENDERFULLCONTENT`. Works regardless of window visibility or occlusion.
+5. **FlaUI `Capture.Rectangle()`**: DPI-aware screen capture using FlaUI's built-in `Capture.Rectangle(bounds)` method. The process calls `SetProcessDPIAware()` at startup so UIA `BoundingRectangle` coordinates and screen capture use physical pixels consistently. Captures the `ReplayScreenPreview` element content (not the ToolWindow chrome) and encodes as JPEG.
 
 6. **Blazor circuit-based scoreboard delivery**: Scoreboard images are distributed via a shared singleton service event (`ScoreboardUpdated`). Each `ScoreboardPreview` component subscribes to this event and re-renders via `InvokeAsync(StateHasChanged)` on its own Blazor circuit. This is idiomatic for Blazor Server, avoids a separate hub, and is sufficient for the local-network single-machine deployment. Late joiners read the service's cached current image on `OnInitializedAsync`. The `PcsProHub` remains for state-change broadcast and future non-Blazor consumers of state events; it is not used for image data.
 

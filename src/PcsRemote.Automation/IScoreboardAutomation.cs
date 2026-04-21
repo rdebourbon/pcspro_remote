@@ -29,11 +29,10 @@ internal interface IScoreboardAutomation
     void ClickRefreshAllScoreboards();
 
     /// <summary>
-    /// Locates the scoreboard dockable tool window by ClassName and Name, captures it via
-    /// <c>PrintWindow(hwnd, hdc, PW_RENDERFULLCONTENT)</c>, crops to the element's
-    /// <c>BoundingRectangle</c> (screen coordinates translated to bitmap-relative origin at
-    /// window top-left), encodes as JPEG at <c>ScoreboardOptions.JpegQuality</c>, and returns
-    /// the encoded bytes. Crop and HWND strategy are verified during the garage PC session.
+    /// Locates the scoreboard tool window (preferring the <c>ReplayScreenPreview</c> content element),
+    /// captures it via <see cref="FlaUI.Core.Capturing.Capture.Rectangle(System.Drawing.Rectangle)"/>
+    /// (DPI-aware), encodes as JPEG at <see cref="ScoreboardOptions.JpegQuality"/>, and returns
+    /// the encoded bytes.
     /// </summary>
     /// <remarks><b>Interaction method — may throw.</b></remarks>
     byte[] CaptureScoreboardImage();
