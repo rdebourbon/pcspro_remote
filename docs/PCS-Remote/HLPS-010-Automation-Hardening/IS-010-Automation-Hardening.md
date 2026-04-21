@@ -176,6 +176,8 @@ Note: This step uses the current `string` return type. The structured return typ
 
 ### S-011 — Use Current Match (GAP-010)
 
+**Delivered:** `acc0897` | **Spec:** SPEC-S-011 v0.3 APPROVED
+
 **What changes:** The state machine gains a new trigger that permits transitioning directly to the match-loaded state when PCS Pro already has a match open. The automation service gains a new entry-point method that detects whether a match is loaded, reads team names, and fires the new trigger. Match identity verification is deferred — the operator's assertion is trusted.
 
 **Why:** HLPS-010 §2.8 (GAP-010). Enables reconnection to a manually-loaded match without re-running the full match selection flow.
