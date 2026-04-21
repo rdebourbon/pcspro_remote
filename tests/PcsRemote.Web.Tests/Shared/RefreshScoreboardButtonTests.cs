@@ -40,7 +40,7 @@ public class RefreshScoreboardButtonTests
         var coordinatorMock = new Mock<IOperationCoordinatorService>();
         coordinatorMock.Setup(c => c.IsOperationInProgress).Returns(operationInProgress);
         coordinatorMock
-            .Setup(c => c.BeginOperation())
+            .Setup(c => c.BeginOperation(It.IsAny<string?>()))
             .Callback(() => coordinatorMock.Raise(c => c.OperationInProgressChanged += null, coordinatorMock.Object, true))
             .Returns(true);
         coordinatorMock
@@ -311,7 +311,7 @@ public class RefreshScoreboardButtonTests
         using (ctx)
         {
             // Simulate another browser winning the CAS: BeginOperation is a no-op (returns false)
-            coordinatorMock.Setup(c => c.BeginOperation()).Returns(false);
+            coordinatorMock.Setup(c => c.BeginOperation(It.IsAny<string?>())).Returns(false);
 
             cut.Find(".refresh-scoreboard-button").Click();
 
@@ -431,7 +431,7 @@ public class RefreshScoreboardButtonTests
         ctx.Services.AddSingleton(autoMock.Object);
         ctx.Services.AddSingleton<IManualModeService>(new Mock<IManualModeService>().Object);
         var coordinatorMock = new Mock<IOperationCoordinatorService>();
-        coordinatorMock.Setup(c => c.BeginOperation()).Returns(true);
+        coordinatorMock.Setup(c => c.BeginOperation(It.IsAny<string?>())).Returns(true);
         ctx.Services.AddSingleton(coordinatorMock.Object);
         ctx.Services.AddSingleton(notificationSvc);
         ctx.Services.AddSingleton<ILogger<RefreshScoreboardButton>>(NullLogger<RefreshScoreboardButton>.Instance);

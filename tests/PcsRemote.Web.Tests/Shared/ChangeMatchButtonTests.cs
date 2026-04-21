@@ -39,7 +39,7 @@ public class ChangeMatchButtonTests
         var coordinatorMock = new Mock<IOperationCoordinatorService>();
         coordinatorMock.Setup(c => c.IsOperationInProgress).Returns(operationInProgress);
         coordinatorMock
-            .Setup(c => c.BeginOperation())
+            .Setup(c => c.BeginOperation(It.IsAny<string?>()))
             .Callback(() => coordinatorMock.Raise(c => c.OperationInProgressChanged += null, coordinatorMock.Object, true))
             .Returns(true);
         coordinatorMock
@@ -368,7 +368,7 @@ public class ChangeMatchButtonTests
             cut.Find(".change-match-button").Click();
 
             cut.WaitForAssertion(() =>
-                coordinatorMock.Verify(c => c.BeginOperation(), Times.Never));
+                coordinatorMock.Verify(c => c.BeginOperation(It.IsAny<string?>()), Times.Never));
         }
     }
 
@@ -381,7 +381,7 @@ public class ChangeMatchButtonTests
         using (ctx)
         {
             // Simulate another browser winning the CAS: BeginOperation is a no-op (returns false)
-            coordinatorMock.Setup(c => c.BeginOperation()).Returns(false);
+            coordinatorMock.Setup(c => c.BeginOperation(It.IsAny<string?>())).Returns(false);
             dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
                 .ReturnsAsync(true);
 

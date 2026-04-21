@@ -22,6 +22,12 @@ public interface IOperationCoordinatorService
     event EventHandler<bool> OperationInProgressChanged;
 
     /// <summary>
+    /// Raised when <see cref="CurrentOperationDescription"/> changes. The argument is the new
+    /// description (<see langword="null"/> when cleared).
+    /// </summary>
+    event EventHandler<string?> OperationDescriptionChanged;
+
+    /// <summary>
     /// Marks the start of an operation. Returns <see langword="true"/> if this call acquired the
     /// lock (CAS 0→1 succeeded) and raised the event; <see langword="false"/> if an operation was
     /// already in progress (no-op — the caller must NOT call <see cref="MarkComplete"/>).
@@ -37,4 +43,13 @@ public interface IOperationCoordinatorService
     /// no-op and no event is raised.
     /// </summary>
     void MarkComplete();
+
+    /// <summary>
+    /// Clears a stale description when no operation is in progress.
+    /// No-op when an operation is active (<see cref="IsOperationInProgress"/> is true)
+    /// or when <see cref="CurrentOperationDescription"/> is already <see langword="null"/>.
+    /// Fires <see cref="OperationDescriptionChanged"/> with <see langword="null"/> when
+    /// the description is actually cleared.
+    /// </summary>
+    void ClearStaleDescription();
 }

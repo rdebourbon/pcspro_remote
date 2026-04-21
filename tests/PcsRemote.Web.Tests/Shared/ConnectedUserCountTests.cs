@@ -169,12 +169,14 @@ public class ConnectedUserCountTests
         statusMock.Setup(s => s.CurrentState).Returns(PcsRemote.Core.PcsProState.NotRunning);
         var manualModeMock = new Mock<IManualModeService>();
         manualModeMock.Setup(s => s.IsManualModeActive).Returns(false);
+        var coordinatorMock = new Mock<IOperationCoordinatorService>();
 
         using var ctx = new BunitContext();
         ctx.Services.AddRadzenComponents();
         ctx.Services.AddSingleton<IConnectionTracker>(mock.Object);
         ctx.Services.AddSingleton<IPcsProAutomationService>(statusMock.Object);
         ctx.Services.AddSingleton<IManualModeService>(manualModeMock.Object);
+        ctx.Services.AddSingleton(coordinatorMock.Object);
 
         var cut = ctx.Render<MainLayout>(p =>
             p.Add(l => l.Body, builder => { }));

@@ -61,7 +61,7 @@
         bool acquired = false;
         try
         {
-            acquired = CoordinatorService.BeginOperation();
+            acquired = CoordinatorService.BeginOperation("Changing match\u2026");
             if (!acquired)
                 return;
 

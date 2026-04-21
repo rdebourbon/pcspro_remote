@@ -11,6 +11,7 @@ namespace PcsRemote.Web.Tests.Hubs;
 public sealed class OperationInProgressBroadcasterTests
 {
     private Mock<IOperationCoordinatorService> _coordinatorMock = null!; // Set in [TestInitialize]
+    private Mock<IPcsProAutomationService> _automationMock = null!;      // Set in [TestInitialize]
     private Mock<IHubContext<PcsProHub>> _hubContextMock = null!;        // Set in [TestInitialize]
     private Mock<IHubClients> _hubClientsMock = null!;                   // Set in [TestInitialize]
     private Mock<IClientProxy> _allClientsMock = null!;                  // Set in [TestInitialize]
@@ -20,6 +21,7 @@ public sealed class OperationInProgressBroadcasterTests
     public void SetUp()
     {
         _coordinatorMock = new Mock<IOperationCoordinatorService>();
+        _automationMock = new Mock<IPcsProAutomationService>();
         _hubContextMock = new Mock<IHubContext<PcsProHub>>();
         _hubClientsMock = new Mock<IHubClients>();
         _allClientsMock = new Mock<IClientProxy>();
@@ -43,7 +45,7 @@ public sealed class OperationInProgressBroadcasterTests
             .Returns(Task.CompletedTask);
 
         var broadcaster = new OperationInProgressBroadcaster(
-            _coordinatorMock.Object, _hubContextMock.Object, _loggerMock.Object);
+            _coordinatorMock.Object, _automationMock.Object, _hubContextMock.Object, _loggerMock.Object);
         await broadcaster.StartAsync(CancellationToken.None);
 
         _coordinatorMock.Raise(c => c.OperationInProgressChanged += null, this, true);
@@ -72,7 +74,7 @@ public sealed class OperationInProgressBroadcasterTests
             .Returns(Task.CompletedTask);
 
         var broadcaster = new OperationInProgressBroadcaster(
-            _coordinatorMock.Object, _hubContextMock.Object, _loggerMock.Object);
+            _coordinatorMock.Object, _automationMock.Object, _hubContextMock.Object, _loggerMock.Object);
         await broadcaster.StartAsync(CancellationToken.None);
 
         _coordinatorMock.Raise(c => c.OperationInProgressChanged += null, this, false);
@@ -95,7 +97,7 @@ public sealed class OperationInProgressBroadcasterTests
     public async Task StopAsync_Unsubscribes_NoFurtherBroadcasts()
     {
         var broadcaster = new OperationInProgressBroadcaster(
-            _coordinatorMock.Object, _hubContextMock.Object, _loggerMock.Object);
+            _coordinatorMock.Object, _automationMock.Object, _hubContextMock.Object, _loggerMock.Object);
         await broadcaster.StartAsync(CancellationToken.None);
         await broadcaster.StopAsync(CancellationToken.None);
 
@@ -130,7 +132,7 @@ public sealed class OperationInProgressBroadcasterTests
             .Callback(() => logTcs.TrySetResult(true));
 
         var broadcaster = new OperationInProgressBroadcaster(
-            _coordinatorMock.Object, _hubContextMock.Object, _loggerMock.Object);
+            _coordinatorMock.Object, _automationMock.Object, _hubContextMock.Object, _loggerMock.Object);
         await broadcaster.StartAsync(CancellationToken.None);
 
         // Raising the event must not throw on the calling thread

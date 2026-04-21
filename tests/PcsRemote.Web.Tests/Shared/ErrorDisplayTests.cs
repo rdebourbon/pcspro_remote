@@ -41,7 +41,7 @@ public sealed class ErrorDisplayTests
         var coordinatorMock = new Mock<IOperationCoordinatorService>();
         coordinatorMock.Setup(c => c.IsOperationInProgress).Returns(operationInProgress);
         coordinatorMock
-            .Setup(c => c.BeginOperation())
+            .Setup(c => c.BeginOperation(It.IsAny<string?>()))
             .Callback(() => coordinatorMock.Raise(c => c.OperationInProgressChanged += null, coordinatorMock.Object, true))
             .Returns(true);
         coordinatorMock
@@ -156,7 +156,7 @@ public sealed class ErrorDisplayTests
 
             cut.WaitForAssertion(() =>
             {
-                coordinatorMock.Verify(c => c.BeginOperation(), Times.Never,
+                coordinatorMock.Verify(c => c.BeginOperation(It.IsAny<string?>()), Times.Never,
                     "BeginOperation must not be called when the cached _operationInProgress guard fires");
                 autoMock.Verify(a => a.RetryAsync(It.IsAny<CancellationToken>()), Times.Never);
             });
@@ -217,7 +217,7 @@ public sealed class ErrorDisplayTests
             cut.WaitForAssertion(() =>
             {
                 autoMock.Verify(a => a.RetryAsync(It.IsAny<CancellationToken>()), Times.Once);
-                coordinatorMock.Verify(c => c.BeginOperation(), Times.Once);
+                coordinatorMock.Verify(c => c.BeginOperation(It.IsAny<string?>()), Times.Once);
                 coordinatorMock.Verify(c => c.MarkComplete(), Times.Once);
             });
         }
@@ -232,7 +232,7 @@ public sealed class ErrorDisplayTests
         using (ctx)
         {
             // Simulate another browser winning the CAS
-            coordinatorMock.Setup(c => c.BeginOperation()).Returns(false);
+            coordinatorMock.Setup(c => c.BeginOperation(It.IsAny<string?>())).Returns(false);
 
             cut.Find(".error-display__retry-btn").Click();
 

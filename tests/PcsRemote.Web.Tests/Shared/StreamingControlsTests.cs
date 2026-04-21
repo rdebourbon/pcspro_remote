@@ -32,7 +32,7 @@ public class StreamingControlsTests
         var coordinatorMock = new Mock<IOperationCoordinatorService>();
         coordinatorMock.Setup(c => c.IsOperationInProgress).Returns(operationInProgress);
         coordinatorMock
-            .Setup(c => c.BeginOperation())
+            .Setup(c => c.BeginOperation(It.IsAny<string?>()))
             .Callback(() => coordinatorMock.Raise(
                 c => c.OperationInProgressChanged += null, coordinatorMock.Object, true))
             .Returns(true);
@@ -323,7 +323,7 @@ public class StreamingControlsTests
         {
             var callOrder = new List<string>();
             coordinatorMock
-                .Setup(c => c.BeginOperation())
+                .Setup(c => c.BeginOperation(It.IsAny<string?>()))
                 .Callback(() => callOrder.Add("BeginOperation"))
                 .Returns(true);
             streamMock.Setup(s => s.StartStreamAsync(It.IsAny<CancellationToken>()))
@@ -387,7 +387,7 @@ public class StreamingControlsTests
         var (cut, streamMock, coordinatorMock, _, ctx) = Build(LiveStreamStatus.Idle);
         using (ctx)
         {
-            coordinatorMock.Setup(c => c.BeginOperation()).Returns(false);
+            coordinatorMock.Setup(c => c.BeginOperation(It.IsAny<string?>())).Returns(false);
 
             cut.Find(".streaming-controls__btn--start").Click();
 
@@ -536,7 +536,7 @@ public class StreamingControlsTests
 
         var coordinatorMock = new Mock<IOperationCoordinatorService>();
         coordinatorMock.Setup(c => c.IsOperationInProgress).Returns(false);
-        coordinatorMock.Setup(c => c.BeginOperation()).Returns(true);
+        coordinatorMock.Setup(c => c.BeginOperation(It.IsAny<string?>())).Returns(true);
 
         var dialogMock = new Mock<IConfirmDialogService>();
         dialogMock.Setup(d => d.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -623,7 +623,7 @@ public class StreamingControlsTests
 
             cut.WaitForAssertion(() =>
             {
-                coordinatorMock.Verify(c => c.BeginOperation(), Times.Once);
+                coordinatorMock.Verify(c => c.BeginOperation(It.IsAny<string?>()), Times.Once);
                 coordinatorMock.Verify(c => c.MarkComplete(), Times.Once);
             });
         }

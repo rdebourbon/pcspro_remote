@@ -1,0 +1,59 @@
+@using PcsRemote.Core
+@implements IDisposable
+@inject IOperationCoordinatorService CoordinatorService
+
+@if (_isInProgress && !string.IsNullOrWhiteSpace(_description))
+{
+    <div class="operation-status-banner">
+        @_description
+    </div>
+}
+
+@code {
+    private bool _isInProgress;
+    private string? _description;
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        // Subscribe before snapshot (established project pattern — eliminates race window).
+        CoordinatorService.OperationInProgressChanged += OnOperationInProgressChanged;
+        CoordinatorService.OperationDescriptionChanged += OnOperationDescriptionChanged;
+        _isInProgress = CoordinatorService.IsOperationInProgress;
+        _description = CoordinatorService.CurrentOperationDescription;
+    }
+
+    private async void OnOperationInProgressChanged(object? sender, bool isInProgress)
+    {
+        _isInProgress = isInProgress;
+        _description = CoordinatorService.CurrentOperationDescription;
+        if (!_disposed)
+        {
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    private async void OnOperationDescriptionChanged(object? sender, string? description)
+    {
+        _description = CoordinatorService.CurrentOperationDescription;
+        if (!_disposed)
+        {
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        CoordinatorService.OperationInProgressChanged -= OnOperationInProgressChanged;
+        CoordinatorService.OperationDescriptionChanged -= OnOperationDescriptionChanged;
+    }
+}

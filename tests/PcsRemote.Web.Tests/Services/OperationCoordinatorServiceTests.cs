@@ -208,4 +208,195 @@ public sealed class OperationCoordinatorServiceTests
 
         events.Should().Equal(true, false, true, false);
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  S-005 Description Tests
+    // ══════════════════════════════════════════════════════════════════════════
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // S005-TC-1  BeginOperation stores description
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void BeginOperation_WithDescription_StoresDescription()
+    {
+        var sut = new OperationCoordinatorService();
+
+        sut.BeginOperation("test desc").Should().BeTrue();
+
+        sut.CurrentOperationDescription.Should().Be("test desc");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // S005-TC-2  MarkComplete clears description
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void MarkComplete_ClearsDescription()
+    {
+        var sut = new OperationCoordinatorService();
+        sut.BeginOperation("desc");
+
+        sut.MarkComplete();
+
+        sut.CurrentOperationDescription.Should().BeNull();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // S005-TC-3  CAS fail does not overwrite description
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void BeginOperation_CASFails_DoesNotOverwriteDescription()
+    {
+        var sut = new OperationCoordinatorService();
+        sut.BeginOperation("first");
+
+        sut.BeginOperation("second").Should().BeFalse();
+
+        sut.CurrentOperationDescription.Should().Be("first");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // S005-TC-4  Null description is stored
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void BeginOperation_NullDescription_StoresNull()
+    {
+        var sut = new OperationCoordinatorService();
+
+        sut.BeginOperation(null).Should().BeTrue();
+
+        sut.CurrentOperationDescription.Should().BeNull();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // S005-TC-5  BeginOperation fires OperationDescriptionChanged
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void BeginOperation_FiresOperationDescriptionChanged()
+    {
+        var sut = new OperationCoordinatorService();
+        var descriptions = new List<string?>();
+        sut.OperationDescriptionChanged += (_, d) => descriptions.Add(d);
+
+        sut.BeginOperation("desc");
+
+        descriptions.Should().ContainSingle().Which.Should().Be("desc");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // S005-TC-6  MarkComplete fires OperationDescriptionChanged with null
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void MarkComplete_FiresOperationDescriptionChangedNull()
+    {
+        var sut = new OperationCoordinatorService();
+        sut.BeginOperation("desc");
+
+        var descriptions = new List<string?>();
+        sut.OperationDescriptionChanged += (_, d) => descriptions.Add(d);
+
+        sut.MarkComplete();
+
+        descriptions.Should().ContainSingle().Which.Should().BeNull();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // S005-TC-7  ClearStaleDescription clears stale value and fires event
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void ClearStaleDescription_WhenIdleAndStale_ClearsAndFiresEvent()
+    {
+        var sut = new OperationCoordinatorService();
+
+        // Inject a stale description via reflection (simulates bug where MarkComplete didn't clear).
+        var field = typeof(OperationCoordinatorService)
+            .GetField("_description", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        field!.SetValue(sut, "stale");
+
+        var descriptions = new List<string?>();
+        sut.OperationDescriptionChanged += (_, d) => descriptions.Add(d);
+
+        sut.ClearStaleDescription();
+
+        sut.CurrentOperationDescription.Should().BeNull();
+        descriptions.Should().ContainSingle().Which.Should().BeNull();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // S005-TC-8  ClearStaleDescription when already null is no-op
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void ClearStaleDescription_WhenIdleAndNull_IsNoOp()
+    {
+        var sut = new OperationCoordinatorService();
+        var descriptions = new List<string?>();
+        sut.OperationDescriptionChanged += (_, d) => descriptions.Add(d);
+
+        sut.ClearStaleDescription();
+
+        descriptions.Should().BeEmpty();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // S005-TC-9  ClearStaleDescription when in-progress is no-op
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void ClearStaleDescription_WhenInProgress_IsNoOp()
+    {
+        var sut = new OperationCoordinatorService();
+        sut.BeginOperation("active");
+
+        var descriptions = new List<string?>();
+        sut.OperationDescriptionChanged += (_, d) => descriptions.Add(d);
+
+        sut.ClearStaleDescription();
+
+        sut.CurrentOperationDescription.Should().Be("active");
+        descriptions.Should().BeEmpty();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // S005-TC-10  MarkComplete fires DescriptionChanged before InProgressChanged
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void MarkComplete_FiresDescriptionChangedBeforeInProgressChanged()
+    {
+        var sut = new OperationCoordinatorService();
+        sut.BeginOperation("desc");
+
+        var order = new List<string>();
+        sut.OperationDescriptionChanged += (_, _) => order.Add("description");
+        sut.OperationInProgressChanged += (_, _) => order.Add("inprogress");
+
+        sut.MarkComplete();
+
+        order.Should().Equal("description", "inprogress");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // S005-TC-11  BeginOperation fires InProgressChanged before DescriptionChanged
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void BeginOperation_FiresInProgressChangedBeforeDescriptionChanged()
+    {
+        var sut = new OperationCoordinatorService();
+
+        var order = new List<string>();
+        sut.OperationInProgressChanged += (_, _) => order.Add("inprogress");
+        sut.OperationDescriptionChanged += (_, _) => order.Add("description");
+
+        sut.BeginOperation("desc");
+
+        order.Should().Equal("inprogress", "description");
+    }
 }

@@ -30,6 +30,7 @@ public sealed class PcsProHub : Hub
         await Clients.Caller.SendAsync(PcsProHubConstants.ReceiveStateUpdate, _automationService.CurrentState);
         await Clients.Caller.SendAsync(PcsProHubConstants.ReceiveManualModeUpdate, _manualModeService.IsManualModeActive);
         await Clients.Caller.SendAsync(PcsProHubConstants.ReceiveOperationInProgressUpdate, _coordinatorService.IsOperationInProgress);
+        await Clients.Caller.SendAsync(PcsProHubConstants.ReceiveOperationDescriptionUpdate, _coordinatorService.CurrentOperationDescription);
         await base.OnConnectedAsync();
     }
 }

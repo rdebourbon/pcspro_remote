@@ -110,7 +110,7 @@
     {
         if (_operationInProgress) return;
 
-        var acquired = CoordinatorService.BeginOperation();
+        var acquired = CoordinatorService.BeginOperation("Starting stream\u2026");
         if (!acquired) return;
 
         try
@@ -147,7 +147,7 @@
         var acquired = false;
         try
         {
-            acquired = CoordinatorService.BeginOperation();
+            acquired = CoordinatorService.BeginOperation("Stopping stream\u2026");
             if (!acquired) return;
             await StreamService.StopStreamAsync();
         }

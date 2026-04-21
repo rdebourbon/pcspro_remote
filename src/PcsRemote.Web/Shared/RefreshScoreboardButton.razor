@@ -54,7 +54,7 @@
         {
             // BeginOperation() returns false if another browser already owns the lock (no-op).
             // Only proceed — and only release — when this call wins the CAS.
-            acquired = CoordinatorService.BeginOperation();
+            acquired = CoordinatorService.BeginOperation("Refreshing scoreboard\u2026");
             if (!acquired)
                 return;
             await ScoreboardService.ForceRefreshAsync();
