@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | **Document** | SPEC-S-005-Team-Names-Automation.md |
-| **Status** | DRAFT |
-| **Version** | 0.1 |
-| **Date** | 2026-07-14 |
+| **Status** | APPROVED |
+| **Version** | 0.3 |
+| **Date** | 2026-04-22 |
 | **Step ID** | S-005 |
 | **Governing HLPS** | HLPS-010-Automation-Hardening.md (APPROVED v0.3) |
 | **Governing IS** | IS-010-Automation-Hardening.md (APPROVED v0.2) |
@@ -30,7 +30,7 @@ Refer to `tools/AutomationDiagnostic/DiagnosticRunner.cs` (`Step8_FindTeamNameEl
 - R3: **`OpenTeamsDialog()`** — Performs the navigation sequence:
   1. Find the main window via `PcsProWindowLocator`.
   2. Click the Scoring menu (`KnownElements.ScoringMenuAutomationId`).
-  3. Find and click "Match Details/Teams..." menu item by Name (`KnownElements.MatchDetailsMenuItemName`). Use a brief pause (~200ms) after clicking the menu for the popup to appear.
+  3. Find and click "Match Details/Teams..." menu item by Name (`KnownElements.MatchDetailsMenuItemName`). Use `WaitForElement` with a short timeout (~2s) to locate the menu item after the popup appears. Use a brief pause (~300ms) after clicking the menu for the popup to render.
   4. Wait for the Match Details/Teams dialog to appear (identified by `Name = KnownElements.MatchDetailsDialogName`) with a 5-second timeout.
   5. Throw if any element is not found or the dialog does not appear.
 
@@ -49,9 +49,9 @@ Refer to `tools/AutomationDiagnostic/DiagnosticRunner.cs` (`Step8_FindTeamNameEl
   3. Invoke it using `UIAutomationHelpers.InvokeButtonSafely`.
   4. Never throw — wrap in try/catch.
 
-- R7: **`IsUnexpectedDialogPresent()`** — Same classification pattern as S-003/S-004: find all child Windows, exclude Match Details dialog (by Name), exclude login dialog (by password field), exclude match selection dialog (by Name). Return `true` if any remaining. Must not throw.
+- R7: **`IsUnexpectedDialogPresent()`** — Delegates to the shared `UIAutomationHelpers.HasUnexpectedDialog` helper which classifies all child windows against known dialog names and the login password field. Must not throw.
 
-- R8: **`TryCloseUnexpectedDialog()`** — Same button search pattern: Cancel → Close → OK → any button. Best-effort, no throw.
+- R8: **`TryCloseUnexpectedDialog()`** — Delegates to the shared `UIAutomationHelpers.TryCloseFirstUnexpectedDialog` helper. Best-effort, no throw.
 
 ### 2.2 Out of Scope
 
@@ -64,7 +64,7 @@ Refer to `tools/AutomationDiagnostic/DiagnosticRunner.cs` (`Step8_FindTeamNameEl
 
 - **T1: Build verification** — 0 warnings, 0 errors.
 - **T2: Existing tests remain green** — No behavioural changes to service-layer tests (they use `FakeTeamNamesAutomation`).
-- **T3: No unit tests for FlaUiTeamNamesAutomation** — FlaUI interactions require a live PCS Pro instance. Verified via garage PC walkthrough.
+- **T3: No unit tests for FlaUiTeamNamesAutomation** — FlaUI interactions require a live PCS Pro instance. Manual verification deferred to garage PC walkthrough (see H-SC-3).
 
 ---
 
