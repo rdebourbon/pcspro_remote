@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | **Document** | SPEC-S-011-Use-Current-Match.md |
-| **Status** | IN REVIEW |
-| **Version** | 0.2 |
+| **Status** | APPROVED |
+| **Version** | 0.3 |
 | **Date** | 2026-04-21 |
 | **Step ID** | S-011 |
 | **Governing HLPS** | HLPS-010-Automation-Hardening.md (APPROVED v0.3) |
@@ -42,6 +42,8 @@ Add `UseCurrentMatchAsync` to `IPcsProAutomationService`. This method:
 4. **Fires** the `AttachToMatch` trigger → state becomes `MatchLoaded`.
 5. **Reads team names** by delegating to the existing team name reading flow, returning `MatchTeams`.
 
+> **Ordering note:** Steps 4–5 fire the trigger before reading team names. This is intentional and consistent with the existing `LoadMatchAsync` pattern (which fires `MatchOpened` before reading teams). The IS-010 description ("reads team names and fires the new trigger") is a functional summary, not a prescriptive step sequence. Transitioning first ensures the service is in `MatchLoaded` before performing post-load operations.
+
 If detection fails (PCS Pro not running, no match loaded), the method throws `InvalidOperationException` with a descriptive message. The state machine does not transition — it remains in `NotRunning`.
 
 If team name reading fails after the state transition, the existing error handling in the team name flow transitions to `Error` state. The method returns a sentinel `MatchTeams` with empty `TeamNameInfo` values: `new MatchTeams(new TeamNameInfo(string.Empty, string.Empty), new TeamNameInfo(string.Empty, string.Empty))`. This is consistent with `GetTeamNamesCoreAsync` error paths which construct empty `TeamNameInfo` on failure.
@@ -51,6 +53,8 @@ If team name reading fails after the state transition, the existing error handli
 After a successful attach, `LoadedMatch` is `null` because no `MatchInfo` is available (the match was not selected from the grid — there is no `MatchId`, `MatchType`, or `MatchDate`). This is a known limitation documented in the HLPS: "Match identity verification is deferred — the operator's assertion is trusted."
 
 The existing `OnTransitioned` callback in `PcsProAutomationService` sets `_loadedMatch = _pendingLoadedMatch` on entry to `MatchLoaded`. Since `UseCurrentMatchAsync` does not set `_pendingLoadedMatch` (there is no `MatchInfo` to set), `_loadedMatch` remains `null` by design.
+
+> **Implementation note:** The xmldoc on `IPcsProAutomationService.LoadedMatch` should be updated during implementation to clarify that `LoadedMatch` may be `null` in `MatchLoaded` state after an attach (vs. always populated after `LoadMatchAsync`).
 
 The Web UI must handle `LoadedMatch == null` when in `MatchLoaded` state gracefully (e.g., displaying team names from `MatchTeams` instead of full match info).
 
@@ -94,7 +98,7 @@ The following existing components are reused without modification:
 | R-5 | If PCS Pro is not running or no match is loaded, `UseCurrentMatchAsync` throws `InvalidOperationException` without transitioning state. |
 | R-6 | `MockPcsProAutomationService` implements `UseCurrentMatchAsync` with a mock transition and mock team name return. |
 | R-7 | State machine tests in `PcsRemote.Core.Tests` cover the new trigger: valid transition, invalid triggers from other states. |
-| R-8 | Service-level tests in `PcsRemote.Automation.Tests` cover: happy path, PCS Pro not running, no match loaded, wrong state, concurrent operation rejection. |
+| R-8 | Service-level tests in `PcsRemote.Automation.Tests` cover: happy path, PCS Pro not running, no match loaded, wrong state, concurrent operation rejection, team name read failure after attach. |
 | R-9 | Build: 0 warnings, 0 errors. All existing tests pass. |
 
 ---
@@ -114,6 +118,7 @@ The following existing components are reused without modification:
 | AC-9 | `MockPcsProAutomationService.UseCurrentMatchAsync` transitions to `MatchLoaded` and returns mock team data. |
 | AC-10 | All existing tests pass with 0 warnings, 0 errors. |
 | AC-11 | When another automation operation is in progress (semaphore held), `UseCurrentMatchAsync` throws `InvalidOperationException`. |
+| AC-12 | When team name reading fails after a successful attach, the state transitions to `Error` and the method returns sentinel `MatchTeams` with empty `TeamNameInfo` values. |
 
 ---
 
@@ -146,4 +151,4 @@ The following existing components are reused without modification:
 | Round | Date | Reviewers | Result |
 |---|---|---|---|
 | R1 | 2026-04-21 | Opus, GPT-5.4 | NEEDS REVIEW — 1 CRITICAL (process lifecycle), 2 HIGH (YouTube/LoadedMatch, detection signals), 4 MEDIUM, 4 LOW, 1 INFO. All 11 findings accepted and fixed in v0.2. |
-| R2 | 2026-04-21 | — | Pending |
+| R2 | 2026-04-21 | Opus, GPT-5.4 | Opus: APPROVED (11/11 R1 PASS, 1 LOW). GPT: NEEDS REVIEW (4/4 R1 PASS, 1 MEDIUM ordering, 1 MEDIUM contract docs). All 3 new findings accepted, fixed in v0.3 APPROVED. |
