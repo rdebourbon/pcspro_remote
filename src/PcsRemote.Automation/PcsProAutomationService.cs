@@ -610,14 +610,14 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     private async Task<bool> CheckLoginTimeoutAsync(long startTimestamp, bool submitted)
     {
         if (_timeProvider.GetElapsedTime(startTimestamp).TotalSeconds
-            < PcsProStateMachine.LoginScreenTimeoutSeconds)
+            < _options.LoginScreenTimeoutSeconds)
         {
             return false;
         }
 
         var reason = submitted
-            ? "Match selection dialog did not appear within the timeout after submitting credentials"
-            : $"Login screen did not appear within {PcsProStateMachine.LoginScreenTimeoutSeconds} seconds";
+            ? $"Match selection dialog did not appear within {_options.LoginScreenTimeoutSeconds} seconds after submitting credentials"
+            : $"Login screen did not appear within {_options.LoginScreenTimeoutSeconds} seconds";
 
         _logger.LogWarning("PerformLoginAsync: timeout — {Reason}", reason);
         await FireErrorUnderLockAsync(PcsProTrigger.Timeout, reason).ConfigureAwait(false);

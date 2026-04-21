@@ -11,9 +11,6 @@ public sealed class PcsProStateMachine
     /// <summary>Seconds to wait for the PCS Pro process to reach the login screen after launch.</summary>
     public const int LaunchingTimeoutSeconds = 40;
 
-    /// <summary>Seconds to wait for credentials entry before timing out on the login screen.</summary>
-    public const int LoginScreenTimeoutSeconds = 20;
-
     /// <summary>Seconds to wait for match search results to load.</summary>
     public const int MatchSelectionSearchingTimeoutSeconds = 30;
 

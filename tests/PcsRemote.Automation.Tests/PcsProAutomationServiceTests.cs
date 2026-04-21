@@ -43,6 +43,33 @@ public sealed class PcsProAutomationServiceTests
             deps);
     }
 
+    private static PcsProAutomationService CreateServiceWithLoginTimeout(
+        FakeProcessManager processManager,
+        FakeTimeProvider timeProvider,
+        FakeLoginAutomation loginAutomation,
+        int loginTimeoutSeconds)
+    {
+        var options = Options.Create(new PcsProOptions
+        {
+            ExecutablePath = @"C:\cricket.exe",
+            WorkingDirectory = @"C:\",
+            Password = "test-password",
+            LoginScreenTimeoutSeconds = loginTimeoutSeconds,
+        });
+        var deps = new AutomationDependencies(
+            loginAutomation,
+            new FakeMatchSelectionAutomation(),
+            new FakeTeamNamesAutomation(),
+            new FakeScoreboardAutomation(),
+            new FakeChangeMatchAutomation());
+        return new PcsProAutomationService(
+            options,
+            NullLogger<PcsProAutomationService>.Instance,
+            processManager,
+            timeProvider,
+            deps);
+    }
+
     /// <summary>
     /// Creates a service and runs <see cref="PcsProAutomationService.LaunchAndLoginAsync"/>
     /// to completion, with the process window immediately visible and login succeeding.
@@ -556,12 +583,73 @@ public sealed class PcsProAutomationServiceTests
 
         // Let the service reach the login polling loop.
         await Task.Delay(100);
-        fakeTime.Advance(TimeSpan.FromSeconds(PcsProStateMachine.LoginScreenTimeoutSeconds + 1));
+
+        // Default LoginScreenTimeoutSeconds is now 30 (via PcsProOptions)
+        fakeTime.Advance(TimeSpan.FromSeconds(31));
 
         await launchTask.WaitAsync(TimeSpan.FromSeconds(5));
 
         svc.CurrentState.Should().Be(PcsProState.Error);
         svc.LastErrorReason.Should().NotBeNullOrEmpty();
+    }
+
+    // -----------------------------------------------------------------------
+    // S-008 AC-7 — Custom (non-default) timeout is respected
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_WhenCustomLoginTimeoutConfigured_UsesConfiguredValue()
+    {
+        var fake = new FakeLoginAutomation
+        {
+            LoginDialogVisible = false,
+            MatchSelectionVisible = false,
+        };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var fakeTime = new FakeTimeProvider();
+        var svc = CreateServiceWithLoginTimeout(pm, fakeTime, fake, loginTimeoutSeconds: 10);
+
+        var launchTask = svc.LaunchAndLoginAsync();
+
+        await Task.Delay(100);
+
+        // Advance past the custom 10s timeout, but before the default 30s
+        fakeTime.Advance(TimeSpan.FromSeconds(11));
+
+        await launchTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.LastErrorReason.Should().Contain("10");
+    }
+
+    // -----------------------------------------------------------------------
+    // S-008 AC-4 — Post-submit timeout message includes configured value
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_WhenPostSubmitTimeout_ErrorIncludesConfiguredValue()
+    {
+        var fake = new FakeLoginAutomation
+        {
+            LoginDialogVisible = true,     // login dialog appears → credentials submitted
+            MatchSelectionVisible = false,  // match selection never appears → post-submit timeout
+        };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var fakeTime = new FakeTimeProvider();
+        var svc = CreateServiceWithLoginTimeout(pm, fakeTime, fake, loginTimeoutSeconds: 15);
+
+        var launchTask = svc.LaunchAndLoginAsync();
+
+        await Task.Delay(100);
+        fakeTime.Advance(TimeSpan.FromSeconds(16));
+
+        await launchTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.LastErrorReason.Should().Contain("15");
+        svc.LastErrorReason.Should().Contain("after submitting credentials");
     }
 
     // -----------------------------------------------------------------------

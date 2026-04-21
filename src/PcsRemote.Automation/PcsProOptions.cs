@@ -27,4 +27,10 @@ internal sealed class PcsProOptions
     /// When empty or null, the site filter step is skipped during match search.
     /// </summary>
     public string SiteName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Seconds to wait for credentials entry before timing out on the login screen.
+    /// Configurable via the <c>PcsPro:LoginScreenTimeoutSeconds</c> configuration key.
+    /// </summary>
+    public int LoginScreenTimeoutSeconds { get; set; } = 30;
 }

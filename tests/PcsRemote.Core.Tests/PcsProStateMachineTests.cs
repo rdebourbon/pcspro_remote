@@ -88,7 +88,6 @@ public sealed class PcsProStateMachineTests
     public void TimeoutConstants_HaveCorrectValues()
     {
         PcsProStateMachine.LaunchingTimeoutSeconds.Should().Be(40);
-        PcsProStateMachine.LoginScreenTimeoutSeconds.Should().Be(20);
         PcsProStateMachine.MatchSelectionSearchingTimeoutSeconds.Should().Be(30);
         PcsProStateMachine.MatchSelectionReadyTimeoutSeconds.Should().Be(15);
     }
