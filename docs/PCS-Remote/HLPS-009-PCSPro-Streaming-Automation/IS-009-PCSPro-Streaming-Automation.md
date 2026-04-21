@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | **Document** | IS-009-PCSPro-Streaming-Automation.md |
-| **Status** | APPROVED |
-| **Version** | 0.1 |
-| **Date** | 2026-04-17 |
+| **Status** | COMPLETE |
+| **Version** | 0.2 |
+| **Date** | 2026-04-21 |
 | **Governing HLPS** | HLPS-009-PCSPro-Streaming-Automation.md (APPROVED) |
 
 ---
@@ -14,7 +14,7 @@
 
 This IS breaks HLPS-009 into an ordered sequence of atomic, independently valuable steps. Each step produces a buildable, testable increment.
 
-**Key sequencing constraint:** The FlaUI implementation (S-003) is gated on resolution of unknowns SA-U-2 and SA-U-3. Steps S-001 through S-002 can proceed immediately. S-003 is deferred until unknowns are resolved.
+All steps delivered. S-003 was originally gated on SA-U-2/SA-U-3; both were resolved via diagnostic tool Step 11 during IS-010 delivery. The FlaUI streaming automation was implemented as IS-010 S-009 (commit `d73a001`), which superseded this step.
 
 ---
 
@@ -59,23 +59,15 @@ This IS breaks HLPS-009 into an ordered sequence of atomic, independently valuab
 
 ---
 
-### S-003: FlaUI Streaming Automation (GATED)
+### S-003: FlaUI Streaming Automation — ✅ DELIVERED (IS-010 S-009, `d73a001`)
 
-**⚠️ Gated on resolution of SA-U-2 (confirmation dialog) and SA-U-3 (stop button mechanism).**
+**Superseded by IS-010 S-009.** SA-U-2 and SA-U-3 were resolved via diagnostic tool Step 11 during IS-010 delivery:
+- **SA-U-2:** YES — two consent dialogs appear (Video Consent + optional Match Centre). Handled by `HandleConsentDialogs()`.
+- **SA-U-3:** TOGGLE — same button, child TextBlock changes from "Start Live Stream" to "Stop Live".
 
-**What changes:** Create `IStreamingAutomation` interface and `FlaUiStreamingAutomation` class in `PcsRemote.Automation`. Wire into `PcsProAutomationService` replacing the stub implementations from S-001. The implementation must open the Video Display tool window, make live streaming controls visible, and click the appropriate button. PCS Pro UI labels used for element identification are extracted to named constants (per A-2 remediation) for easy update if labels change across PCS Pro versions.
+**What was delivered:** `IStreamingAutomation` interface and `FlaUiStreamingAutomation` class in `PcsRemote.Automation`, wired into `PcsProAutomationService`. Includes `ClickStartLiveStream()`, `HandleConsentDialogs()`, `ClickStopLiveStream()`, `IsStreamingActive()`, and unexpected dialog handling. All element identifiers extracted to `KnownElements` constants. Verified on garage PC.
 
-**Why:** Satisfies S-SA-2/S-SA-3 (FlaUI button automation). C-4 (sub-automation pattern), C-5 (resilience to missing/disabled controls), C-6 (FlaUI idempotency) are enforced here.
-
-**Dependencies:** S-001 (interface must exist). SA-U-2 and SA-U-3 must be resolved before implementation begins.
-
-**Verification intent:**
-- `IStreamingAutomation` follows existing sub-automation pattern
-- `FlaUiStreamingAutomation` opens tool window, makes controls visible, clicks button
-- Handles button not found, button disabled, and window not visible with descriptive `InvalidOperationException`
-- Idempotent-safe in FlaUI context (per C-6 distinction from C-5)
-- Manual verification on garage PC
-- All existing tests continue to pass
+**Satisfies:** S-SA-2, S-SA-3. All 15 HLPS-009 success criteria now covered.
 
 ---
 
@@ -86,10 +78,10 @@ S-001 (Core + Mock)
   └─→ S-002 (YouTube Integration + OBS Corrections)
 
 S-001 (Core + Mock)
-  └─→ S-003 (FlaUI) [GATED on SA-U-2, SA-U-3]
+  └─→ S-003 (FlaUI) [SA-U-2, SA-U-3 resolved; delivered via IS-010 S-009]
 ```
 
-S-002 and S-003 are independent of each other — both depend only on S-001. S-003 is additionally gated on unknown resolution.
+All steps delivered. S-003 was delivered under IS-010 S-009 after unknowns were resolved via diagnostic testing.
 
 ---
 
