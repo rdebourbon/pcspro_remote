@@ -216,6 +216,66 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
     }
 
     /// <inheritdoc/>
+    public async Task<bool> RunOAuthSetupAsync(CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(_options.ClientId) ||
+            string.IsNullOrWhiteSpace(_options.ClientSecret))
+        {
+            _logger.LogError(
+                "YouTube:ClientId and YouTube:ClientSecret must be configured before running OAuth setup");
+            return false;
+        }
+
+        // Hold the gate for the entire OAuth flow to prevent concurrent StartStreamAsync.
+        // The OAuth flow is a blocking user interaction (browser consent) — no other
+        // stream operations should proceed while it is in progress.
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (_status != LiveStreamStatus.Idle)
+            {
+                _logger.LogWarning(
+                    "RunOAuthSetupAsync rejected — current status is {Status}, expected Idle",
+                    _status);
+                return false;
+            }
+
+            _logger.LogInformation("YouTube OAuth2 setup starting...");
+
+            await GoogleWebAuthorizationBroker.AuthorizeAsync(
+                new ClientSecrets
+                {
+                    ClientId = _options.ClientId,
+                    ClientSecret = _options.ClientSecret
+                },
+                new[] { YouTubeService.Scope.Youtube },
+                "user",
+                ct,
+                _dataStore).ConfigureAwait(false);
+
+            _logger.LogInformation("YouTube OAuth2 consent complete — re-initialising service");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        // Re-initialise outside the gate — InitializeAsync does not use the gate
+        // and may make YouTube API calls that should not block other callers.
+        try
+        {
+            await InitializeAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Token stored but YouTube configuration incomplete — resolve configuration and restart");
+        }
+
+        return true;
+    }
+
+    /// <inheritdoc/>
     public ValueTask DisposeAsync()
     {
         _startCts?.Dispose();

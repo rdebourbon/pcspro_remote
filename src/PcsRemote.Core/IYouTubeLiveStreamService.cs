@@ -44,4 +44,12 @@ public interface IYouTubeLiveStreamService
     /// <see cref="LiveStreamStatus.Idle"/>.
     /// </summary>
     Task ResetAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Runs the Google OAuth2 consent flow interactively (opens the default browser),
+    /// stores the resulting token, and re-initialises the service. Returns <see langword="true"/>
+    /// on success (including partial success where the token is stored but configuration
+    /// validation fails), or <see langword="false"/> if client credentials are not configured.
+    /// </summary>
+    Task<bool> RunOAuthSetupAsync(CancellationToken ct = default);
 }

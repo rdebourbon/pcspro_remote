@@ -334,4 +334,13 @@ public class MockYouTubeLiveStreamServiceTests
             a => a.StopStreamingAsync(It.IsAny<CancellationToken>()),
             Times.Once);
     }
+
+    // S-005 TC-2: RunOAuthSetupAsync returns true
+    [TestMethod]
+    public async Task RunOAuthSetupAsync_ReturnsTrue()
+    {
+        var result = await _sut.RunOAuthSetupAsync();
+
+        result.Should().BeTrue();
+    }
 }

@@ -246,6 +246,13 @@ public sealed class MockYouTubeLiveStreamService : IYouTubeLiveStreamService
         }
     }
 
+    /// <inheritdoc/>
+    public Task<bool> RunOAuthSetupAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("MockYouTubeLiveStreamService: OAuth setup simulated");
+        return Task.FromResult(true);
+    }
+
     private void SetStatus(LiveStreamStatus newStatus, string? errorMessage = null)
     {
         _status = newStatus;

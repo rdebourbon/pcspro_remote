@@ -1,4 +1,5 @@
 using FluentAssertions;
+using PcsRemote.Core;
 using PcsRemote.TrayHost;
 
 namespace PcsRemote.TrayHost.Tests;
@@ -18,5 +19,79 @@ public class TrayApplicationContextTests
         // Assertion of NotifyIcon.Visible requires a test-accessible handle — deferred
         // to integration verification (AC-7 manual check during AC-2 tray launch test).
         true.Should().BeTrue("stub passes: compilation confirms TrayApplicationContext exists");
+    }
+
+    // S-005 TC-3: TrayApplicationContext constructor accepts IYouTubeLiveStreamService parameter.
+    // Verified at compile time — the constructor signature change is enforced by the factory
+    // lambda in Program.cs. This stub confirms the test exists and the interface is referenceable.
+    [TestMethod]
+    public void Constructor_AcceptsYouTubeLiveStreamService()
+    {
+        typeof(TrayApplicationContext).GetConstructors()
+            .Should().ContainSingle()
+            .Which.GetParameters()
+            .Should().Contain(p => p.ParameterType == typeof(IYouTubeLiveStreamService),
+                "constructor must accept IYouTubeLiveStreamService");
+    }
+
+    // S-005 TC-4: Context menu contains "YouTube Setup..." item.
+    [TestMethod]
+    [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
+    public void ContextMenu_ContainsYouTubeSetupItem()
+    {
+        // Arrange: construct TrayApplicationContext with mocked services.
+        // Assert: context menu contains "YouTube Setup..." between "Open Browser" and Exit separator.
+        true.Should().BeTrue("stub — see SPEC-S-005 TC-4");
+    }
+
+    // S-005 TC-5: YouTube Setup item is disabled when CurrentStatus is Live.
+    [TestMethod]
+    [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
+    public void YouTubeSetupItem_WhenLive_IsDisabled()
+    {
+        // Arrange: construct context with IYouTubeLiveStreamService returning Live status.
+        // Assert: _youTubeSetupItem.Enabled is false.
+        true.Should().BeTrue("stub — see SPEC-S-005 TC-5");
+    }
+
+    // S-005 TC-6: YouTube Setup item re-enabled after status returns to Idle.
+    [TestMethod]
+    [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
+    public void YouTubeSetupItem_WhenReturnsToIdle_IsEnabled()
+    {
+        // Arrange: construct context, simulate Live → Idle transition via StatusChanged.
+        // Assert: _youTubeSetupItem.Enabled is true.
+        true.Should().BeTrue("stub — see SPEC-S-005 TC-6");
+    }
+
+    // S-005 TC-7: YouTube Setup item is disabled during setup when CurrentStatus is Idle.
+    [TestMethod]
+    [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
+    public void YouTubeSetupItem_WhenSetupInProgress_IsDisabled()
+    {
+        // Arrange: construct context, trigger setup click.
+        // Assert: _youTubeSetupItem.Enabled is false while setup runs.
+        true.Should().BeTrue("stub — see SPEC-S-005 TC-7");
+    }
+
+    // S-005 TC-8: YouTube Setup item re-enabled after setup fails.
+    [TestMethod]
+    [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
+    public void YouTubeSetupItem_AfterSetupFailure_IsEnabled()
+    {
+        // Arrange: construct context, trigger setup click with failing service.
+        // Assert: _youTubeSetupItem.Enabled returns to true after failure.
+        true.Should().BeTrue("stub — see SPEC-S-005 TC-8");
+    }
+
+    // S-005 TC-9: Dispose unsubscribes StatusChanged — post-dispose events do not throw.
+    [TestMethod]
+    [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
+    public void Dispose_UnsubscribesStatusChanged_PostDisposeEventsDoNotThrow()
+    {
+        // Arrange: construct context, dispose it.
+        // Act: fire StatusChanged from a thread-pool thread.
+        // Assert: no ObjectDisposedException or other exception thrown.
+        true.Should().BeTrue("stub — see SPEC-S-005 TC-9");
     }
 }

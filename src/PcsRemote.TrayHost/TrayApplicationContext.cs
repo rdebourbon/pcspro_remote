@@ -14,10 +14,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
 {
     private readonly IManualModeService _manualModeService;
     private readonly IPcsProAutomationService _automationService;
+    private readonly IYouTubeLiveStreamService _youTubeService;
     private readonly IConfiguration _configuration;
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _contextMenu;
     private readonly ToolStripMenuItem _toggleItem;
+    private readonly ToolStripMenuItem _youTubeSetupItem;
 
     // Spec R-3 specifies SynchronizationContext.Post as the primary marshaling mechanism,
     // with a Control fallback when the context is null at construction time. We use the
@@ -29,14 +31,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly Control _invoker;
 
     private bool _disposed;
+    private bool _setupInProgress;
 
     public TrayApplicationContext(
         IManualModeService manualModeService,
         IPcsProAutomationService automationService,
+        IYouTubeLiveStreamService youTubeService,
         IConfiguration configuration)
     {
         _manualModeService = manualModeService;
         _automationService = automationService;
+        _youTubeService = youTubeService;
         _configuration = configuration;
 
         // Create the invoker on the STA thread and force HWND creation now so
@@ -47,10 +52,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _toggleItem = new ToolStripMenuItem();
         _toggleItem.Click += OnToggleClicked;
 
+        _youTubeSetupItem = new ToolStripMenuItem("YouTube Setup...");
+        _youTubeSetupItem.Click += OnYouTubeSetupClicked;
+
         _contextMenu = new ContextMenuStrip();
         _contextMenu.Items.Add(_toggleItem);
         _contextMenu.Items.Add(new ToolStripSeparator());
         _contextMenu.Items.Add("Open Browser", null, OnOpenBrowserClicked);
+        _contextMenu.Items.Add(_youTubeSetupItem);
         _contextMenu.Items.Add(new ToolStripSeparator());
         _contextMenu.Items.Add("Exit", null, OnExitClicked);
 
@@ -68,7 +77,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         // if a mode change fires between reading IsManualModeActive and subscribing,
         // the event would be missed and the UI would be permanently stale.
         _manualModeService.ManualModeChanged += OnManualModeChanged;
+        _youTubeService.StatusChanged += OnStreamStatusChanged;
         UpdateToggleState(_manualModeService.IsManualModeActive);
+        UpdateYouTubeSetupEnabled();
         _notifyIcon.Visible = true;
     }
 
@@ -101,6 +112,53 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             _manualModeService.Enable();
         }
+    }
+
+    private async void OnYouTubeSetupClicked(object? sender, EventArgs e)
+    {
+        _setupInProgress = true;
+        UpdateYouTubeSetupEnabled();
+        try
+        {
+            var result = await _youTubeService.RunOAuthSetupAsync().ConfigureAwait(false);
+            if (result)
+            {
+                Log.Information("YouTube OAuth2 setup completed successfully via tray menu");
+            }
+            else
+            {
+                Log.Warning("YouTube OAuth2 setup was not completed — check configuration");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "YouTube OAuth2 setup failed");
+        }
+        finally
+        {
+            _setupInProgress = false;
+            if (!_disposed)
+            {
+                _invoker.BeginInvoke(UpdateYouTubeSetupEnabled);
+            }
+        }
+    }
+
+    private void OnStreamStatusChanged(object? sender, StreamStateSnapshot snapshot)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _invoker.BeginInvoke(UpdateYouTubeSetupEnabled);
+    }
+
+    private void UpdateYouTubeSetupEnabled()
+    {
+        var status = _youTubeService.CurrentStatus;
+        _youTubeSetupItem.Enabled = !_setupInProgress
+            && status == LiveStreamStatus.Idle;
     }
 
     private void OnOpenBrowserClicked(object? sender, EventArgs e)
@@ -165,6 +223,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             // Disposal ordering per spec R-2: unsubscribe → hide → dispose NotifyIcon
             // → dispose ContextMenuStrip → dispose invoker.
             _manualModeService.ManualModeChanged -= OnManualModeChanged;
+            _youTubeService.StatusChanged -= OnStreamStatusChanged;
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             _contextMenu.Dispose();

@@ -51,6 +51,7 @@ try
     builder.Services.AddSingleton<Func<ApplicationContext>>(sp => () => new TrayApplicationContext(
         sp.GetRequiredService<IManualModeService>(),
         sp.GetRequiredService<IPcsProAutomationService>(),
+        sp.GetRequiredService<IYouTubeLiveStreamService>(),
         sp.GetRequiredService<IConfiguration>()));
     builder.Services.AddHostedService<WinFormsHostedService>();
 
