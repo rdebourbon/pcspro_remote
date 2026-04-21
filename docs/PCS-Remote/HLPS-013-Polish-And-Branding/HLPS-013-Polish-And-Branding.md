@@ -48,7 +48,7 @@ PCS Remote is functionally complete (HLPS-001 through HLPS-012 delivered), but f
 | ID | Constraint |
 |----|------------|
 | C-1 | Login automation changes must not break the existing happy-path flow (correct user already logged in). |
-| C-2 | Team name formatting must be configurable, not hardcoded to HHCC. The home club name is a configuration value. |
+| C-2 | Team name formatting must be configurable, not hardcoded to HHCC. The club name is a configuration value used for symmetric prefix stripping and title ordering. |
 | C-3 | Tray icon must work at 16x16, 24x24, and 32x32 sizes without becoming illegible. |
 | C-4 | YouTube setup from the tray must use the same OAuth flow as `--setup-youtube` — no duplication of token acquisition logic. The menu item must be disabled while a setup is already in progress or while a broadcast is live. |
 | C-5 | Club logo integration must not require any JavaScript — Blazor Server rendering only. |
@@ -66,7 +66,7 @@ PCS Remote is functionally complete (HLPS-001 through HLPS-012 delivered), but f
 | 2 | Compare detected username against configured expected username | GAP-002 |
 | 3 | If mismatch: click "Switch User", wait for clean login dialog, enter correct credentials | GAP-002 |
 | 4 | Add `PcsPro:ExpectedUsername` configuration key | GAP-002 |
-| 5 | Configurable home club name for team name formatting | GAP-009 |
+| 5 | Configurable club name for team name formatting | GAP-009 |
 | 6 | Strip configured club name prefix from team display names and reorder so the club team appears first (e.g. "High Halstow CC - 1st XI" vs "Otford CC" → "1st XI vs Otford CC") | GAP-009 |
 | 7 | Add `{HomeClub}` / `{AwayClub}` tokens to BroadcastTitleRenderer | GAP-009, DEF-001 |
 | 8 | Bridge club names from `MatchTeams` into BroadcastTitleRenderer (resolve DEF-001/DEF-002 data flow) | DEF-001, DEF-002 |
@@ -144,7 +144,7 @@ PCS Remote is functionally complete (HLPS-001 through HLPS-012 delivered), but f
 | Blank username edge case | Sonnet F-05 | MEDIUM | Accept | Fixed: SC-2 now explicitly covers blank username (no-op). |
 | DEF references undefined | Sonnet F-04 | MEDIUM | Accept | Fixed: problem statement §2 now glosses DEF-001, DEF-002, DEF-004 inline. |
 | Test coverage SC missing | Opus F-12, Sonnet F-08 | MEDIUM | Accept | Fixed: SC-10 added — new logic ships with unit tests. |
-| No-match fallback for home club | Opus F-6 | Minor | Accept | Fixed: SC-4 explicitly states "if neither team's club matches, all names pass through unmodified". |
+| No-match fallback for club name | Opus F-6 | Minor | Accept | Fixed: SC-4 explicitly states "if neither team's club matches, all names pass through unmodified". |
 | 180x180 rationale | Opus F-7 | Minor | Accept | Fixed: SC-8 mentions "Apple touch icon at 180x180". |
 | Prefix stripping edge cases | Opus F-10 | Minor | Accept | Fixed: SC-4 says "anchored prefix match". SC-5 says "idempotent". |
 | OAuth concurrency | Opus F-11 | Minor | Accept | Fixed: C-4 extended to disable menu while setup in progress. |
