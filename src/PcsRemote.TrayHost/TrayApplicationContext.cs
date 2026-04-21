@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using PcsRemote.Core;
 using Serilog;
@@ -20,6 +21,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ContextMenuStrip _contextMenu;
     private readonly ToolStripMenuItem _toggleItem;
     private readonly ToolStripMenuItem _youTubeSetupItem;
+    private readonly Icon _normalIcon;
+    private readonly Icon _manualIcon;
 
     // Spec R-3 specifies SynchronizationContext.Post as the primary marshaling mechanism,
     // with a Control fallback when the context is null at construction time. We use the
@@ -63,11 +66,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _contextMenu.Items.Add(new ToolStripSeparator());
         _contextMenu.Items.Add("Exit", null, OnExitClicked);
 
-        // Initialize with a safe default icon; UpdateToggleState corrects it below.
+        // Load custom tray icons from embedded resources (R-3: fail-fast if missing).
+        _normalIcon = LoadEmbeddedIcon("PcsRemote.TrayHost.Resources.pcs-remote-normal.ico");
+        _manualIcon = LoadEmbeddedIcon("PcsRemote.TrayHost.Resources.pcs-remote-manual.ico");
+
+        // Initialize with the normal icon; UpdateToggleState corrects it below.
         // NotifyIcon must have a valid icon handle before Visible=true triggers NIM_ADD.
         _notifyIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = _normalIcon,
             Text = "PCS Remote",
             ContextMenuStrip = _contextMenu,
             Visible = false
@@ -86,8 +93,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void UpdateToggleState(bool isManualModeActive)
     {
         _toggleItem.Text = isManualModeActive ? "Resume Automation" : "Switch to Manual Mode";
-        _notifyIcon.Icon = isManualModeActive ? SystemIcons.Warning : SystemIcons.Application;
+        _notifyIcon.Icon = GetIconForMode(isManualModeActive);
     }
+
+    internal Icon GetIconForMode(bool isManualMode) =>
+        isManualMode ? _manualIcon : _normalIcon;
 
     private void OnManualModeChanged(object? sender, bool isActive)
     {
@@ -214,6 +224,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
             .Replace("[::]", "localhost", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static Icon LoadEmbeddedIcon(string resourceName)
+    {
+        var assembly = typeof(TrayApplicationContext).Assembly;
+        using var stream = assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException(
+                $"Embedded resource '{resourceName}' not found in {assembly.GetName().Name}");
+        return new Icon(stream);
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing && !_disposed)
@@ -228,6 +247,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _notifyIcon.Dispose();
             _contextMenu.Dispose();
             _invoker.Dispose();
+            _normalIcon.Dispose();
+            _manualIcon.Dispose();
         }
 
         base.Dispose(disposing);

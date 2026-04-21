@@ -94,4 +94,74 @@ public class TrayApplicationContextTests
         // Assert: no ObjectDisposedException or other exception thrown.
         true.Should().BeTrue("stub — see SPEC-S-005 TC-9");
     }
+
+    // S-007 TC-1: Normal icon embedded resource loads successfully.
+    [TestMethod]
+    public void NormalIcon_EmbeddedResource_LoadsSuccessfully()
+    {
+        var assembly = typeof(TrayApplicationContext).Assembly;
+        using var stream = assembly.GetManifestResourceStream(
+            "PcsRemote.TrayHost.Resources.pcs-remote-normal.ico");
+
+        stream.Should().NotBeNull("normal icon resource must be embedded");
+        stream!.Length.Should().BeGreaterThan(0, "normal icon resource must not be empty");
+    }
+
+    // S-007 TC-2: Manual icon embedded resource loads successfully.
+    [TestMethod]
+    public void ManualIcon_EmbeddedResource_LoadsSuccessfully()
+    {
+        var assembly = typeof(TrayApplicationContext).Assembly;
+        using var stream = assembly.GetManifestResourceStream(
+            "PcsRemote.TrayHost.Resources.pcs-remote-manual.ico");
+
+        stream.Should().NotBeNull("manual icon resource must be embedded");
+        stream!.Length.Should().BeGreaterThan(0, "manual icon resource must not be empty");
+    }
+
+    // S-007 TC-3: Normal icon resource is a valid ICO that can be loaded as System.Drawing.Icon.
+    [TestMethod]
+    public void NormalIcon_IsValidIco()
+    {
+        var assembly = typeof(TrayApplicationContext).Assembly;
+        using var stream = assembly.GetManifestResourceStream(
+            "PcsRemote.TrayHost.Resources.pcs-remote-normal.ico")!;
+
+        var act = () => new System.Drawing.Icon(stream);
+        act.Should().NotThrow("normal icon must be a valid ICO file");
+    }
+
+    // S-007 TC-4: Manual icon resource is a valid ICO that can be loaded as System.Drawing.Icon.
+    [TestMethod]
+    public void ManualIcon_IsValidIco()
+    {
+        var assembly = typeof(TrayApplicationContext).Assembly;
+        using var stream = assembly.GetManifestResourceStream(
+            "PcsRemote.TrayHost.Resources.pcs-remote-manual.ico")!;
+
+        var act = () => new System.Drawing.Icon(stream);
+        act.Should().NotThrow("manual icon must be a valid ICO file");
+    }
+
+    // S-007 TC-5: GetIconForMode(false) returns the normal icon.
+    [TestMethod]
+    [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
+    public void GetIconForMode_False_ReturnsNormalIcon()
+    {
+        // Arrange: construct TrayApplicationContext with mocked services.
+        // Act: call GetIconForMode(false).
+        // Assert: returned icon is the _normalIcon instance.
+        true.Should().BeTrue("stub — see SPEC-S-007 TC-5");
+    }
+
+    // S-007 TC-6: GetIconForMode(true) returns the manual icon (different from normal).
+    [TestMethod]
+    [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
+    public void GetIconForMode_True_ReturnsManualIcon()
+    {
+        // Arrange: construct TrayApplicationContext with mocked services.
+        // Act: call GetIconForMode(true).
+        // Assert: returned icon is the _manualIcon instance (different from normal).
+        true.Should().BeTrue("stub — see SPEC-S-007 TC-6");
+    }
 }

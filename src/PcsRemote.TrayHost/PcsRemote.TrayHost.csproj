@@ -9,6 +9,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Resources\pcs-remote-normal.ico" />
+    <EmbeddedResource Include="Resources\pcs-remote-manual.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\PcsRemote.Web\PcsRemote.Web.csproj" />
     <ProjectReference Include="..\PcsRemote.YouTube\PcsRemote.YouTube.csproj" />
   </ItemGroup>
