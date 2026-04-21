@@ -10,6 +10,12 @@ public interface IOperationCoordinatorService
     bool IsOperationInProgress { get; }
 
     /// <summary>
+    /// Gets the human-readable description of the current operation, or <see langword="null"/>
+    /// when no operation is in progress.
+    /// </summary>
+    string? CurrentOperationDescription { get; }
+
+    /// <summary>
     /// Raised when the in-progress state changes. The argument is the new state:
     /// <see langword="true"/> when an operation begins, <see langword="false"/> when it completes.
     /// </summary>
@@ -20,7 +26,11 @@ public interface IOperationCoordinatorService
     /// lock (CAS 0→1 succeeded) and raised the event; <see langword="false"/> if an operation was
     /// already in progress (no-op — the caller must NOT call <see cref="MarkComplete"/>).
     /// </summary>
-    bool BeginOperation();
+    /// <param name="description">
+    /// An optional human-readable description of the operation (e.g., "Launching PCS Pro…").
+    /// When provided, the value is available via <see cref="CurrentOperationDescription"/>.
+    /// </param>
+    bool BeginOperation(string? description = null);
 
     /// <summary>
     /// Marks the completion of the current operation. If no operation is in progress this is a
