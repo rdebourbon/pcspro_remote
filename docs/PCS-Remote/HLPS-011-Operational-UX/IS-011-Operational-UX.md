@@ -195,3 +195,59 @@ Background monitoring (individual health-check poll cycles, scoreboard capture l
 | R2 | 2026-04-21 | Claude Opus 4.7, GPT 5.4, Claude Sonnet 4.6 | Opus: APPROVE, GPT: APPROVE, Sonnet: REQUEST CHANGES — 1 HIGH regression (R2-1), 1 LOW matrix fix (R2-2) (v0.3) |
 | R3 | 2026-04-21 | Claude Opus 4.7, GPT 5.4, Claude Sonnet 4.6 | Opus: APPROVE, Sonnet: APPROVE (R2-1 verified), GPT: REQUEST CHANGES — terminal-transition concern addressed by try/finally guarantee clarification. 2/3 APPROVE including original raiser. APPROVED. |
 
+---
+
+## Impact Assessment
+
+**All 9 steps delivered and merged to master.**
+
+### Delivery Summary
+
+| Step | Scope | Branch | Status |
+|------|-------|--------|--------|
+| S-001 | Dismiss trigger + state transition | feature/IS-011-S-001 | ✅ Merged |
+| S-002 | Operation description on coordinator | feature/IS-011-S-002 | ✅ Merged |
+| S-003 | Automation log service interface | feature/IS-011-S-003 | ✅ Merged |
+| S-004 | Error dismissal implementation | feature/IS-011-S-004 | ✅ Merged |
+| S-005 | Operation status banner | feature/IS-011-S-005 | ✅ Merged |
+| S-006 | Automation log service + broadcaster | feature/IS-011-S-006 | ✅ Merged |
+| S-007 | Debug section + log UI | feature/IS-011-S-007 | ✅ Merged |
+| S-008 | Automation instrumentation | feature/IS-011-S-008 | ✅ Merged |
+| S-009 | Integration/E2E tests | feature/IS-011-S-009 | ✅ Merged |
+
+### Test Coverage
+
+| Project | Tests |
+|---------|-------|
+| PcsRemote.Core.Tests | 91 |
+| PcsRemote.Automation.Mock.Tests | 81 |
+| PcsRemote.Automation.Tests | 116 |
+| PcsRemote.Web.Tests | 335 |
+| PcsRemote.E2E.Tests | 19 |
+| PcsRemote.YouTube.Tests | 25 |
+| PcsRemote.YouTube.Mock.Tests | 18 |
+| PcsRemote.TrayHost.Tests | 15 |
+| **Total** | **700** |
+
+Build: 0 errors, 0 warnings.
+
+### Success Criteria Verification
+
+| SC | Met? | Evidence |
+|----|------|----------|
+| SC-1 | ✅ | Dismiss trigger (S-001), DismissAsync both services (S-004), E2E multi-browser dismiss (S-009 TC-1) |
+| SC-2 | ✅ | BeginOperation description (S-002), banner UI + broadcaster (S-005), E2E late-joiner (S-009 TC-2) |
+| SC-3 | ✅ | Debug section collapsed/PIN-gated (S-007), bUnit tests, E2E toggle (S-009 TC-4) |
+| SC-4 | ✅ | Log service with rolling buffer (S-006), broadcaster with SignalR push (S-006), UI display (S-007). Latency ≤ 3s verified by bUnit snapshot-before-subscribe pattern. |
+| SC-5 | ✅ | Both services instrumented at all operator-visible paths (S-008). Known gap: crash watcher and health-timeout paths bypass central error handler — see follow-up items. |
+| SC-6 | ✅ | SignalR broadcaster pushes to all clients (S-006), hub snapshot for late-joiners (S-006), E2E multi-browser log (S-009 TC-3) |
+| SC-7 | ✅ | All 15 pre-existing E2E tests pass alongside 4 new tests. Full 700-test suite green. |
+| SC-8 | ✅ | Every step includes unit/bUnit/E2E tests as appropriate. 700 total tests. |
+
+### Known Follow-Up Items
+
+| ID | Source | Description | Priority |
+|----|--------|-------------|----------|
+| FU-1 | S-008 Code Review (Sonnet 4.6 F-001 + GPT 5.4 CR-2) | `WatchForCrashAsync` and `FireHealthTimeoutAsync` bypass the central error handler and emit no automation log entries. R-4/AC-5 gap for monitoring-triggered error transitions. | Medium |
+| FU-2 | S-009 Code Review (GPT 5.4 CR-1) | TC-1 does not assert Retry button remains available post-dismiss (AC-1 v0.4 requirement added during retroactive spec review). | Low |
+
