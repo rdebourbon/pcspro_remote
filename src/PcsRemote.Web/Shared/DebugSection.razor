@@ -1,0 +1,81 @@
+@using Microsoft.Extensions.Options
+@inject IOptions<DebugSectionOptions> Options
+
+<div class="debug-section">
+    <button class="debug-section-toggle" @onclick="OnToggle">Debug</button>
+
+    @if (_showPinPrompt)
+    {
+        <div class="debug-section-pin-prompt">
+            <input type="password"
+                   class="debug-section-pin-input"
+                   placeholder="Enter PIN"
+                   @bind="_pinInput"
+                   @bind:event="oninput" />
+            <button class="debug-section-pin-submit" @onclick="OnPinSubmit">Unlock</button>
+            @if (_pinError)
+            {
+                <span class="debug-section-pin-error">Incorrect PIN</span>
+            }
+        </div>
+    }
+
+    @if (_expanded && _unlocked)
+    {
+        <div class="debug-section-content">
+            <AutomationLogDisplay />
+        </div>
+    }
+</div>
+
+@code {
+    private bool _expanded;
+    private bool _unlocked;
+    private bool _showPinPrompt;
+    private bool _pinError;
+    private string _pinInput = string.Empty;
+
+    private bool IsPinConfigured =>
+        !string.IsNullOrEmpty(Options.Value.Pin);
+
+    protected override void OnInitialized()
+    {
+        _unlocked = !IsPinConfigured;
+    }
+
+    private void OnToggle()
+    {
+        if (_expanded)
+        {
+            _expanded = false;
+            _showPinPrompt = false;
+            _pinError = false;
+            return;
+        }
+
+        if (!_unlocked && IsPinConfigured)
+        {
+            _showPinPrompt = true;
+            _pinError = false;
+            _pinInput = string.Empty;
+            return;
+        }
+
+        _expanded = true;
+    }
+
+    private void OnPinSubmit()
+    {
+        if (_pinInput == Options.Value.Pin)
+        {
+            _unlocked = true;
+            _showPinPrompt = false;
+            _expanded = true;
+            _pinError = false;
+        }
+        else
+        {
+            _pinError = true;
+        }
+    }
+}

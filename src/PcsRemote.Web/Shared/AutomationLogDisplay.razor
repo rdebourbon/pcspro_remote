@@ -1,0 +1,65 @@
+@using PcsRemote.Core
+@implements IDisposable
+@inject IAutomationLogService LogService
+
+<div class="automation-log-display">
+    @if (_entries.Count == 0)
+    {
+        <p class="automation-log-empty">No log entries yet.</p>
+    }
+    else
+    {
+        <ul class="automation-log-list">
+            @foreach (var entry in _entries)
+            {
+                <li class="automation-log-entry">
+                    <span class="automation-log-timestamp">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
+                    <span class="automation-log-outcome automation-log-outcome-@entry.Outcome.ToString().ToLowerInvariant()">@entry.Outcome</span>
+                    <span class="automation-log-action">@entry.Action</span>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    private const int MaxDisplayEntries = 200;
+    private readonly List<AutomationLogEntry> _entries = new();
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        // Snapshot-before-subscribe: for a collection, avoiding duplicates is more
+        // important than the microsecond missing-entry window that subscribe-before-snapshot
+        // would prevent. The single-value pattern (ManualModeBanner, etc.) uses
+        // subscribe-before-snapshot because overwriting a value is idempotent.
+        var snapshot = LogService.GetRecentEntries();
+        _entries.AddRange(snapshot);
+        LogService.EntryAdded += OnEntryAdded;
+    }
+
+    private void OnEntryAdded(object? sender, AutomationLogEntry entry)
+    {
+        if (_disposed)
+            return;
+
+        // Marshal list mutations to the Blazor synchronization context to prevent
+        // concurrent access from the render thread's @foreach loop.
+        _ = InvokeAsync(() =>
+        {
+            if (_entries.Count >= MaxDisplayEntries)
+            {
+                _entries.RemoveAt(0);
+            }
+
+            _entries.Add(entry);
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        LogService.EntryAdded -= OnEntryAdded;
+    }
+}

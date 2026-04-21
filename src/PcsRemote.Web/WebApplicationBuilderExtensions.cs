@@ -34,6 +34,8 @@ public static class WebApplicationBuilderExtensions
         builder.Services.AddSingleton<IManualModeService, ManualModeService>();
         builder.Services.AddSingleton<IOperationCoordinatorService, OperationCoordinatorService>();
         builder.Services.AddSingleton<IAutomationLogService, AutomationLogService>();
+        builder.Services.Configure<DebugSectionOptions>(
+            builder.Configuration.GetSection("DebugSection"));
         builder.Services.AddServerSideBlazor();
         builder.Services.AddScoped<CircuitHandler, PcsProCircuitHandler>();
         builder.Services.AddSingleton<IScoreboardService, ScoreboardService>();
