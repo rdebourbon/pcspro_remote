@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,6 +7,10 @@ using PcsRemote.Core;
 using PcsRemote.TrayHost;
 using PcsRemote.Web;
 using PcsRemote.YouTube;
+
+// DPI awareness must be set before any window creation or UI framework initialisation.
+// Without this, the garage PC's 150% DPI scaling produces incorrect scoreboard captures.
+SetProcessDPIAware();
 
 // Stage 1: transient bootstrap logger.
 Log.Logger = new LoggerConfiguration()
@@ -130,3 +135,7 @@ static async Task<int> RunYouTubeSetupAsync(string[] args)
         Log.CloseAndFlush();
     }
 }
+
+[DllImport("user32.dll")]
+[return: MarshalAs(UnmanagedType.Bool)]
+static extern bool SetProcessDPIAware();
