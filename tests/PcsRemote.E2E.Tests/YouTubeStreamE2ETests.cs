@@ -196,7 +196,7 @@ public class YouTubeStreamE2ETests
         var bgColor = await badge.EvaluateAsync<string>(
             "el => getComputedStyle(el).backgroundColor");
 
-        // PCS grey: #9A7285 = rgb(154, 114, 133) — warm muted mauve.
+        // PCS grey: #7a9a82 = rgb(122, 154, 130) — muted sage green from club theme.
         // Parse rgb(r, g, b) and validate within the club theme grey range.
         Assert.IsFalse(
             string.IsNullOrEmpty(bgColor) ||
@@ -211,10 +211,10 @@ public class YouTubeStreamE2ETests
         int g = int.Parse(rgbValues[1].Trim());
         int b = int.Parse(rgbValues[2].Trim());
 
-        // PCS grey palette: #9A7285 = rgb(154, 114, 133) — warm muted mauve from club theme.
-        // Verify the idle badge uses the themed grey tone (red-dominant, moderate green/blue).
-        Assert.IsTrue(r >= 100 && g >= 80 && g <= 150 && b >= 100 && b <= 160,
-            $"Expected club-themed grey palette (warm mauve), got rgb({r}, {g}, {b})");
+        // PCS grey palette: #7a9a82 = rgb(122, 154, 130) — muted sage green from club theme.
+        // Verify the idle badge uses the themed tone (moderate green-dominant).
+        Assert.IsTrue(r >= 100 && r <= 150 && g >= 130 && g <= 180 && b >= 100 && b <= 160,
+            $"Expected club-themed grey palette (muted sage green), got rgb({r}, {g}, {b})");
     }
 
     /// <summary>
