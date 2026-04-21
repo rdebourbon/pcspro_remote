@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Document** | IS-010-Automation-Hardening.md |
-| **Status** | APPROVED |
+| **Status** | COMPLETE |
 | **Version** | 0.2 |
 | **Date** | 2026-04-21 |
 | **Governing HLPS** | HLPS-010-Automation-Hardening.md (APPROVED v0.3) |
@@ -158,7 +158,7 @@ Note: This step uses the current `string` return type. The structured return typ
 
 ---
 
-## Tier 3 — Can-Defer
+## Tier 3 — Can-Defer ✅ COMPLETE
 
 ### S-010 — Team Names Structured Return Type ✅
 
@@ -188,7 +188,9 @@ Note: This step uses the current `string` return type. The structured return typ
 
 ---
 
-### S-012 — Health-Check Poll (GAP-011)
+### S-012 — Health-Check Poll (GAP-011) ✅
+
+**Delivered:** `ee716e0` | **Spec:** SPEC-S-012 v0.3 APPROVED
 
 **What changes:** A periodic polling mechanism is added inside the automation service that reads PCS Pro state signals and emits state-change events to the web UI. The poll interval is configurable with bounded defaults (per HLPS §2.9). The poll uses try-acquire on the operation lock — if held, that cycle is skipped. The poll starts at match-loaded state and stops on change-match or shutdown.
 

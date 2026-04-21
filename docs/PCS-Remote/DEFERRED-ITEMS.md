@@ -2,7 +2,7 @@
 
 This document tracks all deferred functionality, accepted risks, and future work items identified during development. Items are sourced from HLPS/IS/Spec reviews, adversarial code reviews, and feature gap discovery during diagnostic testing.
 
-**Last updated:** 2026-04-21 (S-012 spec v0.2)
+**Last updated:** 2026-04-21 (IS-010 COMPLETE)
 
 ---
 
@@ -22,7 +22,7 @@ Discovered during hands-on testing against real PCS Pro on the garage PC. Full d
 | GAP-008 | Title Change Detection — Same Match Type | Diagnostic testing | ✅ Resolved (commit `1129b1f`) | ✅ Complete |
 | GAP-009 | Team Name Display & YouTube Title Formatting Rules | User requirement | Deferred to HLPS-011 | ❌ Not started |
 | GAP-010 | "Use Current Match" — Skip Match Selection | User observation | IS-010 S-011 (Tier 3) | ✅ Delivered (`acc0897`) |
-| GAP-011 | Periodic PCS Pro Health-Check Poll | User observation | IS-010 S-012 (Tier 3) | 🔄 Spec in review (v0.2) |
+| GAP-011 | Periodic PCS Pro Health-Check Poll | User observation | IS-010 S-012 (Tier 3) | ✅ Delivered (`ee716e0`) |
 
 ---
 
@@ -58,7 +58,7 @@ These are in-scope for IS-010 but marked "Can-Defer" — they can be deferred to
 |---|---|---|---|
 | S-010 | Team Names Structured Return Type | ✅ Delivered (`40412e0`) | Core type change, FlaUI club read |
 | S-011 | Use Current Match (GAP-010) | ✅ Delivered (`acc0897`) | State machine extension + attach flow |
-| S-012 | Health-Check Poll (GAP-011) | 🔄 Spec in review (v0.2) | Periodic state scan, configurable interval |
+| S-012 | Health-Check Poll (GAP-011) | ✅ Delivered (`ee716e0`) | Periodic state scan, configurable interval |
 
 ---
 
