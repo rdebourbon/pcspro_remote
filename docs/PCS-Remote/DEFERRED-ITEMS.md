@@ -78,6 +78,19 @@ These were explicitly scoped out of HLPS-010 and earmarked for the next HLPS:
 
 ---
 
+## New Feature Gaps (User-Requested 2026-04-21)
+
+| ID | Title | Description | Target HLPS | Status |
+|---|---|---|---|---|
+| GAP-012 | WiX MSI Installer | Full MSI installer replacing manual setup. Sets environment variables (YouTube API keys, PCS Pro password) at install time, registers Task Scheduler entry, handles upgrades. Replaces HLPS-007 manual deployment model entirely. | HLPS-007 (Deployment) | ❌ Not started |
+| GAP-013 | YouTube Setup Tray Shortcut | Add a right-click context menu item on the tray icon ("YouTube Setup...") that launches the OAuth flow in the default browser. Replaces the current `--youtube-setup` CLI argument approach. | HLPS-011 or HLPS-007 | ❌ Not started |
+| GAP-014 | Disable UI During Automation | Disable all action buttons in the Web UI while any server-side automation command is actively executing (LoadMatch, RefreshScoreboard, StartStreaming, etc.). Prevents conflicting operations. | HLPS-011 | ❌ Not started |
+| GAP-015 | Club Logo PNG | Use the proper club logo PNG everywhere: Web UI header/navbar, favicon, tray icon, installer splash. User will provide the file. | HLPS-011 or HLPS-007 | ❌ Not started (awaiting asset) |
+| GAP-016 | Tray Host Icon | Custom .ico for the system tray — simple text-based "PCS Remote" design mimicking the existing PCS Pro icon style. Needs to work at 16x16/24x24/32x32. | HLPS-011 or HLPS-007 | ❌ Not started |
+| GAP-017 | Real-Time Automation Log | Live log panel in the Web UI (under Advanced/Debug section) showing automation steps as they execute. Use SignalR push or polling — latency must be ≤2-3 seconds. Entries like "Clicking Start Live Stream...", "Handling consent dialog...", "Refreshing scoreboard...". | HLPS-011 | ❌ Not started |
+
+---
+
 ## How to Use This Document
 
 - **When creating a new HLPS:** Review this register to identify items that should be included.
