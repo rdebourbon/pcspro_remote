@@ -79,6 +79,12 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// </summary>
     private int _isMatchLoadedOperationInProgress;
 
+    /// <summary>
+    /// Tracks whether a switch-user attempt has been made during the current login phase.
+    /// Reset at the start of each <see cref="PerformLoginAsync"/> call (bounded to 1 retry per C-8).
+    /// </summary>
+    private bool _switchUserAttempted;
+
     public PcsProAutomationService(
         IOptions<PcsProOptions> options,
         ILogger<PcsProAutomationService> logger,
@@ -743,6 +749,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         const int PollIntervalMs = 200;
         var startTime = _timeProvider.GetTimestamp();
         bool submitted = false;
+        _switchUserAttempted = false;
 
         while (true)
         {
@@ -752,7 +759,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             if (await HandleUnexpectedDialogAsync().ConfigureAwait(false))
                 return false;
 
-            var submitResult = await TrySubmitCredentialsAsync(submitted).ConfigureAwait(false);
+            var submitResult = await TrySubmitCredentialsAsync(submitted, ct).ConfigureAwait(false);
             if (submitResult == LoginSubmitResult.Failed)
                 return false;
             if (submitResult == LoginSubmitResult.Submitted)
@@ -811,18 +818,31 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
 
     /// <summary>
     /// Attempts to enter the password and click submit when the login dialog is visible
-    /// and credentials have not yet been submitted.
+    /// and credentials have not yet been submitted. When <c>ExpectedUsername</c> is configured,
+    /// checks the pre-populated username first and performs a switch-user flow on mismatch
+    /// (bounded to 1 attempt per login phase via <see cref="_switchUserAttempted"/>).
+    /// After a successful switch-user, returns <see cref="LoginSubmitResult.NotReady"/> to
+    /// defer submission to the next poll iteration — this allows the username to be
+    /// re-verified before entering the password.
     /// Returns <see cref="LoginSubmitResult.Submitted"/> on success,
     /// <see cref="LoginSubmitResult.Failed"/> on interaction exception (error already fired),
-    /// or <see cref="LoginSubmitResult.NotReady"/> when the dialog is not yet visible.
+    /// or <see cref="LoginSubmitResult.NotReady"/> when the dialog is not yet visible
+    /// or a switch-user was just performed.
     /// </summary>
-    private async Task<LoginSubmitResult> TrySubmitCredentialsAsync(bool alreadySubmitted)
+    private async Task<LoginSubmitResult> TrySubmitCredentialsAsync(
+        bool alreadySubmitted, CancellationToken ct)
     {
         if (alreadySubmitted || !_loginAutomation.IsLoginDialogVisible())
             return LoginSubmitResult.NotReady;
 
         try
         {
+            var mismatchResult = await TryHandleUsernameMismatchAsync(ct).ConfigureAwait(false);
+            if (mismatchResult == UsernameMismatchResult.Failed)
+                return LoginSubmitResult.Failed;
+            if (mismatchResult == UsernameMismatchResult.SwitchPerformed)
+                return LoginSubmitResult.NotReady;
+
             _loginAutomation.EnterPassword(_options.Password);
             _loginAutomation.ClickSubmit();
             _logger.LogDebug("PerformLoginAsync: credentials submitted");
@@ -838,6 +858,78 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
                 "Login interaction failed").ConfigureAwait(false);
             return LoginSubmitResult.Failed;
         }
+    }
+
+    private enum UsernameMismatchResult { NoAction, SwitchPerformed, Failed }
+
+    /// <summary>
+    /// Checks the pre-populated username against the configured expected username.
+    /// If a mismatch is detected and switch-user has not yet been attempted, performs
+    /// the switch-user flow. Returns <see cref="UsernameMismatchResult.Failed"/> when
+    /// the mismatch cannot be resolved (retry exhausted or interaction failure).
+    /// </summary>
+    private async Task<UsernameMismatchResult> TryHandleUsernameMismatchAsync(CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(_options.ExpectedUsername))
+            return UsernameMismatchResult.NoAction;
+
+        var currentUsername = _loginAutomation.ReadUsername();
+        if (string.IsNullOrEmpty(currentUsername))
+        {
+            _logger.LogDebug("PerformLoginAsync: username field is blank or not found — skipping check");
+            return UsernameMismatchResult.NoAction;
+        }
+
+        if (string.Equals(currentUsername, _options.ExpectedUsername, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogDebug("PerformLoginAsync: username matches expected value");
+            return UsernameMismatchResult.NoAction;
+        }
+
+        // Mismatch detected
+        if (_switchUserAttempted)
+        {
+            _logger.LogError("PerformLoginAsync: username mismatch persists after switch-user attempt");
+            await FireErrorUnderLockAsync(
+                PcsProTrigger.Timeout,
+                "Username mismatch persists after switch-user — retry exhausted").ConfigureAwait(false);
+            return UsernameMismatchResult.Failed;
+        }
+
+        _logger.LogWarning("PerformLoginAsync: username mismatch detected — initiating switch-user");
+        _switchUserAttempted = true;
+
+        _loginAutomation.ClickSwitchUser();
+
+        // Wait for the login dialog to reappear after switch-user (may briefly disappear)
+        const int SwitchUserWaitMs = 200;
+        const int MaxSwitchUserWaitMs = 5000;
+        var switchStart = _timeProvider.GetTimestamp();
+
+        while (_timeProvider.GetElapsedTime(switchStart).TotalMilliseconds < MaxSwitchUserWaitMs)
+        {
+            if (_loginAutomation.IsLoginDialogVisible())
+            {
+                _logger.LogDebug("PerformLoginAsync: login dialog reappeared after switch-user");
+                break;
+            }
+
+            await Task.Delay(SwitchUserWaitMs, ct).ConfigureAwait(false);
+        }
+
+        if (!_loginAutomation.IsLoginDialogVisible())
+        {
+            _logger.LogError(
+                "PerformLoginAsync: login dialog did not reappear after switch-user within {TimeoutMs}ms",
+                MaxSwitchUserWaitMs);
+            await FireErrorUnderLockAsync(
+                PcsProTrigger.Timeout,
+                "Switch-user completed but login dialog did not reappear").ConfigureAwait(false);
+            return UsernameMismatchResult.Failed;
+        }
+
+        _loginAutomation.EnterUsername(_options.ExpectedUsername);
+        return UsernameMismatchResult.SwitchPerformed;
     }
 
     /// <summary>

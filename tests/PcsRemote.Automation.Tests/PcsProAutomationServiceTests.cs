@@ -78,6 +78,36 @@ public sealed class PcsProAutomationServiceTests
             new NullAutomationLogService());
     }
 
+    private static PcsProAutomationService CreateServiceWithExpectedUsername(
+        FakeProcessManager processManager,
+        FakeTimeProvider timeProvider,
+        ILoginAutomation loginAutomation,
+        string expectedUsername)
+    {
+        var options = Options.Create(new PcsProOptions
+        {
+            ExecutablePath = @"C:\cricket.exe",
+            WorkingDirectory = @"C:\",
+            Password = "test-password",
+            ExpectedUsername = expectedUsername,
+        });
+        var deps = new AutomationDependencies(
+            loginAutomation,
+            new FakeMatchSelectionAutomation(),
+            new FakeTeamNamesAutomation(),
+            new FakeScoreboardAutomation(),
+            new FakeChangeMatchAutomation(),
+            new FakeStreamingAutomation(),
+            new FakeHealthCheckAutomation());
+        return new PcsProAutomationService(
+            options,
+            NullLogger<PcsProAutomationService>.Instance,
+            processManager,
+            timeProvider,
+            deps,
+            new NullAutomationLogService());
+    }
+
     /// <summary>
     /// Creates a service and runs <see cref="PcsProAutomationService.LaunchAndLoginAsync"/>
     /// to completion, with the process window immediately visible and login succeeding.
@@ -2363,6 +2393,172 @@ public sealed class PcsProAutomationServiceTests
         // Assert: no additional reads after stop.
         hc.ReadCount.Should().Be(countAfterFirstPoll);
     }
+
+    // =======================================================================
+    // S-002 — Switch-User Login Orchestration
+    // =======================================================================
+
+    // -----------------------------------------------------------------------
+    // TC-1 — ExpectedUsername empty → no switch-user, normal login
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_ExpectedUsernameEmpty_SkipsSwitchUserAndSubmitsNormally()
+    {
+        var login = new FakeLoginAutomation { UsernameValue = "OtherUser" };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var svc = CreateService(pm, new FakeTimeProvider(), login);
+
+        await svc.LaunchAndLoginAsync();
+
+        login.SwitchUserClicked.Should().BeFalse("ExpectedUsername is not configured");
+        login.CapturedUsername.Should().BeNull("no username entry should occur");
+        login.SubmitClicked.Should().BeTrue("normal login should proceed");
+        svc.CurrentState.Should().Be(PcsProState.MatchSelection);
+    }
+
+    // -----------------------------------------------------------------------
+    // TC-2 — ReadUsername returns null → no switch-user
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_ReadUsernameReturnsNull_SkipsSwitchUser()
+    {
+        var login = new FakeLoginAutomation { UsernameValue = null };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var svc = CreateServiceWithExpectedUsername(pm, new FakeTimeProvider(), login, "ExpectedUser");
+
+        await svc.LaunchAndLoginAsync();
+
+        login.SwitchUserClicked.Should().BeFalse("null username means field not found — skip check");
+        login.SubmitClicked.Should().BeTrue("normal login should proceed");
+        svc.CurrentState.Should().Be(PcsProState.MatchSelection);
+    }
+
+    // -----------------------------------------------------------------------
+    // TC-3 — ReadUsername returns empty → no switch-user
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_ReadUsernameReturnsEmpty_SkipsSwitchUser()
+    {
+        var login = new FakeLoginAutomation { UsernameValue = "" };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var svc = CreateServiceWithExpectedUsername(pm, new FakeTimeProvider(), login, "ExpectedUser");
+
+        await svc.LaunchAndLoginAsync();
+
+        login.SwitchUserClicked.Should().BeFalse("empty username means blank field — skip check");
+        login.SubmitClicked.Should().BeTrue("normal login should proceed");
+        svc.CurrentState.Should().Be(PcsProState.MatchSelection);
+    }
+
+    // -----------------------------------------------------------------------
+    // TC-4 — Username matches (case-insensitive) → no switch-user
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_UsernameMatchesCaseInsensitive_SkipsSwitchUser()
+    {
+        var login = new FakeLoginAutomation { UsernameValue = "scorer" };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var svc = CreateServiceWithExpectedUsername(pm, new FakeTimeProvider(), login, "Scorer");
+
+        await svc.LaunchAndLoginAsync();
+
+        login.SwitchUserClicked.Should().BeFalse("username matches expected value (case-insensitive)");
+        login.SubmitClicked.Should().BeTrue("normal login should proceed");
+        svc.CurrentState.Should().Be(PcsProState.MatchSelection);
+    }
+
+    // -----------------------------------------------------------------------
+    // TC-5 — Username mismatch → switch-user + enter username + submit
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_UsernameMismatch_PerformsSwitchUserAndSubmits()
+    {
+        var login = new FakeLoginAutomation { UsernameValue = "WrongUser" };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var svc = CreateServiceWithExpectedUsername(pm, new FakeTimeProvider(), login, "CorrectUser");
+
+        await svc.LaunchAndLoginAsync();
+
+        login.SwitchUserClicked.Should().BeTrue("mismatch should trigger switch-user");
+        login.CapturedUsername.Should().Be("CorrectUser", "expected username should be entered");
+        login.CapturedPassword.Should().Be("test-password", "password should be entered after switch-user");
+        login.SubmitClicked.Should().BeTrue("credentials should be submitted");
+        svc.CurrentState.Should().Be(PcsProState.MatchSelection);
+    }
+
+    // -----------------------------------------------------------------------
+    // TC-6 — Mismatch → switch-user → submit → reaches match selection
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_AfterSwitchUser_ReachesMatchSelection()
+    {
+        var login = new FakeLoginAutomation { UsernameValue = "WrongUser" };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var svc = CreateServiceWithExpectedUsername(pm, new FakeTimeProvider(), login, "CorrectUser");
+
+        var states = new List<PcsProState>();
+        svc.StateChanged += (_, s) => states.Add(s);
+
+        await svc.LaunchAndLoginAsync();
+
+        states.Should().ContainInOrder(
+            PcsProState.Launching, PcsProState.LoginScreen, PcsProState.MatchSelection);
+        svc.CurrentState.Should().Be(PcsProState.MatchSelection);
+    }
+
+    // -----------------------------------------------------------------------
+    // TC-7 — Mismatch persists after switch-user → error (retry exhausted)
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_MismatchPersistsAfterSwitchUser_FiresError()
+    {
+        // Use a custom fake that ignores EnterUsername — simulating the case where
+        // switch-user was clicked but the username field still shows the wrong value.
+        var login = new SwitchUserIgnoredFakeLoginAutomation();
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var svc = CreateServiceWithExpectedUsername(pm, new FakeTimeProvider(), login, "CorrectUser");
+
+        await svc.LaunchAndLoginAsync();
+
+        svc.CurrentState.Should().Be(PcsProState.Error,
+            "mismatch persisting after switch-user should fire error trigger");
+    }
+
+    // -----------------------------------------------------------------------
+    // TC-8 — ClickSwitchUser throws → error, abort
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LaunchAndLoginAsync_ClickSwitchUserThrows_FiresError()
+    {
+        // Set ThrowOnInteraction to true so ClickSwitchUser throws.
+        // But we need IsLoginDialogVisible to return true and the username check to
+        // detect a mismatch first. Since ThrowOnInteraction also affects EnterPassword,
+        // we need a custom fake that only throws on ClickSwitchUser.
+        var login = new SwitchUserThrowsFakeLoginAutomation();
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var svc = CreateServiceWithExpectedUsername(pm, new FakeTimeProvider(), login, "CorrectUser");
+
+        await svc.LaunchAndLoginAsync();
+
+        svc.CurrentState.Should().Be(PcsProState.Error,
+            "exception from ClickSwitchUser should be caught and fire error");
+    }
 }
 
 // -----------------------------------------------------------------------
@@ -2438,4 +2634,46 @@ internal sealed class SlowOpenTeamsDialogFake : ITeamNamesAutomation
     public void TryCloseTeamsDialog() { }
     public bool IsUnexpectedDialogPresent() => false;
     public void TryCloseUnexpectedDialog() { }
+}
+
+// -----------------------------------------------------------------------
+// Test helper for S-002 — ClickSwitchUser throws, other interactions work
+// -----------------------------------------------------------------------
+
+/// <summary>
+/// FakeLoginAutomation variant that only throws on <see cref="ILoginAutomation.ClickSwitchUser"/>.
+/// All other interactions succeed normally. Used to verify the catch-all in
+/// <c>TrySubmitCredentialsAsync</c> handles switch-user failures.
+/// </summary>
+internal sealed class SwitchUserThrowsFakeLoginAutomation : ILoginAutomation
+{
+    public bool IsLoginDialogVisible() => true;
+    public void EnterPassword(string password) { }
+    public void ClickSubmit() { }
+    public bool IsMatchSelectionVisible() => true;
+    public bool IsUnexpectedDialogPresent() => false;
+    public void TryCloseUnexpectedDialog() { }
+    public string? ReadUsername() => "WrongUser";
+    public void EnterUsername(string username) { }
+
+    public void ClickSwitchUser() =>
+        throw new InvalidOperationException("Simulated ClickSwitchUser failure");
+}
+
+/// <summary>
+/// FakeLoginAutomation variant where EnterUsername does not update the username field.
+/// Simulates the case where switch-user was clicked but the underlying application
+/// did not update the pre-populated username, so the mismatch persists on re-check.
+/// </summary>
+internal sealed class SwitchUserIgnoredFakeLoginAutomation : ILoginAutomation
+{
+    public bool IsLoginDialogVisible() => true;
+    public void EnterPassword(string password) { }
+    public void ClickSubmit() { }
+    public bool IsMatchSelectionVisible() => true;
+    public bool IsUnexpectedDialogPresent() => false;
+    public void TryCloseUnexpectedDialog() { }
+    public string? ReadUsername() => "WrongUser";
+    public void EnterUsername(string username) { } // deliberately ignores the entered username
+    public void ClickSwitchUser() { }
 }

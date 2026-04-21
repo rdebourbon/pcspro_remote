@@ -92,6 +92,8 @@ internal sealed class FakeLoginAutomation : ILoginAutomation
         if (ThrowOnInteraction)
             throw new InvalidOperationException("FakeLoginAutomation: element not found (ThrowOnInteraction = true)");
         CapturedUsername = username;
+        // Simulate the username field being updated after entry
+        UsernameValue = username;
     }
 
     /// <inheritdoc/>
