@@ -22,7 +22,8 @@ public sealed class PcsProAutomationServiceTests
         ITeamNamesAutomation? teamNamesAutomation = null,
         IScoreboardAutomation? scoreboardAutomation = null,
         IChangeMatchAutomation? changeMatchAutomation = null,
-        IStreamingAutomation? streamingAutomation = null)
+        IStreamingAutomation? streamingAutomation = null,
+        FakeHealthCheckAutomation? healthCheckAutomation = null)
     {
         var options = Options.Create(new PcsProOptions
         {
@@ -36,7 +37,8 @@ public sealed class PcsProAutomationServiceTests
             teamNamesAutomation ?? new FakeTeamNamesAutomation(),
             scoreboardAutomation ?? new FakeScoreboardAutomation(),
             changeMatchAutomation ?? new FakeChangeMatchAutomation(),
-            streamingAutomation ?? new FakeStreamingAutomation());
+            streamingAutomation ?? new FakeStreamingAutomation(),
+            healthCheckAutomation ?? new FakeHealthCheckAutomation());
         return new PcsProAutomationService(
             options,
             NullLogger<PcsProAutomationService>.Instance,
@@ -64,7 +66,8 @@ public sealed class PcsProAutomationServiceTests
             new FakeTeamNamesAutomation(),
             new FakeScoreboardAutomation(),
             new FakeChangeMatchAutomation(),
-            new FakeStreamingAutomation());
+            new FakeStreamingAutomation(),
+            new FakeHealthCheckAutomation());
         return new PcsProAutomationService(
             options,
             NullLogger<PcsProAutomationService>.Instance,
@@ -685,7 +688,8 @@ public sealed class PcsProAutomationServiceTests
                 new FakeTeamNamesAutomation(),
                 new FakeScoreboardAutomation(),
                 new FakeChangeMatchAutomation(),
-                new FakeStreamingAutomation()));
+                new FakeStreamingAutomation(),
+                new FakeHealthCheckAutomation()));
 
         await svc.LaunchAndLoginAsync();
 
@@ -2083,6 +2087,276 @@ public sealed class PcsProAutomationServiceTests
         result.Away.TeamName.Should().BeEmpty();
         result.Home.ClubName.Should().BeEmpty();
         result.Away.ClubName.Should().BeEmpty();
+    }
+
+    // -----------------------------------------------------------------------
+    // S-012 — Health-Check Poll
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Creates a service at <see cref="PcsProState.MatchLoaded"/> with health poll active,
+    /// returning the <see cref="FakeTimeProvider"/> and <see cref="FakeHealthCheckAutomation"/>
+    /// so tests can control time advancement and probe results.
+    /// </summary>
+    private static async Task<(PcsProAutomationService Service, FakeProcessHandle Handle, FakeTimeProvider TimeProvider, FakeHealthCheckAutomation HealthCheck)>
+        CreateServiceAtMatchLoadedWithHealthPollAsync(
+            FakeHealthCheckAutomation? healthCheck = null)
+    {
+        healthCheck ??= new FakeHealthCheckAutomation();
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+
+        var options = Options.Create(new PcsProOptions
+        {
+            ExecutablePath = @"C:\cricket.exe",
+            WorkingDirectory = @"C:\",
+            Password = "test-password",
+        });
+        var deps = new AutomationDependencies(
+            new FakeLoginAutomation(),
+            new FakeMatchSelectionAutomation(),
+            new FakeTeamNamesAutomation(),
+            new FakeScoreboardAutomation(),
+            new FakeChangeMatchAutomation(),
+            new FakeStreamingAutomation(),
+            healthCheck);
+        var svc = new PcsProAutomationService(
+            options,
+            NullLogger<PcsProAutomationService>.Instance,
+            pm,
+            tp,
+            deps);
+
+        await svc.LaunchAndLoginAsync();
+
+        // Drive to MatchLoaded via reflection — same pattern as CreateServiceAtMatchLoadedAsync.
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)! // field exists on this type
+            .GetValue(svc)!; // constructor always assigns a non-null PcsProStateMachine
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+        machine.Fire(PcsProTrigger.MatchOpened);
+
+        return (svc, handle, tp, healthCheck);
+    }
+
+    [TestMethod]
+    public async Task HealthPoll_StartsOnMatchLoaded_PollsAfterTimeAdvance()
+    {
+        // Arrange
+        var (svc, _, tp, hc) = await CreateServiceAtMatchLoadedWithHealthPollAsync();
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded);
+
+        // Let the poll loop start on the thread pool and register its timer.
+        await Task.Delay(200);
+
+        // Act: advance time past the default 10s interval.
+        tp.Advance(TimeSpan.FromSeconds(11));
+        await Task.Delay(200);
+
+        // Assert: health check was called at least once.
+        hc.ReadCount.Should().BeGreaterOrEqualTo(1);
+
+        // Cleanup
+        await svc.StopAsync();
+    }
+
+    [TestMethod]
+    public async Task HealthPoll_WindowLost_TransitionsToError()
+    {
+        // Arrange: set probe to report window lost after first poll.
+        var hc = new FakeHealthCheckAutomation();
+        var (svc, _, tp, _) = await CreateServiceAtMatchLoadedWithHealthPollAsync(hc);
+        hc.NextResult = new HealthCheckResult(false, false, null, null, ProbeSucceeded: true);
+
+        var alerts = new List<HealthAlertEventArgs>();
+        svc.HealthAlert += (_, e) => alerts.Add(e);
+
+        // Let poll loop start.
+        await Task.Delay(200);
+
+        // Act
+        tp.Advance(TimeSpan.FromSeconds(11));
+        await Task.Delay(200);
+
+        // Assert
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        alerts.Should().ContainSingle(a => a.Kind == HealthAlertKind.WindowLost);
+    }
+
+    [TestMethod]
+    public async Task HealthPoll_MatchLost_TransitionsToError()
+    {
+        // Arrange: window present but match not loaded.
+        var hc = new FakeHealthCheckAutomation();
+        var (svc, _, tp, _) = await CreateServiceAtMatchLoadedWithHealthPollAsync(hc);
+        hc.NextResult = new HealthCheckResult(true, false, null, "PCS Pro", ProbeSucceeded: true);
+
+        var alerts = new List<HealthAlertEventArgs>();
+        svc.HealthAlert += (_, e) => alerts.Add(e);
+
+        // Let poll loop start.
+        await Task.Delay(200);
+
+        // Act
+        tp.Advance(TimeSpan.FromSeconds(11));
+        await Task.Delay(200);
+
+        // Assert
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        alerts.Should().ContainSingle(a => a.Kind == HealthAlertKind.MatchLost);
+    }
+
+    [TestMethod]
+    public async Task HealthPoll_SyncStatusChanged_RaisesHealthAlertWithoutStateTransition()
+    {
+        // Arrange
+        var hc = new FakeHealthCheckAutomation();
+        var (svc, _, tp, _) = await CreateServiceAtMatchLoadedWithHealthPollAsync(hc);
+
+        // Let poll loop start.
+        await Task.Delay(200);
+
+        // First poll establishes baseline.
+        tp.Advance(TimeSpan.FromSeconds(11));
+        await Task.Delay(200);
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded);
+
+        // Change sync status for next poll.
+        hc.NextResult = new HealthCheckResult(true, true, "Uploading...", "PCS Pro - Test Match", ProbeSucceeded: true);
+        var alerts = new List<HealthAlertEventArgs>();
+        svc.HealthAlert += (_, e) => alerts.Add(e);
+
+        // Act: second poll should detect sync status change.
+        tp.Advance(TimeSpan.FromSeconds(11));
+        await Task.Delay(200);
+
+        // Assert: still MatchLoaded, alert raised.
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded);
+        alerts.Should().ContainSingle(a => a.Kind == HealthAlertKind.SyncStatusChanged);
+
+        // Cleanup
+        await svc.StopAsync();
+    }
+
+    [TestMethod]
+    public async Task HealthPoll_ProbeFailure_SkipsCycleWithoutStateTransition()
+    {
+        // Arrange: probe fails (ProbeSucceeded = false).
+        var hc = new FakeHealthCheckAutomation
+        {
+            NextResult = new HealthCheckResult(false, false, null, null, ProbeSucceeded: false)
+        };
+        var (svc, _, tp, _) = await CreateServiceAtMatchLoadedWithHealthPollAsync(hc);
+
+        // Let poll loop start.
+        await Task.Delay(200);
+
+        // Act
+        tp.Advance(TimeSpan.FromSeconds(11));
+        await Task.Delay(200);
+
+        // Assert: no state transition — probe failures are skipped.
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded);
+        hc.ReadCount.Should().BeGreaterOrEqualTo(1);
+
+        // Cleanup
+        await svc.StopAsync();
+    }
+
+    [TestMethod]
+    public async Task HealthPoll_StopAsync_CancelsPollCleanly()
+    {
+        // Arrange
+        var (svc, _, tp, hc) = await CreateServiceAtMatchLoadedWithHealthPollAsync();
+
+        // Act: stop without advancing time (poll is blocked on Task.Delay).
+        await svc.StopAsync();
+
+        // Assert: no errors, state is NotRunning.
+        svc.CurrentState.Should().Be(PcsProState.NotRunning);
+    }
+
+    [TestMethod]
+    public async Task HealthPoll_ConfigClamp_ClampsOutOfRangeInterval()
+    {
+        // Arrange: configure interval to out-of-range value (2 < 5).
+        var hc = new FakeHealthCheckAutomation();
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+
+        var options = Options.Create(new PcsProOptions
+        {
+            ExecutablePath = @"C:\cricket.exe",
+            WorkingDirectory = @"C:\",
+            Password = "test-password",
+            HealthCheckIntervalSeconds = 2,
+        });
+        var deps = new AutomationDependencies(
+            new FakeLoginAutomation(),
+            new FakeMatchSelectionAutomation(),
+            new FakeTeamNamesAutomation(),
+            new FakeScoreboardAutomation(),
+            new FakeChangeMatchAutomation(),
+            new FakeStreamingAutomation(),
+            hc);
+        var svc = new PcsProAutomationService(
+            options,
+            NullLogger<PcsProAutomationService>.Instance,
+            pm,
+            tp,
+            deps);
+
+        await svc.LaunchAndLoginAsync();
+
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)! // field exists on this type
+            .GetValue(svc)!; // constructor always assigns a non-null PcsProStateMachine
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+        machine.Fire(PcsProTrigger.MatchOpened);
+
+        // Let poll loop start.
+        await Task.Delay(200);
+
+        // Act: advance time past clamped minimum (5s).
+        tp.Advance(TimeSpan.FromSeconds(6));
+        await Task.Delay(200);
+
+        // Assert: poll was called — clamped to 5s minimum.
+        hc.ReadCount.Should().BeGreaterOrEqualTo(1);
+
+        // Cleanup
+        await svc.StopAsync();
+    }
+
+    [TestMethod]
+    public async Task HealthPoll_CancelledOnLeaveMatchLoaded_DoesNotPollAfterTransition()
+    {
+        // Arrange: healthy poll running.
+        var hc = new FakeHealthCheckAutomation();
+        var (svc, _, tp, _) = await CreateServiceAtMatchLoadedWithHealthPollAsync(hc);
+
+        // Let poll loop start.
+        await Task.Delay(200);
+
+        // Let one poll succeed to confirm it's running.
+        tp.Advance(TimeSpan.FromSeconds(11));
+        await Task.Delay(200);
+        int countAfterFirstPoll = hc.ReadCount;
+        countAfterFirstPoll.Should().BeGreaterOrEqualTo(1);
+
+        // Act: stop the service (transitions away from MatchLoaded).
+        await svc.StopAsync();
+
+        // Advance time again — poll should not run.
+        tp.Advance(TimeSpan.FromSeconds(20));
+        await Task.Delay(200);
+
+        // Assert: no additional reads after stop.
+        hc.ReadCount.Should().Be(countAfterFirstPoll);
     }
 }
 

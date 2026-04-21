@@ -33,4 +33,10 @@ internal sealed class PcsProOptions
     /// Configurable via the <c>PcsPro:LoginScreenTimeoutSeconds</c> configuration key.
     /// </summary>
     public int LoginScreenTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// Interval in seconds between health-check poll cycles.
+    /// Clamped to [5, 60] at poll start; out-of-range values produce a warning log.
+    /// </summary>
+    public int HealthCheckIntervalSeconds { get; set; } = 10;
 }

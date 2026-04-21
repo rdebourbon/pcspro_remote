@@ -44,8 +44,14 @@ public class MockPcsProAutomationService : IPcsProAutomationService
 
     public event EventHandler<PcsProState>? StateChanged;
 
+    /// <inheritdoc/>
+    public event EventHandler<HealthAlertEventArgs>? HealthAlert;
+
     protected virtual void OnStateChanged(PcsProState state) =>
         StateChanged?.Invoke(this, state);
+
+    protected virtual void OnHealthAlert(HealthAlertEventArgs args) =>
+        HealthAlert?.Invoke(this, args);
 
     public async Task LaunchAndLoginAsync(CancellationToken ct = default)
     {

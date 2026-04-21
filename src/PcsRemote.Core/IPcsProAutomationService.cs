@@ -32,6 +32,13 @@ public interface IPcsProAutomationService
     event EventHandler<PcsProState> StateChanged;
 
     /// <summary>
+    /// Raised by the health-check poll when a monitored PCS Pro signal changes.
+    /// State transitions (window-lost, match-lost) also flow through <see cref="StateChanged"/>;
+    /// this event provides additional diagnostic context.
+    /// </summary>
+    event EventHandler<HealthAlertEventArgs> HealthAlert;
+
+    /// <summary>
     /// Launches PCS Pro and drives through login to the match selection screen.
     /// Accepts an optional <paramref name="ct"/> to cancel the operation.
     /// </summary>

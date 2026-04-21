@@ -12,7 +12,7 @@ namespace PcsRemote.Automation;
 /// Implements process launch, main window detection, crash watching, stop (S-002),
 /// login automation (S-003), match selection (S-004), team name extraction (S-005),
 /// scoreboard refresh, capture, and change-match (S-006), streaming (S-009),
-/// and use-current-match attach (S-011).
+/// use-current-match attach (S-011), and health-check poll (S-012).
 /// </summary>
 internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsyncDisposable
 {
@@ -26,6 +26,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     private readonly IScoreboardAutomation _scoreboardAutomation;
     private readonly IChangeMatchAutomation _changeMatchAutomation;
     private readonly IStreamingAutomation _streamingAutomation;
+    private readonly IHealthCheckAutomation _healthCheckAutomation;
     private readonly PcsProStateMachine _stateMachine;
 
     /// <summary>
@@ -43,6 +44,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// into a lifecycle method.
     /// </summary>
     private readonly ConcurrentQueue<PcsProState> _pendingTransitions = new();
+    private readonly ConcurrentQueue<HealthAlertEventArgs> _pendingHealthAlerts = new();
 
     private IProcessHandle? _process;
     private CancellationTokenSource? _crashWatcherCts;
@@ -50,6 +52,10 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     private string? _lastErrorReason;
     private MatchInfo? _loadedMatch;
     private MatchInfo? _pendingLoadedMatch;
+
+    private CancellationTokenSource? _healthPollCts;
+    private Task? _healthPollTask;
+    private HealthCheckResult? _lastHealthCheck;
 
     /// <summary>
     /// 0 = idle, 1 = a match-selection lifecycle operation is in progress.
@@ -89,6 +95,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         _scoreboardAutomation = automationDependencies.ScoreboardAutomation;
         _changeMatchAutomation = automationDependencies.ChangeMatchAutomation;
         _streamingAutomation = automationDependencies.StreamingAutomation;
+        _healthCheckAutomation = automationDependencies.HealthCheckAutomation;
 
         _stateMachine = new PcsProStateMachine();
         _stateMachine.OnTransitioned(newState =>
@@ -97,11 +104,13 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             {
                 _loadedMatch = _pendingLoadedMatch;
                 _pendingLoadedMatch = null;
+                StartHealthPoll();
             }
             else
             {
                 _loadedMatch = null;
                 _pendingLoadedMatch = null;
+                CancelHealthPoll();
             }
 
             _logger.LogInformation("State transition → {State}", newState);
@@ -120,6 +129,9 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
 
     /// <inheritdoc/>
     public event EventHandler<PcsProState>? StateChanged;
+
+    /// <inheritdoc/>
+    public event EventHandler<HealthAlertEventArgs>? HealthAlert;
 
     /// <inheritdoc/>
     public async Task LaunchAndLoginAsync(CancellationToken ct = default)
@@ -173,6 +185,9 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
 
         if (CurrentState == PcsProState.NotRunning)
             return;
+
+        // Stop health poll BEFORE acquiring _operationLock (avoids deadlock with CancelHealthPoll).
+        await StopHealthPollAsync().ConfigureAwait(false);
 
         // Cancel and await crash watcher BEFORE killing the process (§3.3, AC-11).
         if (_crashWatcherCts is not null)
@@ -236,6 +251,8 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
+        await StopHealthPollAsync().ConfigureAwait(false);
+
         if (_crashWatcherCts is not null)
         {
             _crashWatcherCts.Cancel();
@@ -451,6 +468,215 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     {
         while (_pendingTransitions.TryDequeue(out var state))
             StateChanged?.Invoke(this, state);
+    }
+
+    /// <summary>
+    /// Drains <see cref="_pendingHealthAlerts"/> and raises <see cref="HealthAlert"/> for each.
+    /// Must be called outside <see cref="_operationLock"/> to prevent re-entrant deadlock.
+    /// </summary>
+    private void FlushHealthAlertEvents()
+    {
+        while (_pendingHealthAlerts.TryDequeue(out var alert))
+            HealthAlert?.Invoke(this, alert);
+    }
+
+    // ---- S-012: Health-check poll -----------------------------------------
+
+    /// <summary>
+    /// Starts the periodic health poll. Called from <c>OnTransitioned</c> when entering
+    /// <see cref="PcsProState.MatchLoaded"/>. Fire-and-forget — the loop runs on a pooled thread.
+    /// </summary>
+    private void StartHealthPoll()
+    {
+        _healthPollCts?.Dispose();
+        _lastHealthCheck = null;
+        var cts = new CancellationTokenSource();
+        _healthPollCts = cts;
+        _healthPollTask = Task.Run(() => HealthPollLoopAsync(cts.Token));
+        _logger.LogDebug("Health poll started");
+    }
+
+    /// <summary>
+    /// Cancels the health poll without awaiting completion. Safe to call from the
+    /// synchronous <c>OnTransitioned</c> callback that runs inside <see cref="_operationLock"/>.
+    /// </summary>
+    private void CancelHealthPoll()
+    {
+        _healthPollCts?.Cancel();
+        _logger.LogDebug("Health poll cancel requested");
+    }
+
+    /// <summary>
+    /// Cancels and awaits completion of the health poll, then disposes the CTS.
+    /// Called from <see cref="StopAsync"/> and <see cref="DisposeAsync"/> BEFORE
+    /// acquiring <see cref="_operationLock"/> to prevent deadlock.
+    /// </summary>
+    private async Task StopHealthPollAsync()
+    {
+        if (_healthPollCts is not null)
+        {
+            _healthPollCts.Cancel();
+            if (_healthPollTask is not null)
+                await _healthPollTask.ConfigureAwait(false);
+            _healthPollCts.Dispose();
+            _healthPollCts = null;
+            _healthPollTask = null;
+        }
+    }
+
+    /// <summary>
+    /// Periodic poll loop that reads health signals and fires state transitions
+    /// when PCS Pro signals are lost.
+    /// </summary>
+    private async Task HealthPollLoopAsync(CancellationToken ct)
+    {
+        var interval = ResolveHealthCheckInterval();
+        _logger.LogInformation("Health poll loop running with interval {IntervalSeconds}s",
+            (int)interval.TotalSeconds);
+
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(interval, _timeProvider, ct).ConfigureAwait(false);
+
+                var result = TryReadHealthProbe();
+                if (result is null)
+                    continue;
+
+                var action = EvaluateHealthProbeResult(result);
+                if (action == HealthProbeAction.Timeout)
+                {
+                    string reason = result.IsMainWindowPresent
+                        ? "Match no longer loaded"
+                        : "PCS Pro main window lost";
+                    _logger.LogWarning("Health poll: {Reason}", reason);
+                    await FireHealthTimeoutAsync(reason, result, ct).ConfigureAwait(false);
+                    return;
+                }
+
+                FlushHealthAlertEvents();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal shutdown — CancelHealthPoll or StopHealthPollAsync signalled.
+        }
+
+        _logger.LogDebug("Health poll loop exited");
+    }
+
+    /// <summary>
+    /// Resolves and clamps the configured health-check interval to [5, 60] seconds.
+    /// </summary>
+    private TimeSpan ResolveHealthCheckInterval()
+    {
+        int intervalSeconds = _options.HealthCheckIntervalSeconds;
+        if (intervalSeconds < 5 || intervalSeconds > 60)
+        {
+            _logger.LogWarning(
+                "HealthCheckIntervalSeconds {ConfiguredValue} out of range [5,60]; clamping",
+                intervalSeconds);
+            intervalSeconds = Math.Clamp(intervalSeconds, 5, 60);
+        }
+
+        return TimeSpan.FromSeconds(intervalSeconds);
+    }
+
+    /// <summary>
+    /// Attempts to read health signals under the CAS guard. Returns <see langword="null"/>
+    /// if the guard could not be acquired or the probe failed.
+    /// </summary>
+    private HealthCheckResult? TryReadHealthProbe()
+    {
+        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
+        {
+            _logger.LogDebug("Health poll skipped — FlaUI operation in progress");
+            return null;
+        }
+
+        HealthCheckResult result;
+        try
+        {
+            result = _healthCheckAutomation.ReadHealthSignals();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+        }
+
+        if (!result.ProbeSucceeded)
+        {
+            _logger.LogDebug("Health probe failed — skipping this cycle");
+            return null;
+        }
+
+        return result;
+    }
+
+    private enum HealthProbeAction { Continue, Timeout }
+
+    /// <summary>
+    /// Compares a successful probe result against the previous baseline and enqueues
+    /// informational alerts. Returns whether a state transition is needed.
+    /// </summary>
+    private HealthProbeAction EvaluateHealthProbeResult(HealthCheckResult result)
+    {
+        var previous = _lastHealthCheck;
+        _lastHealthCheck = result;
+
+        if (previous is not null && result.SyncStatus != previous.SyncStatus)
+        {
+            _pendingHealthAlerts.Enqueue(new HealthAlertEventArgs(
+                HealthAlertKind.SyncStatusChanged,
+                $"Sync status changed: '{previous.SyncStatus}' → '{result.SyncStatus}'",
+                result));
+        }
+
+        if (!result.IsMainWindowPresent || !result.IsMatchLoaded)
+            return HealthProbeAction.Timeout;
+
+        return HealthProbeAction.Continue;
+    }
+
+    /// <summary>
+    /// Acquires <see cref="_operationLock"/>, fires <see cref="PcsProTrigger.Timeout"/> if the
+    /// state machine is not already in a terminal state, enqueues a <see cref="HealthAlert"/>
+    /// event, and flushes both queues outside the lock.
+    /// </summary>
+    private async Task FireHealthTimeoutAsync(string reason, HealthCheckResult result, CancellationToken ct)
+    {
+        try
+        {
+            await _operationLock.WaitAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        try
+        {
+            var state = _stateMachine.CurrentState;
+            if (state is PcsProState.NotRunning or PcsProState.Error)
+                return;
+
+            _lastErrorReason = reason;
+
+            var alertKind = result.IsMainWindowPresent
+                ? HealthAlertKind.MatchLost
+                : HealthAlertKind.WindowLost;
+
+            _pendingHealthAlerts.Enqueue(new HealthAlertEventArgs(alertKind, reason, result));
+            _stateMachine.Fire(PcsProTrigger.Timeout);
+        }
+        finally
+        {
+            _operationLock.Release();
+        }
+
+        FlushStateChangedEvents();
+        FlushHealthAlertEvents();
     }
 
     private async Task WatchForCrashAsync(IProcessHandle process, CancellationToken crashCt)
