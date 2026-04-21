@@ -160,7 +160,9 @@ Note: This step uses the current `string` return type. The structured return typ
 
 ## Tier 3 — Can-Defer
 
-### S-010 — Team Names Structured Return Type
+### S-010 — Team Names Structured Return Type ✅
+
+**Delivered:** `40412e0` | **Spec:** SPEC-S-010 v0.3 APPROVED
 
 **What changes:** The team names automation interface return type changes from a bare string to a structured type containing both club name and team name. This is a Core interface change that propagates to all implementations and consumers.
 
