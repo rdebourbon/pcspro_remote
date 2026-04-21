@@ -17,7 +17,7 @@ public sealed class MatchRowParserTests
 
         success.Should().BeTrue();
         result.Should().NotBeNull();
-        result!.HomeTeam.Should().Be("Ashtead CC 1st XI");
+        result!.HomeTeam.Should().Be("Ashtead CC 1st XI"); // NotBeNull() above guarantees non-null
         result.AwayTeam.Should().Be("Reigate CC 1st XI");
         result.MatchType.Should().Be("League");
         result.MatchDate.Should().Be(new DateOnly(2025, 6, 15));
@@ -31,7 +31,7 @@ public sealed class MatchRowParserTests
         MatchRowParser.TryParse(row, out var result);
 
         result.Should().NotBeNull();
-        result!.MatchId.Should().Be("2025-06-15_Home XI_Away XI_Club T20");
+        result!.MatchId.Should().Be("2025-06-15_Home XI_Away XI_Club T20"); // NotBeNull() above guarantees non-null
     }
 
     [TestMethod]
@@ -43,7 +43,7 @@ public sealed class MatchRowParserTests
 
         success.Should().BeTrue();
         result.Should().NotBeNull();
-        result!.HomeTeam.Should().Be("Team A");
+        result!.HomeTeam.Should().Be("Team A"); // NotBeNull() above guarantees non-null
         result.AwayTeam.Should().Be("Team B");
         result.MatchType.Should().Be("Friendly");
         result.MatchDate.Should().Be(new DateOnly(2025, 1, 1));
@@ -92,6 +92,33 @@ public sealed class MatchRowParserTests
     {
         // US date format should fail — expects dd/MM/yyyy
         var success = MatchRowParser.TryParse("06/15/2025|Team A|Team B|Comp|League", out var result);
+
+        success.Should().BeFalse();
+        result.Should().BeNull();
+    }
+
+    [TestMethod]
+    public void TryParse_WhenHomeTeamEmpty_ReturnsFalse()
+    {
+        var success = MatchRowParser.TryParse("15/06/2025||Away XI|Comp|League", out var result);
+
+        success.Should().BeFalse();
+        result.Should().BeNull();
+    }
+
+    [TestMethod]
+    public void TryParse_WhenAwayTeamEmpty_ReturnsFalse()
+    {
+        var success = MatchRowParser.TryParse("15/06/2025|Home XI||Comp|League", out var result);
+
+        success.Should().BeFalse();
+        result.Should().BeNull();
+    }
+
+    [TestMethod]
+    public void TryParse_WhenMatchTypeEmpty_ReturnsFalse()
+    {
+        var success = MatchRowParser.TryParse("15/06/2025|Home XI|Away XI|Comp|", out var result);
 
         success.Should().BeFalse();
         result.Should().BeNull();

@@ -312,7 +312,7 @@ internal static class UIAutomationHelpers
     /// Safely gets the <c>Name</c> property of an automation element.
     /// Returns an empty string if the property is unavailable or throws.
     /// </summary>
-    private static string SafeGetName(AutomationElement element)
+    internal static string SafeGetName(AutomationElement element)
     {
         try
         {
@@ -321,6 +321,109 @@ internal static class UIAutomationHelpers
         catch
         {
             return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> if the element's <c>Name</c> matches any of the provided known dialog names
+    /// (using ordinal comparison) or if it contains a password field (login dialog detection).
+    /// Must not throw — probe semantics.
+    /// </summary>
+    internal static bool IsKnownDialog(AutomationElement childWindow, ConditionFactory cf)
+    {
+        try
+        {
+            var name = childWindow.Name;
+            if (string.Equals(name, KnownElements.MatchSelectionDialogName, StringComparison.Ordinal) ||
+                string.Equals(name, KnownElements.MatchDetailsDialogName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+        catch
+        {
+            // Name may throw on stale element
+        }
+
+        try
+        {
+            var passwordField = FindDescendant(
+                childWindow,
+                cf.ByAutomationId(KnownElements.LoginPasswordFieldAutomationId));
+            return passwordField != null;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Finds and closes the first unexpected (non-known) dialog attached to the main window.
+    /// Tries button close order: Cancel → Close → OK → any button. Best-effort, never throws.
+    /// </summary>
+    internal static void TryCloseFirstUnexpectedDialog(
+        AutomationElement window,
+        ConditionFactory cf,
+        ILogger? logger = null)
+    {
+        try
+        {
+            var childWindows = FindAllDescendants(window, cf.ByControlType(ControlType.Window));
+
+            foreach (var childWindow in childWindows)
+            {
+                if (IsKnownDialog(childWindow, cf))
+                {
+                    continue;
+                }
+
+                logger?.LogWarning(
+                    "Attempting to close unexpected dialog: {DialogName}",
+                    SafeGetName(childWindow));
+
+                var closeBtn = FindButtonByChildText(childWindow, "Cancel", cf, logger)
+                    ?? FindButtonByChildText(childWindow, "Close", cf, logger)
+                    ?? FindButtonByChildText(childWindow, "OK", cf, logger)
+                    ?? FindDescendant(childWindow, cf.ByControlType(ControlType.Button));
+
+                if (closeBtn != null)
+                {
+                    InvokeButtonSafely(closeBtn, logger);
+                }
+
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger?.LogDebug(ex, "TryCloseFirstUnexpectedDialog failed with exception");
+        }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> if any non-known dialog is present as a child window.
+    /// Must not throw — probe semantics.
+    /// </summary>
+    internal static bool HasUnexpectedDialog(AutomationElement window, ConditionFactory cf)
+    {
+        try
+        {
+            var childWindows = FindAllDescendants(window, cf.ByControlType(ControlType.Window));
+
+            foreach (var childWindow in childWindows)
+            {
+                if (!IsKnownDialog(childWindow, cf))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
         }
     }
 }

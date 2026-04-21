@@ -62,6 +62,7 @@ internal static class KnownElements
     // Venue(5), State(6), Video?(7), Source(8), Live Scorer(9), Dwnld Reqd?(10)
     public const int GridColumnTeam1 = 1;
     public const int GridColumnTeam2 = 2;
+    public const int GridColumnMatchType = 4;
 
     // ── Match Loaded State ───────────────────────────────────────────────
     // twdScoreSummary is a match-loaded detection signal only — it is NOT
@@ -93,6 +94,10 @@ internal static class KnownElements
     // scoreboard panel for screen-grabbing.
     public const string MainScoreboardToolWindowName = "Main Scoreboard";
     public const string RefreshAllScoreboardsMenuItemName = "Refresh all Scoreboards";
+    public const string ToolWindowClassName = "ToolWindow";
+    public const string SettingsPopupButtonClassName = "PopupButton";
+    public const string SettingsHelpTextPrefix = "Settings";
+    public const string ReplayScreenPreviewAutomationId = "ReplayScreenPreview";
 
     // ── Streaming Overlay (auto-hide tab on the right) ───────────────────
     public const string StreamingOverlayTabAutomationId =
@@ -101,5 +106,4 @@ internal static class KnownElements
     // ── Step 5: Change Match (File → Open Match... re-use) ───────────────
     // Change match uses File → Open Match... (same as Step 2). No separate element needed.
     public const string FileMenuAutomationId = "mnuFile";
-    public const string ChangeMatchElementAutomationId = "btnOpenMatch";
 }

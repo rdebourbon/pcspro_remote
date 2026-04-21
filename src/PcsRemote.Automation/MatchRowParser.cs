@@ -16,7 +16,6 @@ internal static class MatchRowParser
     private const char Delimiter = '|';
     private const int MinSegmentCount = 5;
     private const int DateColumnIndex = 0;
-    private const int MatchTypeColumnIndex = 4;
     private const string DateFormat = "dd/MM/yyyy";
     private static readonly CultureInfo EnGb = CultureInfo.GetCultureInfo("en-GB");
 
@@ -55,7 +54,13 @@ internal static class MatchRowParser
 
         var homeTeam = segments[KnownElements.GridColumnTeam1].Trim();
         var awayTeam = segments[KnownElements.GridColumnTeam2].Trim();
-        var matchType = segments[MatchTypeColumnIndex].Trim();
+        var matchType = segments[KnownElements.GridColumnMatchType].Trim();
+
+        if (string.IsNullOrEmpty(homeTeam) || string.IsNullOrEmpty(awayTeam) || string.IsNullOrEmpty(matchType))
+        {
+            return false;
+        }
+
         var matchId = $"{matchDate:yyyy-MM-dd}_{homeTeam}_{awayTeam}_{matchType}";
 
         result = new MatchInfo(matchId, homeTeam, awayTeam, matchType, matchDate);

@@ -143,25 +143,7 @@ internal sealed class FlaUiLoginAutomation : ILoginAutomation
                 return false;
             }
 
-            var cf = _locator.Automation.ConditionFactory;
-            var childWindows = UIAutomationHelpers.FindAllDescendants(window, cf.ByControlType(ControlType.Window));
-
-            foreach (var childWindow in childWindows)
-            {
-                if (IsMatchSelectionDialog(childWindow))
-                {
-                    continue;
-                }
-
-                if (IsLoginDialog(childWindow, cf))
-                {
-                    continue;
-                }
-
-                return true;
-            }
-
-            return false;
+            return UIAutomationHelpers.HasUnexpectedDialog(window, _locator.Automation.ConditionFactory);
         }
         catch (Exception ex)
         {
@@ -181,70 +163,12 @@ internal sealed class FlaUiLoginAutomation : ILoginAutomation
                 return;
             }
 
-            var cf = _locator.Automation.ConditionFactory;
-            var childWindows = UIAutomationHelpers.FindAllDescendants(window, cf.ByControlType(ControlType.Window));
-
-            foreach (var childWindow in childWindows)
-            {
-                if (IsMatchSelectionDialog(childWindow) || IsLoginDialog(childWindow, cf))
-                {
-                    continue;
-                }
-
-                _logger.LogWarning("Attempting to close unexpected dialog: {DialogName}", SafeGetName(childWindow));
-
-                var closeBtn = UIAutomationHelpers.FindButtonByChildText(childWindow, "Cancel", cf, _logger)
-                    ?? UIAutomationHelpers.FindButtonByChildText(childWindow, "Close", cf, _logger)
-                    ?? UIAutomationHelpers.FindButtonByChildText(childWindow, "OK", cf, _logger)
-                    ?? UIAutomationHelpers.FindDescendant(childWindow, cf.ByControlType(ControlType.Button));
-
-                if (closeBtn != null)
-                {
-                    UIAutomationHelpers.InvokeButtonSafely(closeBtn, _logger);
-                }
-
-                return;
-            }
+            UIAutomationHelpers.TryCloseFirstUnexpectedDialog(
+                window, _locator.Automation.ConditionFactory, _logger);
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "TryCloseUnexpectedDialog failed with exception");
-        }
-    }
-
-    private static bool IsMatchSelectionDialog(AutomationElement childWindow)
-    {
-        try
-        {
-            return string.Equals(
-                childWindow.Name,
-                KnownElements.MatchSelectionDialogName,
-                StringComparison.Ordinal);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool IsLoginDialog(AutomationElement childWindow, FlaUI.Core.Conditions.ConditionFactory cf)
-    {
-        var passwordField = UIAutomationHelpers.FindDescendant(
-            childWindow,
-            cf.ByAutomationId(KnownElements.LoginPasswordFieldAutomationId));
-
-        return passwordField != null;
-    }
-
-    private static string SafeGetName(AutomationElement element)
-    {
-        try
-        {
-            return element.Name ?? string.Empty;
-        }
-        catch
-        {
-            return string.Empty;
         }
     }
 }

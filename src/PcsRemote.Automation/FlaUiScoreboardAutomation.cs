@@ -16,10 +16,8 @@ namespace PcsRemote.Automation;
 internal sealed class FlaUiScoreboardAutomation : IScoreboardAutomation
 {
     private const int PopupDelayMs = 500;
-    private const string SettingsPopupButtonClassName = "PopupButton";
-    private const string SettingsHelpTextPrefix = "Settings";
-    private const string ToolWindowClassName = "ToolWindow";
-    private const string ReplayScreenPreviewAutomationId = "ReplayScreenPreview";
+    private const int ActivationSettleMs = 300;
+    private const int FocusSettleMs = 100;
 
     private readonly PcsProWindowLocator _locator;
     private readonly ILogger<FlaUiScoreboardAutomation> _logger;
@@ -45,7 +43,7 @@ internal sealed class FlaUiScoreboardAutomation : IScoreboardAutomation
 
         var scoreboardPane = FindMainScoreboardPane(window, cf);
         UIAutomationHelpers.ActivateToolWindow(scoreboardPane, cf, _logger);
-        Thread.Sleep(300);
+        Thread.Sleep(ActivationSettleMs);
 
         var container = UIAutomationHelpers.WalkUpToClassName(scoreboardPane, "ToolWindowContainer")
             ?? scoreboardPane;
@@ -109,12 +107,12 @@ internal sealed class FlaUiScoreboardAutomation : IScoreboardAutomation
 
         var scoreboardPane = FindMainScoreboardPane(window, cf);
         UIAutomationHelpers.ActivateToolWindow(scoreboardPane, cf, _logger);
-        Thread.Sleep(300);
+        Thread.Sleep(ActivationSettleMs);
 
         // Prefer ReplayScreenPreview (content only) over ToolWindow (includes chrome)
         var captureTarget = UIAutomationHelpers.FindDescendant(
             scoreboardPane,
-            cf.ByAutomationId(ReplayScreenPreviewAutomationId))
+            cf.ByAutomationId(KnownElements.ReplayScreenPreviewAutomationId))
             ?? scoreboardPane;
 
         var bounds = captureTarget.BoundingRectangle;
@@ -129,7 +127,7 @@ internal sealed class FlaUiScoreboardAutomation : IScoreboardAutomation
 
         using var ms = new MemoryStream();
         var encoder = GetJpegEncoder();
-        var encoderParams = new EncoderParameters(1);
+        using var encoderParams = new EncoderParameters(1);
         encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)_scoreboardOptions.JpegQuality);
         bitmap.Save(ms, encoder, encoderParams);
 
@@ -155,22 +153,7 @@ internal sealed class FlaUiScoreboardAutomation : IScoreboardAutomation
                 return false;
             }
 
-            var cf = _locator.Automation.ConditionFactory;
-            var childWindows = UIAutomationHelpers.FindAllDescendants(
-                window,
-                cf.ByControlType(ControlType.Window));
-
-            foreach (var childWindow in childWindows)
-            {
-                if (IsKnownDialog(childWindow, cf))
-                {
-                    continue;
-                }
-
-                return true;
-            }
-
-            return false;
+            return UIAutomationHelpers.HasUnexpectedDialog(window, _locator.Automation.ConditionFactory);
         }
         catch (Exception ex)
         {
@@ -190,34 +173,8 @@ internal sealed class FlaUiScoreboardAutomation : IScoreboardAutomation
                 return;
             }
 
-            var cf = _locator.Automation.ConditionFactory;
-            var childWindows = UIAutomationHelpers.FindAllDescendants(
-                window,
-                cf.ByControlType(ControlType.Window));
-
-            foreach (var childWindow in childWindows)
-            {
-                if (IsKnownDialog(childWindow, cf))
-                {
-                    continue;
-                }
-
-                _logger.LogWarning(
-                    "Attempting to close unexpected dialog: {DialogName}",
-                    SafeGetName(childWindow));
-
-                var closeBtn = UIAutomationHelpers.FindButtonByChildText(childWindow, "Cancel", cf, _logger)
-                    ?? UIAutomationHelpers.FindButtonByChildText(childWindow, "Close", cf, _logger)
-                    ?? UIAutomationHelpers.FindButtonByChildText(childWindow, "OK", cf, _logger)
-                    ?? UIAutomationHelpers.FindDescendant(childWindow, cf.ByControlType(ControlType.Button));
-
-                if (closeBtn != null)
-                {
-                    UIAutomationHelpers.InvokeButtonSafely(closeBtn, _logger);
-                }
-
-                return;
-            }
+            UIAutomationHelpers.TryCloseFirstUnexpectedDialog(
+                window, _locator.Automation.ConditionFactory, _logger);
         }
         catch (Exception ex)
         {
@@ -233,12 +190,12 @@ internal sealed class FlaUiScoreboardAutomation : IScoreboardAutomation
     {
         var allToolWindows = UIAutomationHelpers.FindAllDescendants(
             window,
-            cf.ByClassName(ToolWindowClassName));
+            cf.ByClassName(KnownElements.ToolWindowClassName));
 
         // Primary match: Name contains both "Main" and "Scoreboard"
         foreach (var tw in allToolWindows)
         {
-            var name = SafeGetName(tw);
+            var name = UIAutomationHelpers.SafeGetName(tw);
             if (name.Contains("Main", StringComparison.OrdinalIgnoreCase) &&
                 name.Contains("Scoreboard", StringComparison.OrdinalIgnoreCase))
             {
@@ -249,7 +206,7 @@ internal sealed class FlaUiScoreboardAutomation : IScoreboardAutomation
         // Fallback: any ToolWindow with "Scoreboard" in name
         foreach (var tw in allToolWindows)
         {
-            var name = SafeGetName(tw);
+            var name = UIAutomationHelpers.SafeGetName(tw);
             if (name.Contains("Scoreboard", StringComparison.OrdinalIgnoreCase))
             {
                 return tw;
@@ -277,13 +234,13 @@ internal sealed class FlaUiScoreboardAutomation : IScoreboardAutomation
         {
             try
             {
-                if (btn.ClassName == SettingsPopupButtonClassName)
+                if (btn.ClassName == KnownElements.SettingsPopupButtonClassName)
                 {
                     try
                     {
                         var helpText = btn.HelpText;
                         if (helpText != null &&
-                            helpText.Contains(SettingsHelpTextPrefix, StringComparison.OrdinalIgnoreCase))
+                            helpText.Contains(KnownElements.SettingsHelpTextPrefix, StringComparison.OrdinalIgnoreCase))
                         {
                             return btn;
                         }
@@ -347,7 +304,7 @@ internal sealed class FlaUiScoreboardAutomation : IScoreboardAutomation
         try
         {
             button.Focus();
-            Thread.Sleep(100);
+            Thread.Sleep(FocusSettleMs);
             button.Click();
             Thread.Sleep(PopupDelayMs);
             if (IsPopupVisible(cf))
@@ -360,19 +317,8 @@ internal sealed class FlaUiScoreboardAutomation : IScoreboardAutomation
             // Fall through
         }
 
-        // Strategy 4: Direct mouse click at bounding rect center
-        try
-        {
-            var rect = button.BoundingRectangle;
-            var centerX = (int)(rect.X + rect.Width / 2);
-            var centerY = (int)(rect.Y + rect.Height / 2);
-            FlaUI.Core.Input.Mouse.Click(new Point(centerX, centerY));
-            Thread.Sleep(PopupDelayMs);
-        }
-        catch
-        {
-            // All strategies exhausted
-        }
+        throw new InvalidOperationException(
+            "Failed to open settings popup — all strategies exhausted and popup not visible.");
     }
 
     private bool IsPopupVisible(FlaUI.Core.Conditions.ConditionFactory cf)
@@ -408,30 +354,6 @@ internal sealed class FlaUiScoreboardAutomation : IScoreboardAutomation
         return false;
     }
 
-    private static bool IsKnownDialog(AutomationElement childWindow, FlaUI.Core.Conditions.ConditionFactory cf)
-    {
-        try
-        {
-            var name = childWindow.Name;
-            if (string.Equals(name, KnownElements.MatchSelectionDialogName, StringComparison.Ordinal) ||
-                string.Equals(name, KnownElements.MatchDetailsDialogName, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-        catch
-        {
-            // Fall through
-        }
-
-        // Login dialog identified by password field
-        var passwordField = UIAutomationHelpers.FindDescendant(
-            childWindow,
-            cf.ByAutomationId(KnownElements.LoginPasswordFieldAutomationId));
-
-        return passwordField != null;
-    }
-
     private static ImageCodecInfo GetJpegEncoder()
     {
         var encoders = ImageCodecInfo.GetImageEncoders();
@@ -444,17 +366,5 @@ internal sealed class FlaUiScoreboardAutomation : IScoreboardAutomation
         }
 
         throw new InvalidOperationException("JPEG encoder not found.");
-    }
-
-    private static string SafeGetName(AutomationElement element)
-    {
-        try
-        {
-            return element.Name ?? string.Empty;
-        }
-        catch
-        {
-            return string.Empty;
-        }
     }
 }

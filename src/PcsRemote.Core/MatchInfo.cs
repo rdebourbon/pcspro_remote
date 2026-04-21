@@ -6,7 +6,7 @@ namespace PcsRemote.Core;
 /// by GetTodaysMatchesAsync; their defaults are sentinels — not valid fixture data.
 /// </summary>
 /// <param name="MatchId">
-/// Uniquely identifies the match. When populated by <see cref="PcsRemote.Automation.MatchRowParser"/>,
+/// Uniquely identifies the match. When populated by <c>MatchRowParser</c> in the Automation layer,
 /// this is a synthesized composite key (e.g., "2024-06-15_Home XI_Away XI_Club T20") — not a
 /// PlayCricket fixture identifier.
 /// </param>

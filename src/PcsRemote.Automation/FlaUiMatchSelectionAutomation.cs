@@ -105,27 +105,7 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
                 return false;
             }
 
-            var cf = _locator.Automation.ConditionFactory;
-            var childWindows = UIAutomationHelpers.FindAllDescendants(
-                window,
-                cf.ByControlType(ControlType.Window));
-
-            foreach (var childWindow in childWindows)
-            {
-                if (IsMatchSelectionDialog(childWindow))
-                {
-                    continue;
-                }
-
-                if (IsLoginDialog(childWindow, cf))
-                {
-                    continue;
-                }
-
-                return true;
-            }
-
-            return false;
+            return UIAutomationHelpers.HasUnexpectedDialog(window, _locator.Automation.ConditionFactory);
         }
         catch (Exception ex)
         {
@@ -145,34 +125,8 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
                 return;
             }
 
-            var cf = _locator.Automation.ConditionFactory;
-            var childWindows = UIAutomationHelpers.FindAllDescendants(
-                window,
-                cf.ByControlType(ControlType.Window));
-
-            foreach (var childWindow in childWindows)
-            {
-                if (IsMatchSelectionDialog(childWindow) || IsLoginDialog(childWindow, cf))
-                {
-                    continue;
-                }
-
-                _logger.LogWarning(
-                    "Attempting to close unexpected dialog: {DialogName}",
-                    SafeGetName(childWindow));
-
-                var closeBtn = UIAutomationHelpers.FindButtonByChildText(childWindow, "Cancel", cf, _logger)
-                    ?? UIAutomationHelpers.FindButtonByChildText(childWindow, "Close", cf, _logger)
-                    ?? UIAutomationHelpers.FindButtonByChildText(childWindow, "OK", cf, _logger)
-                    ?? UIAutomationHelpers.FindDescendant(childWindow, cf.ByControlType(ControlType.Button));
-
-                if (closeBtn != null)
-                {
-                    UIAutomationHelpers.InvokeButtonSafely(closeBtn, _logger);
-                }
-
-                return;
-            }
+            UIAutomationHelpers.TryCloseFirstUnexpectedDialog(
+                window, _locator.Automation.ConditionFactory, _logger);
         }
         catch (Exception ex)
         {
@@ -204,7 +158,7 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
         foreach (var row in rows)
         {
             var textElements = UIAutomationHelpers.FindAllDescendants(row, cf.ByControlType(ControlType.Text));
-            var cellValues = textElements.Select(t => SafeGetName(t));
+            var cellValues = textElements.Select(t => UIAutomationHelpers.SafeGetName(t));
             result.Add(string.Join("|", cellValues));
         }
 
@@ -444,6 +398,9 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
             "Spinner did not clear within {TimeoutMs}ms after {Context}",
             SpinnerTimeoutMs,
             context);
+
+        throw new InvalidOperationException(
+            $"Spinner did not clear within {SpinnerTimeoutMs}ms after {context}.");
     }
 
     private AutomationElement FindMatchingRow(
@@ -461,9 +418,9 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
                 continue;
             }
 
-            string team1 = SafeGetName(textElements[KnownElements.GridColumnTeam1]);
-            string team2 = SafeGetName(textElements[KnownElements.GridColumnTeam2]);
-            string matchType = SafeGetName(textElements[4]);
+            string team1 = UIAutomationHelpers.SafeGetName(textElements[KnownElements.GridColumnTeam1]);
+            string team2 = UIAutomationHelpers.SafeGetName(textElements[KnownElements.GridColumnTeam2]);
+            string matchType = UIAutomationHelpers.SafeGetName(textElements[KnownElements.GridColumnMatchType]);
 
             if (string.Equals(team1, match.HomeTeam, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(team2, match.AwayTeam, StringComparison.OrdinalIgnoreCase) &&
@@ -493,41 +450,5 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
         }
 
         row.Click();
-    }
-
-    private static bool IsMatchSelectionDialog(AutomationElement childWindow)
-    {
-        try
-        {
-            return string.Equals(
-                childWindow.Name,
-                KnownElements.MatchSelectionDialogName,
-                StringComparison.Ordinal);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool IsLoginDialog(AutomationElement childWindow, FlaUI.Core.Conditions.ConditionFactory cf)
-    {
-        var passwordField = UIAutomationHelpers.FindDescendant(
-            childWindow,
-            cf.ByAutomationId(KnownElements.LoginPasswordFieldAutomationId));
-
-        return passwordField != null;
-    }
-
-    private static string SafeGetName(AutomationElement element)
-    {
-        try
-        {
-            return element.Name ?? string.Empty;
-        }
-        catch
-        {
-            return string.Empty;
-        }
     }
 }
