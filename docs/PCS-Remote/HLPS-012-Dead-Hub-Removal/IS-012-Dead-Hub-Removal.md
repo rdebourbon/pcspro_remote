@@ -2,7 +2,7 @@
 
 | Field       | Value |
 |-------------|-------|
-| **Status**  | APPROVED |
+| **Status**  | COMPLETE |
 | **HLPS**    | HLPS-012-Dead-Hub-Removal (APPROVED) |
 | **Author**  | Copilot |
 | **Created** | 2026-04-21 |
@@ -59,6 +59,21 @@ This IS delivers HLPS-012 in two atomic steps. The ordering is strict: the safet
 | GPT 5.4 | APPROVE | R1 fix verified — AddSignalR conditionality correctly expressed. No regressions, no new findings. |
 
 **Result:** Unanimous approval (2/2). Document status → APPROVED.
+
+## Impact Assessment
+
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Source files (hub/broadcaster) | 6 | 0 | -6 |
+| Test files (hub/broadcaster) | 5 | 0 | -5 |
+| New files (StaleDescriptionCleaner) | 0 | 2 | +2 |
+| Total tests | 703 | 685 | -18 |
+| Lines of code (net) | — | — | -445 |
+| Build warnings | 0 | 0 | 0 |
+| AddSignalR() | Present | Removed | R-1 fallback not needed |
+| Package references removed | 0 | 0 | None required |
+
+**Disposition:** `AddSignalR()` was removed successfully. `AddServerSideBlazor()` registers SignalR services internally, so `MapBlazorHub()` continues to work. All 19 E2E tests pass including cross-circuit sync (TC-1–TC-3).
 
 ---
 
