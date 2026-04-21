@@ -17,4 +17,5 @@ public enum PcsProTrigger
     UnexpectedDialog,
     Retry,
     AttachToMatch,
+    Dismiss,
 }

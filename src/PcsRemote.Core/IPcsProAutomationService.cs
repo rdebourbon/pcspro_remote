@@ -129,4 +129,14 @@ public interface IPcsProAutomationService
     /// Accepts an optional <paramref name="ct"/> to cancel the operation.
     /// </summary>
     Task<MatchTeams> UseCurrentMatchAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Dismisses the current error state, transitioning from <see cref="PcsProState.Error"/>
+    /// to <see cref="PcsProState.NotRunning"/> without restarting any automation sequence.
+    /// Unlike <see cref="RetryAsync"/>, dismiss returns the system to a quiescent state only.
+    /// Throws <see cref="InvalidOperationException"/> if the current state is not
+    /// <see cref="PcsProState.Error"/>.
+    /// Accepts an optional <paramref name="ct"/> to cancel the operation.
+    /// </summary>
+    Task DismissAsync(CancellationToken ct = default);
 }

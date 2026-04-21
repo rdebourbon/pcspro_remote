@@ -31,6 +31,7 @@ public sealed class PcsProStateMachineTests
     [DataRow(PcsProState.MatchLoaded,             PcsProTrigger.ChangeMatch,        PcsProState.MatchSelection,         DisplayName = "MatchLoaded + ChangeMatch → MatchSelection")]
     [DataRow(PcsProState.MatchLoaded,             PcsProTrigger.Stop,               PcsProState.NotRunning,             DisplayName = "MatchLoaded + Stop → NotRunning")]
     [DataRow(PcsProState.Error,                   PcsProTrigger.Retry,              PcsProState.NotRunning,             DisplayName = "Error + Retry → NotRunning")]
+    [DataRow(PcsProState.Error,                   PcsProTrigger.Dismiss,            PcsProState.NotRunning,             DisplayName = "Error + Dismiss → NotRunning")]
     [DataRow(PcsProState.NotRunning,              PcsProTrigger.AttachToMatch,       PcsProState.MatchLoaded,            DisplayName = "NotRunning + AttachToMatch → MatchLoaded")]
     public void ValidDeterministicTransition_ProducesExpectedDestination(
         PcsProState from, PcsProTrigger trigger, PcsProState expected)
@@ -81,6 +82,13 @@ public sealed class PcsProStateMachineTests
     [DataRow(PcsProState.MatchSelection,          PcsProTrigger.AttachToMatch,  DisplayName = "MatchSelection + AttachToMatch is invalid")]
     [DataRow(PcsProState.MatchSelectionSearching, PcsProTrigger.AttachToMatch,  DisplayName = "MatchSelectionSearching + AttachToMatch is invalid")]
     [DataRow(PcsProState.MatchSelectionReady,     PcsProTrigger.AttachToMatch,  DisplayName = "MatchSelectionReady + AttachToMatch is invalid")]
+    [DataRow(PcsProState.NotRunning,              PcsProTrigger.Dismiss,        DisplayName = "NotRunning + Dismiss is invalid")]
+    [DataRow(PcsProState.Launching,               PcsProTrigger.Dismiss,        DisplayName = "Launching + Dismiss is invalid")]
+    [DataRow(PcsProState.LoginScreen,             PcsProTrigger.Dismiss,        DisplayName = "LoginScreen + Dismiss is invalid")]
+    [DataRow(PcsProState.MatchSelection,          PcsProTrigger.Dismiss,        DisplayName = "MatchSelection + Dismiss is invalid")]
+    [DataRow(PcsProState.MatchSelectionSearching, PcsProTrigger.Dismiss,        DisplayName = "MatchSelectionSearching + Dismiss is invalid")]
+    [DataRow(PcsProState.MatchSelectionReady,     PcsProTrigger.Dismiss,        DisplayName = "MatchSelectionReady + Dismiss is invalid")]
+    [DataRow(PcsProState.MatchLoaded,             PcsProTrigger.Dismiss,        DisplayName = "MatchLoaded + Dismiss is invalid")]
     public void InvalidTrigger_ThrowsInvalidOperationException(PcsProState from, PcsProTrigger trigger)
     {
         var sut = BuildMachineAt(from);

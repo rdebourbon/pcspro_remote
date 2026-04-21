@@ -89,6 +89,7 @@ public sealed class PcsProStateMachine
             .Permit(PcsProTrigger.Timeout, PcsProState.Error);
 
         _machine.Configure(PcsProState.Error)
-            .Permit(PcsProTrigger.Retry, PcsProState.NotRunning);
+            .Permit(PcsProTrigger.Retry, PcsProState.NotRunning)
+            .Permit(PcsProTrigger.Dismiss, PcsProState.NotRunning);
     }
 }
