@@ -62,4 +62,11 @@ internal interface IMatchSelectionAutomation
     /// Returns <see langword="false"/> when not yet loaded. Does not throw.
     /// </summary>
     bool IsMatchLoaded();
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the PCS Pro main window is found and accessible.
+    /// Returns <see langword="false"/> when the process is not running or the window is not available.
+    /// Does not throw.
+    /// </summary>
+    bool IsMainWindowPresent();
 }

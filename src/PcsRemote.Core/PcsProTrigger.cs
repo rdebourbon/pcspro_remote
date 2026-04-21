@@ -16,4 +16,5 @@ public enum PcsProTrigger
     Timeout,
     UnexpectedDialog,
     Retry,
+    AttachToMatch,
 }

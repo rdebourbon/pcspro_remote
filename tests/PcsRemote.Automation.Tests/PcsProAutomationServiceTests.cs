@@ -1942,6 +1942,148 @@ public sealed class PcsProAutomationServiceTests
         fake.ClickStopLiveStreamCalled.Should().BeFalse(
             because: "StopStreamingAsync should be a no-op when not streaming");
     }
+
+    // -----------------------------------------------------------------------
+    // S-011 — UseCurrentMatchAsync
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task UseCurrentMatchAsync_HappyPath_TransitionsToMatchLoadedAndReturnsTeams()
+    {
+        // Arrange: service in NotRunning, window present, match loaded.
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MainWindowPresent = true, MatchLoaded = true };
+        var fakeTeams = new FakeTeamNamesAutomation();
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+        var svc = CreateService(pm, tp, matchSelectionAutomation: fakeMatchSel, teamNamesAutomation: fakeTeams);
+
+        // Act
+        var result = await svc.UseCurrentMatchAsync();
+
+        // Assert (AC-1, AC-2, AC-3, AC-4)
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded);
+        result.Home.TeamName.Should().NotBeEmpty();
+        result.Away.TeamName.Should().NotBeEmpty();
+    }
+
+    [TestMethod]
+    public async Task UseCurrentMatchAsync_HappyPath_LoadedMatchIsNull()
+    {
+        // Arrange (AC-8)
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MainWindowPresent = true, MatchLoaded = true };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+        var svc = CreateService(pm, tp, matchSelectionAutomation: fakeMatchSel);
+
+        // Act
+        await svc.UseCurrentMatchAsync();
+
+        // Assert
+        svc.LoadedMatch.Should().BeNull(because: "attach flow has no MatchInfo");
+    }
+
+    [TestMethod]
+    public async Task UseCurrentMatchAsync_MainWindowNotFound_ThrowsIOE()
+    {
+        // Arrange (AC-5)
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MainWindowPresent = false };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+        var svc = CreateService(pm, tp, matchSelectionAutomation: fakeMatchSel);
+
+        // Act
+        var act = () => svc.UseCurrentMatchAsync();
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*not running*");
+        svc.CurrentState.Should().Be(PcsProState.NotRunning);
+    }
+
+    [TestMethod]
+    public async Task UseCurrentMatchAsync_NoMatchLoaded_ThrowsIOE()
+    {
+        // Arrange (AC-6)
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MainWindowPresent = true, MatchLoaded = false };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+        var svc = CreateService(pm, tp, matchSelectionAutomation: fakeMatchSel);
+
+        // Act
+        var act = () => svc.UseCurrentMatchAsync();
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*No match is currently loaded*");
+        svc.CurrentState.Should().Be(PcsProState.NotRunning);
+    }
+
+    [TestMethod]
+    public async Task UseCurrentMatchAsync_WrongState_ThrowsIOE()
+    {
+        // Arrange (AC-7): service at MatchSelection, not NotRunning.
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync();
+
+        // Act
+        var act = () => svc.UseCurrentMatchAsync();
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*requires state NotRunning*");
+    }
+
+    [TestMethod]
+    public async Task UseCurrentMatchAsync_ConcurrentOperation_ThrowsIOE()
+    {
+        // Arrange (AC-11): simulate lock held by a slow team names read.
+        var slowTeams = new SlowOpenTeamsDialogFake();
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MainWindowPresent = true, MatchLoaded = true };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+        var svc = CreateService(pm, tp, matchSelectionAutomation: fakeMatchSel, teamNamesAutomation: slowTeams);
+
+        // Start one UseCurrentMatchAsync — will block at OpenTeamsDialog.
+        var firstCall = Task.Run(() => svc.UseCurrentMatchAsync());
+        await slowTeams.Started.WaitAsync(); // ensure first call has acquired the guard
+
+        // Act: second concurrent call.
+        var act = () => svc.UseCurrentMatchAsync();
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already in progress*");
+
+        // Cleanup
+        slowTeams.Release();
+        await firstCall.IgnoreErrorAsync();
+    }
+
+    [TestMethod]
+    public async Task UseCurrentMatchAsync_TeamNameReadFails_TransitionsToErrorAndReturnsSentinel()
+    {
+        // Arrange (AC-12): team names throw after successful attach.
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MainWindowPresent = true, MatchLoaded = true };
+        var fakeTeams = new FakeTeamNamesAutomation { ThrowOnReadHomeTeamName = true };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+        var svc = CreateService(pm, tp, matchSelectionAutomation: fakeMatchSel, teamNamesAutomation: fakeTeams);
+
+        // Act
+        var result = await svc.UseCurrentMatchAsync();
+
+        // Assert: state transitions to Error, sentinel MatchTeams returned.
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        result.Home.TeamName.Should().BeEmpty();
+        result.Away.TeamName.Should().BeEmpty();
+        result.Home.ClubName.Should().BeEmpty();
+        result.Away.ClubName.Should().BeEmpty();
+    }
 }
 
 // -----------------------------------------------------------------------
@@ -1966,6 +2108,7 @@ internal sealed class SpinnerDropsAfterNCallsFake : IMatchSelectionAutomation
     public IReadOnlyList<string> ReadDataGridRowTexts() => [];
     public void SelectAndOpenMatch(PcsRemote.Core.MatchInfo match) { }
     public bool IsMatchLoaded() => false;
+    public bool IsMainWindowPresent() => true;
 }
 
 /// <summary>
@@ -1982,6 +2125,7 @@ internal sealed class ReadDataGridThrowsFake : IMatchSelectionAutomation
         throw new InvalidOperationException("ReadDataGridThrowsFake: element not found");
     public void SelectAndOpenMatch(PcsRemote.Core.MatchInfo match) { }
     public bool IsMatchLoaded() => false;
+    public bool IsMainWindowPresent() => true;
 }
 
 internal static class TaskExtensions

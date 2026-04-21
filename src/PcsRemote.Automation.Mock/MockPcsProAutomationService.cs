@@ -288,6 +288,32 @@ public class MockPcsProAutomationService : IPcsProAutomationService
         await LaunchAndLoginAsync(ct);
     }
 
+    public Task<MatchTeams> UseCurrentMatchAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("UseCurrentMatchAsync starting from {State}", _currentState);
+
+        if (!_semaphore.Wait(0))
+            throw new InvalidOperationException("A lifecycle operation is already in progress.");
+
+        try
+        {
+            if (_currentState != PcsProState.NotRunning)
+                throw new InvalidOperationException(
+                    $"UseCurrentMatchAsync requires NotRunning state; current state is {_currentState}.");
+
+            // Mock: transition directly to MatchLoaded. LoadedMatch remains null (AC-8).
+            Transition(PcsProState.MatchLoaded);
+            _logger.LogInformation("UseCurrentMatchAsync complete — reached {State}", PcsProState.MatchLoaded);
+            return Task.FromResult(new MatchTeams(
+                new TeamNameInfo("Home CC", "Home XI"),
+                new TeamNameInfo("Away CC", "Away XI")));
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
     public Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);

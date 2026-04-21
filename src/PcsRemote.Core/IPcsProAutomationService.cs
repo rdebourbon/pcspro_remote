@@ -20,8 +20,9 @@ public interface IPcsProAutomationService
 
     /// <summary>
     /// Gets the currently loaded match when state is <see cref="PcsProState.MatchLoaded"/>,
-    /// or <see langword="null"/> otherwise. Cleared on any state transition away from
-    /// <see cref="PcsProState.MatchLoaded"/>.
+    /// or <see langword="null"/> otherwise. Also <see langword="null"/> after
+    /// <see cref="UseCurrentMatchAsync"/> (attach flow provides no <see cref="MatchInfo"/>).
+    /// Cleared on any state transition away from <see cref="PcsProState.MatchLoaded"/>.
     /// </summary>
     MatchInfo? LoadedMatch { get; }
 
@@ -109,4 +110,16 @@ public interface IPcsProAutomationService
     /// Accepts an optional <paramref name="ct"/> to cancel the operation.
     /// </summary>
     Task StopStreamingAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Attaches to an already-running PCS Pro instance that has a match loaded,
+    /// transitioning from <see cref="PcsProState.NotRunning"/> to <see cref="PcsProState.MatchLoaded"/>.
+    /// Verifies PCS Pro is running and a match is loaded, fires the <see cref="PcsProTrigger.AttachToMatch"/>
+    /// trigger, then reads and returns team names.
+    /// Throws <see cref="InvalidOperationException"/> if PCS Pro is not running, no match is loaded,
+    /// or the current state is not <see cref="PcsProState.NotRunning"/>.
+    /// <see cref="LoadedMatch"/> remains <see langword="null"/> after a successful attach.
+    /// Accepts an optional <paramref name="ct"/> to cancel the operation.
+    /// </summary>
+    Task<MatchTeams> UseCurrentMatchAsync(CancellationToken ct = default);
 }

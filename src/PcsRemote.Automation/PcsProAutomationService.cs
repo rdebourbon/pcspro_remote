@@ -11,7 +11,8 @@ namespace PcsRemote.Automation;
 /// FlaUI-based implementation of <see cref="IPcsProAutomationService"/>.
 /// Implements process launch, main window detection, crash watching, stop (S-002),
 /// login automation (S-003), match selection (S-004), team name extraction (S-005),
-/// and scoreboard refresh, capture, and change-match (S-006).
+/// scoreboard refresh, capture, and change-match (S-006), streaming (S-009),
+/// and use-current-match attach (S-011).
 /// </summary>
 internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsyncDisposable
 {
@@ -1383,5 +1384,119 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
 
         _logger.LogInformation("StopStreamingAsync completed successfully");
+    }
+
+    /// <inheritdoc/>
+    public async Task<MatchTeams> UseCurrentMatchAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("UseCurrentMatchAsync starting; current state {State}", CurrentState);
+
+        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
+            throw new InvalidOperationException(
+                "A match-loaded operation is already in progress.");
+
+        try
+        {
+            return await UseCurrentMatchCoreAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+        }
+    }
+
+    private async Task<MatchTeams> UseCurrentMatchCoreAsync(CancellationToken ct)
+    {
+        if (_stateMachine.CurrentState != PcsProState.NotRunning)
+            throw new InvalidOperationException(
+                $"UseCurrentMatchAsync requires state {PcsProState.NotRunning} " +
+                $"but current state is {_stateMachine.CurrentState}.");
+
+        // Step 2: Verify PCS Pro is running by locating the main window.
+        if (!_matchSelectionAutomation.IsMainWindowPresent())
+            throw new InvalidOperationException(
+                "PCS Pro is not running — cannot attach to current match.");
+
+        // Step 3: Verify a match is loaded.
+        if (!_matchSelectionAutomation.IsMatchLoaded())
+            throw new InvalidOperationException(
+                "No match is currently loaded in PCS Pro — cannot attach.");
+
+        ct.ThrowIfCancellationRequested();
+
+        // Step 4: Fire AttachToMatch (NotRunning → MatchLoaded).
+        // _pendingLoadedMatch is intentionally NOT set — LoadedMatch remains null (AC-8).
+        await FireUnderLockAsync(PcsProTrigger.AttachToMatch).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "UseCurrentMatchAsync attached — state {State}, reading team names", CurrentState);
+
+        // Step 5: Read team names using existing flow.
+        return await ReadTeamNamesAfterAttachAsync(ct).ConfigureAwait(false);
+    }
+
+    private async Task<MatchTeams> ReadTeamNamesAfterAttachAsync(CancellationToken ct)
+    {
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+
+            try
+            {
+                _teamNamesAutomation.OpenTeamsDialog();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "UseCurrentMatchAsync: failed to open teams dialog");
+                _teamNamesAutomation.TryCloseTeamsDialog();
+                await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "Teams dialog failed to open after attach").ConfigureAwait(false);
+                return new MatchTeams(
+                    new TeamNameInfo(string.Empty, string.Empty),
+                    new TeamNameInfo(string.Empty, string.Empty));
+            }
+
+            ct.ThrowIfCancellationRequested();
+
+            if (_teamNamesAutomation.IsUnexpectedDialogPresent())
+            {
+                _logger.LogWarning("UseCurrentMatchAsync: unexpected dialog detected after opening teams dialog");
+                _teamNamesAutomation.TryCloseUnexpectedDialog();
+                _teamNamesAutomation.TryCloseTeamsDialog();
+                await FireErrorUnderLockAsync(PcsProTrigger.UnexpectedDialog, "Unexpected dialog blocked team name extraction after attach").ConfigureAwait(false);
+                return new MatchTeams(
+                    new TeamNameInfo(string.Empty, string.Empty),
+                    new TeamNameInfo(string.Empty, string.Empty));
+            }
+
+            TeamNameInfo homeTeam;
+            TeamNameInfo awayTeam;
+            try
+            {
+                homeTeam = _teamNamesAutomation.ReadHomeTeamName();
+                awayTeam = _teamNamesAutomation.ReadAwayTeamName();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "UseCurrentMatchAsync: failed to read team names after attach");
+                _teamNamesAutomation.TryCloseTeamsDialog();
+                await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "Team names could not be read after attach").ConfigureAwait(false);
+                return new MatchTeams(
+                    new TeamNameInfo(string.Empty, string.Empty),
+                    new TeamNameInfo(string.Empty, string.Empty));
+            }
+
+            _teamNamesAutomation.TryCloseTeamsDialog();
+            _logger.LogInformation(
+                "UseCurrentMatchAsync succeeded — Home={HomeClub}/{HomeTeam} Away={AwayClub}/{AwayTeam}",
+                homeTeam.ClubName, homeTeam.TeamName, awayTeam.ClubName, awayTeam.TeamName);
+            return new MatchTeams(homeTeam, awayTeam);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("UseCurrentMatchAsync cancelled during team name read");
+            _teamNamesAutomation.TryCloseTeamsDialog();
+            await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "UseCurrentMatchAsync was cancelled").ConfigureAwait(false);
+            throw;
+        }
     }
 }

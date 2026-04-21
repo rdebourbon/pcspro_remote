@@ -29,6 +29,12 @@ internal sealed class FakeMatchSelectionAutomation : IMatchSelectionAutomation
     public bool MatchLoaded { get; set; } = true;
 
     /// <summary>
+    /// Controls whether <see cref="IsMainWindowPresent"/> returns <see langword="true"/>.
+    /// Defaults to <see langword="true"/> (window found — happy path).
+    /// </summary>
+    public bool MainWindowPresent { get; set; } = true;
+
+    /// <summary>
     /// The row texts returned by <see cref="ReadDataGridRowTexts"/>.
     /// Defaults to an empty list; set in tests that need parseable rows.
     /// </summary>
@@ -93,4 +99,7 @@ internal sealed class FakeMatchSelectionAutomation : IMatchSelectionAutomation
 
     /// <inheritdoc/>
     public bool IsMatchLoaded() => MatchLoaded;
+
+    /// <inheritdoc/>
+    public bool IsMainWindowPresent() => MainWindowPresent;
 }

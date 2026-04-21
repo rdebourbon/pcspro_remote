@@ -31,6 +31,7 @@ public sealed class PcsProStateMachineTests
     [DataRow(PcsProState.MatchLoaded,             PcsProTrigger.ChangeMatch,        PcsProState.MatchSelection,         DisplayName = "MatchLoaded + ChangeMatch → MatchSelection")]
     [DataRow(PcsProState.MatchLoaded,             PcsProTrigger.Stop,               PcsProState.NotRunning,             DisplayName = "MatchLoaded + Stop → NotRunning")]
     [DataRow(PcsProState.Error,                   PcsProTrigger.Retry,              PcsProState.NotRunning,             DisplayName = "Error + Retry → NotRunning")]
+    [DataRow(PcsProState.NotRunning,              PcsProTrigger.AttachToMatch,       PcsProState.MatchLoaded,            DisplayName = "NotRunning + AttachToMatch → MatchLoaded")]
     public void ValidDeterministicTransition_ProducesExpectedDestination(
         PcsProState from, PcsProTrigger trigger, PcsProState expected)
     {
@@ -70,9 +71,16 @@ public sealed class PcsProStateMachineTests
     // ──────────────────────────────────────────────────────────────────────
 
     [TestMethod]
-    [DataRow(PcsProState.NotRunning,  PcsProTrigger.LoginDetected, DisplayName = "NotRunning + LoginDetected is invalid")]
-    [DataRow(PcsProState.MatchLoaded, PcsProTrigger.Launch,        DisplayName = "MatchLoaded + Launch is invalid")]
-    [DataRow(PcsProState.Launching,   PcsProTrigger.MatchOpened,   DisplayName = "Launching + MatchOpened is invalid")]
+    [DataRow(PcsProState.NotRunning,  PcsProTrigger.LoginDetected,  DisplayName = "NotRunning + LoginDetected is invalid")]
+    [DataRow(PcsProState.MatchLoaded, PcsProTrigger.Launch,         DisplayName = "MatchLoaded + Launch is invalid")]
+    [DataRow(PcsProState.Launching,   PcsProTrigger.MatchOpened,    DisplayName = "Launching + MatchOpened is invalid")]
+    [DataRow(PcsProState.MatchLoaded,             PcsProTrigger.AttachToMatch,  DisplayName = "MatchLoaded + AttachToMatch is invalid")]
+    [DataRow(PcsProState.Launching,               PcsProTrigger.AttachToMatch,  DisplayName = "Launching + AttachToMatch is invalid")]
+    [DataRow(PcsProState.Error,                   PcsProTrigger.AttachToMatch,  DisplayName = "Error + AttachToMatch is invalid")]
+    [DataRow(PcsProState.LoginScreen,             PcsProTrigger.AttachToMatch,  DisplayName = "LoginScreen + AttachToMatch is invalid")]
+    [DataRow(PcsProState.MatchSelection,          PcsProTrigger.AttachToMatch,  DisplayName = "MatchSelection + AttachToMatch is invalid")]
+    [DataRow(PcsProState.MatchSelectionSearching, PcsProTrigger.AttachToMatch,  DisplayName = "MatchSelectionSearching + AttachToMatch is invalid")]
+    [DataRow(PcsProState.MatchSelectionReady,     PcsProTrigger.AttachToMatch,  DisplayName = "MatchSelectionReady + AttachToMatch is invalid")]
     public void InvalidTrigger_ThrowsInvalidOperationException(PcsProState from, PcsProTrigger trigger)
     {
         var sut = BuildMachineAt(from);

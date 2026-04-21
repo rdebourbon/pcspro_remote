@@ -54,7 +54,8 @@ public sealed class PcsProStateMachine
     private void ConfigureTransitions()
     {
         _machine.Configure(PcsProState.NotRunning)
-            .Permit(PcsProTrigger.Launch, PcsProState.Launching);
+            .Permit(PcsProTrigger.Launch, PcsProState.Launching)
+            .Permit(PcsProTrigger.AttachToMatch, PcsProState.MatchLoaded);
 
         _machine.Configure(PcsProState.Launching)
             .Permit(PcsProTrigger.LoginDetected, PcsProState.LoginScreen)

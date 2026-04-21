@@ -232,6 +232,20 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
         }
     }
 
+    /// <inheritdoc/>
+    public bool IsMainWindowPresent()
+    {
+        try
+        {
+            return _locator.FindMainWindow() is not null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "IsMainWindowPresent failed with exception");
+            return false;
+        }
+    }
+
     // ── Private helpers ──────────────────────────────────────────────────
 
     private void NavigateToOpenMatchDialog(AutomationElement window, FlaUI.Core.Conditions.ConditionFactory cf)
