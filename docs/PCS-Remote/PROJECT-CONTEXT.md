@@ -24,15 +24,16 @@ High Halstow Cricket Club (HHCC) operates a garage PC that automates setup of li
 
 ```
 Operator Browser (Chrome/Edge, local network)
-        │ HTTP + WebSocket (SignalR / Blazor Server circuit)
+        │ HTTP + WebSocket (Blazor Server circuit)
         ▼
 ASP.NET Core + Blazor Server
   ├── Blazor UI Components (Radzen, real-time, interactive)
-  ├── SignalR Hub (scoreboard image broadcast, explicit events)
+  ├── Singleton Services (state sync via events + InvokeAsync)
   ├── PCS Pro Automation Service
   │     ├── State Machine (Stateless NuGet)
   │     ├── Scoreboard Capture (FlaUI Capture.Rectangle, DPI-aware)
   │     └── FlaUI (UIA3 automation)
+  ├── YouTube Live Stream Service (Data API v3, OAuth2)
   ├── System Tray Host (NotifyIcon, manual mode toggle)
   └── Configuration & Logging (Serilog)
         │ UIAutomation3 COM API
@@ -55,7 +56,7 @@ LED Scoreboard
 
 5. **FlaUI `Capture.Rectangle()`**: DPI-aware screen capture using FlaUI's built-in `Capture.Rectangle(bounds)` method. The process calls `SetProcessDPIAware()` at startup so UIA `BoundingRectangle` coordinates and screen capture use physical pixels consistently. Captures the `ReplayScreenPreview` element content (not the ToolWindow chrome) and encodes as JPEG.
 
-6. **Blazor circuit-based scoreboard delivery**: Scoreboard images are distributed via a shared singleton service event (`ScoreboardUpdated`). Each `ScoreboardPreview` component subscribes to this event and re-renders via `InvokeAsync(StateHasChanged)` on its own Blazor circuit. This is idiomatic for Blazor Server, avoids a separate hub, and is sufficient for the local-network single-machine deployment. Late joiners read the service's cached current image on `OnInitializedAsync`. The `PcsProHub` remains for state-change broadcast and future non-Blazor consumers of state events; it is not used for image data.
+6. **Blazor circuit-based state delivery**: All cross-circuit state synchronisation uses the standard Blazor Server pattern — singleton service events with `InvokeAsync(StateHasChanged)`. Scoreboard images, automation state, operation status, and manual mode are all distributed this way. The framework's built-in `/_blazor` SignalR connection handles UI diff pushes. No custom SignalR hub is needed (HLPS-012 removed the dead hub infrastructure).
 
 7. **System tray hosting with manual mode**: Console app with NotifyIcon. Manual mode toggle pauses remote automation for local PCS Pro use. Auto-started via Task Scheduler.
 
@@ -67,7 +68,7 @@ LED Scoreboard
 |---|---|---|---|
 | Runtime | .NET | 8 LTS | PRD specification; long-term support |
 | Web Framework | ASP.NET Core + Blazor Server | 8.0 | Real-time by default; server-side automation access |
-| Real-time | SignalR | (built into ASP.NET Core 8) | Native Blazor transport; explicit hub for images |
+| Real-time | SignalR | (built into ASP.NET Core 8) | Native Blazor Server transport; no custom hub |
 | UI Components | Radzen Blazor | Latest stable | Full component library with theming and layout; replaces Bootstrap |
 | UI Automation | FlaUI | Latest stable | UIA3 — modern, robust, WPF-native |
 | State Machine | Stateless | Latest stable | Lightweight, declarative state machine |
@@ -142,15 +143,20 @@ PCS_Remote/
 
 ## 7. HLPS Roadmap
 
-| # | HLPS | Problem Area | Dependencies |
-|---|---|---|---|
-| 1 | HLPS-001-Foundation | Project scaffolding, domain model, state machine | None |
-| 2 | HLPS-002-Mock-Service | Development without PCS Pro | HLPS-001 |
-| 3 | HLPS-003-Web-Control-Panel | Real-time browser-based control panel | HLPS-002 |
-| 4 | HLPS-004-Scoreboard | Live scoreboard preview and operator controls | HLPS-003 |
-| 5 | HLPS-005-Hardening | System tray, manual mode, multi-user, errors | HLPS-003 |
-| 6 | HLPS-006-FlaUI-Integration | Real PCS Pro automation | HLPS-001 |
-| 7 | HLPS-007-Deployment | Task Scheduler, production readiness | HLPS-005, HLPS-006 |
+| # | HLPS | Problem Area | Dependencies | Status |
+|---|---|---|---|---|
+| 1 | HLPS-001-Foundation | Project scaffolding, domain model, state machine | None | ✅ Complete |
+| 2 | HLPS-002-Mock-Service | Development without PCS Pro | HLPS-001 | ✅ Complete |
+| 3 | HLPS-003-Web-Control-Panel | Real-time browser-based control panel | HLPS-002 | ✅ Complete |
+| 4 | HLPS-004-Scoreboard | Live scoreboard preview and operator controls | HLPS-003 | ✅ Complete |
+| 5 | HLPS-005-Hardening | System tray, manual mode, multi-user, errors | HLPS-003 | ✅ Complete |
+| 6 | HLPS-006-FlaUI-Integration | Real PCS Pro automation | HLPS-001 | ✅ Complete |
+| 7 | HLPS-007-Deployment | Task Scheduler, production readiness | HLPS-005, HLPS-006 | ✅ Complete |
+| 8 | HLPS-008-YouTube-LiveStream | YouTube Data API v3, broadcast lifecycle | HLPS-003 | ✅ Complete |
+| 9 | HLPS-009-PCSPro-Streaming-Automation | PCS Pro Start/Stop Live Stream FlaUI | HLPS-006, HLPS-008 | ✅ Complete |
+| 10 | HLPS-010-Automation-Hardening | Diagnostic porting, health-check, use-current-match | HLPS-006 | ✅ Complete |
+| 11 | HLPS-011-Operational-UX | Error dismissal, status banner, automation log, debug section | HLPS-003 | ✅ Complete |
+| 12 | HLPS-012-Dead-Hub-Removal | Remove dead SignalR hub infrastructure | HLPS-011 | ✅ Complete |
 
 ---
 
@@ -169,4 +175,4 @@ PCS_Remote/
 
 ---
 
-*Shared reference document for PCS Remote Phase 1. Updated 2026-04-10.*
+*Shared reference document for PCS Remote Phase 1. Updated 2026-04-21.*

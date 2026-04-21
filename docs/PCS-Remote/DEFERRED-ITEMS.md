@@ -2,7 +2,7 @@
 
 This document tracks all deferred functionality, accepted risks, and future work items identified during development. Items are sourced from HLPS/IS/Spec reviews, adversarial code reviews, and feature gap discovery during diagnostic testing.
 
-**Last updated:** 2026-04-21 (IS-010 COMPLETE)
+**Last updated:** 2026-04-21 (HLPS-012 COMPLETE)
 
 ---
 
@@ -12,15 +12,15 @@ Discovered during hands-on testing against real PCS Pro on the garage PC. Full d
 
 | ID | Title | Source | Assigned HLPS | Status |
 |---|---|---|---|---|
-| GAP-001 | Debug / Advanced Menu in Web UI | User observation | Deferred to HLPS-011 | ❌ Not started |
-| GAP-002 | Switch User / Re-Login | User observation | Deferred to HLPS-011 | ❌ Not started |
-| GAP-003 | Clear Authentication Errors on Web UI | User observation | Deferred to HLPS-011 | ❌ Not started |
+| GAP-001 | Debug / Advanced Menu in Web UI | User observation | ✅ Delivered (HLPS-011 S-007/S-008) | ✅ Complete |
+| GAP-002 | Auto Switch User on Wrong Login | User observation | Unassigned | ❌ Not started |
+| GAP-003 | Clear Authentication Errors on Web UI | User observation | ✅ Delivered (HLPS-011 S-001) | ✅ Complete |
 | GAP-004 | Reusable Safe Interaction Helpers | Diagnostic testing | ✅ Delivered (IS-010 S-002) | ✅ Complete |
-| GAP-005 | Date Filter Override for Testing | Diagnostic testing | Deferred to HLPS-011 | ❌ Not started |
-| GAP-006 | Match Selection — Site/Competition Filter Awareness | Diagnostic testing | Deferred to HLPS-011 | ❌ Not started |
+| GAP-005 | Date Filter Override for Testing | Diagnostic testing | Unassigned | ❌ Not started |
+| GAP-006 | Match Selection — Site/Competition Filter Awareness | Diagnostic testing | Unassigned | ❌ Not started |
 | GAP-007 | Match Selection Grid — Structured Data Extraction | Diagnostic testing | ✅ Delivered (IS-010 S-004) | ✅ Complete |
 | GAP-008 | Title Change Detection — Same Match Type | Diagnostic testing | ✅ Resolved (commit `1129b1f`) | ✅ Complete |
-| GAP-009 | Team Name Display & YouTube Title Formatting Rules | User requirement | Deferred to HLPS-011 | ❌ Not started |
+| GAP-009 | Team Name Display & YouTube Title Formatting Rules | User requirement | Unassigned | ❌ Not started |
 | GAP-010 | "Use Current Match" — Skip Match Selection | User observation | IS-010 S-011 (Tier 3) | ✅ Delivered (`acc0897`) |
 | GAP-011 | Periodic PCS Pro Health-Check Poll | User observation | IS-010 S-012 (Tier 3) | ✅ Delivered (`ee716e0`) |
 
@@ -62,19 +62,18 @@ These are in-scope for IS-010 but marked "Can-Defer" — they can be deferred to
 
 ---
 
-## HLPS-010 Out of Scope → HLPS-011 Candidates
+## HLPS-010 Out of Scope → Remaining Candidates
 
-These were explicitly scoped out of HLPS-010 and earmarked for the next HLPS:
+These were explicitly scoped out of earlier HLPS and remain unassigned:
 
-- GAP-001: Debug/Advanced menu
-- GAP-002: Switch User
-- GAP-003: Clear Auth Errors
-- GAP-005: Date Filter Override
-- GAP-006: Filter Awareness
-- GAP-009: Team Name Formatting rules (HHCC prefix stripping, home team identification)
-- DEF-001: BroadcastTitleRenderer club token integration
-- DEF-002: MatchInfo club name fields
-- DEF-004: Web UI club name display
+- GAP-002: Auto switch user (backend-only — if detected login username ≠ expected, automation uses "Switch User" and re-enters correct credentials; no user prompting)
+- GAP-005: Date filter override (testing convenience)
+- GAP-006: Filter awareness (site/competition filter UI)
+- GAP-009: Team name formatting rules (HHCC prefix stripping, home team identification)
+- GAP-013: YouTube setup tray shortcut (replace `--youtube-setup` CLI with right-click menu item)
+- GAP-015: Club logo PNG (branding — Web UI, favicon, tray icon, installer; awaiting asset)
+- GAP-016: Custom tray host icon (text-based design at 16x16/24x24/32x32)
+- DEF-001/DEF-002/DEF-004: BroadcastTitleRenderer club token integration + Web UI club name display
 
 ---
 
@@ -84,10 +83,10 @@ These were explicitly scoped out of HLPS-010 and earmarked for the next HLPS:
 |---|---|---|---|---|
 | GAP-012 | WiX MSI Installer | Full MSI installer replacing manual setup. Sets environment variables (YouTube API keys, PCS Pro password) at install time, registers Task Scheduler entry, handles upgrades. Replaces HLPS-007 manual deployment model entirely. | HLPS-007 (Deployment) | ❌ Not started |
 | GAP-013 | YouTube Setup Tray Shortcut | Add a right-click context menu item on the tray icon ("YouTube Setup...") that launches the OAuth flow in the default browser. Replaces the current `--youtube-setup` CLI argument approach. | HLPS-011 or HLPS-007 | ❌ Not started |
-| GAP-014 | Disable UI During Automation | Disable all action buttons in the Web UI while any server-side automation command is actively executing (LoadMatch, RefreshScoreboard, StartStreaming, etc.). Prevents conflicting operations. | HLPS-011 | ❌ Not started |
+| GAP-014 | Disable UI During Automation | User observation | ✅ Delivered (HLPS-011 S-005) | ✅ Complete |
 | GAP-015 | Club Logo PNG | Use the proper club logo PNG everywhere: Web UI header/navbar, favicon, tray icon, installer splash. User will provide the file. | HLPS-011 or HLPS-007 | ❌ Not started (awaiting asset) |
 | GAP-016 | Tray Host Icon | Custom .ico for the system tray — simple text-based "PCS Remote" design mimicking the existing PCS Pro icon style. Needs to work at 16x16/24x24/32x32. | HLPS-011 or HLPS-007 | ❌ Not started |
-| GAP-017 | Real-Time Automation Log | Live log panel in the Web UI (under Advanced/Debug section) showing automation steps as they execute. Use SignalR push or polling — latency must be ≤2-3 seconds. Entries like "Clicking Start Live Stream...", "Handling consent dialog...", "Refreshing scoreboard...". | HLPS-011 | ❌ Not started |
+| GAP-017 | Real-Time Automation Log | User observation | ✅ Delivered (HLPS-011 S-003/S-004/S-006) | ✅ Complete |
 
 ---
 
