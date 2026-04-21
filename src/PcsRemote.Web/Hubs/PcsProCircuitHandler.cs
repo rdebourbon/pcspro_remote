@@ -5,8 +5,8 @@ namespace PcsRemote.Web.Hubs;
 
 /// <summary>
 /// Blazor circuit handler that tracks connected browser sessions via <see cref="IConnectionTracker"/>.
-/// Browsers connect to Blazor Server via the <c>/_blazor</c> endpoint, not the SignalR hub, so
-/// connection counting must be done here rather than in <see cref="PcsProHub"/>.
+/// Browsers connect to Blazor Server via the <c>/_blazor</c> endpoint, so
+/// connection counting is done via circuit lifecycle hooks.
 /// </summary>
 public sealed class PcsProCircuitHandler : CircuitHandler
 {

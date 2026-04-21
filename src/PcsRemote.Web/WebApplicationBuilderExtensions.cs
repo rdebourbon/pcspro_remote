@@ -29,7 +29,6 @@ public static class WebApplicationBuilderExtensions
             builder.Services.AddPcsProAutomationService(builder.Configuration);
         else
             builder.Services.AddPcsProAutomation(builder.Configuration);
-        builder.Services.AddSignalR();
         builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
         builder.Services.AddSingleton<IManualModeService, ManualModeService>();
         builder.Services.AddSingleton<IOperationCoordinatorService, OperationCoordinatorService>();
@@ -39,10 +38,7 @@ public static class WebApplicationBuilderExtensions
         builder.Services.AddServerSideBlazor();
         builder.Services.AddScoped<CircuitHandler, PcsProCircuitHandler>();
         builder.Services.AddSingleton<IScoreboardService, ScoreboardService>();
-        builder.Services.AddHostedService<PcsProStateBroadcaster>();
-        builder.Services.AddHostedService<ManualModeBroadcaster>();
-        builder.Services.AddHostedService<OperationInProgressBroadcaster>();
-        builder.Services.AddHostedService<AutomationLogBroadcaster>();
+        builder.Services.AddHostedService<StaleDescriptionCleaner>();
         builder.Services.AddHostedService<ScoreboardPollingService>();
         builder.Services.AddHostedService<AutoLaunchService>();
         // AddApplicationPart ensures _Host.cshtml and Blazor components in PcsRemote.Web
@@ -82,7 +78,6 @@ public static class WebApplicationBuilderExtensions
         app.UseStaticFiles();
         app.UseRouting();
         app.MapBlazorHub();
-        app.MapHub<PcsProHub>("/hubs/pcspro");
         app.MapFallbackToPage("/_Host");
         return app;
     }

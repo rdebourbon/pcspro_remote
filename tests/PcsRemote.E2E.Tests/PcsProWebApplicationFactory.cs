@@ -48,7 +48,7 @@ public sealed class PcsProWebApplicationFactory : WebApplicationFactory<Program>
 
     /// <summary>
     /// The DI service provider for the real Kestrel host — the same container that
-    /// Blazor circuits, SignalR hubs, and hosted services execute within.
+    /// Blazor circuits and hosted services execute within.
     /// Use this (not <c>factory.Services</c>) to resolve singletons shared with the live app.
     /// </summary>
     public IServiceProvider RealServices => _kestrelHost!.Services;
@@ -106,7 +106,7 @@ public sealed class PcsProWebApplicationFactory : WebApplicationFactory<Program>
     /// <para>
     /// <strong>Sync invariant — keep in step with <c>Program.cs</c>:</strong>
     /// Any service registration or middleware added to <c>Program.cs</c> that affects Blazor
-    /// circuit behaviour, SignalR hubs, or state broadcasting must also be added here.
+    /// circuit behaviour or state broadcasting must also be added here.
     /// </para>
     /// <para>
     /// <strong>Deliberate omissions (do not add):</strong>
@@ -148,7 +148,6 @@ public sealed class PcsProWebApplicationFactory : WebApplicationFactory<Program>
         });
 
         builder.Services.AddPcsProAutomationService(builder.Configuration);
-        builder.Services.AddSignalR();
         builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
         builder.Services.AddSingleton<IManualModeService, ManualModeService>();
         builder.Services.AddSingleton<IOperationCoordinatorService, OperationCoordinatorService>();
@@ -157,10 +156,7 @@ public sealed class PcsProWebApplicationFactory : WebApplicationFactory<Program>
             builder.Configuration.GetSection("DebugSection"));
         builder.Services.AddServerSideBlazor();
         builder.Services.AddScoped<CircuitHandler, PcsProCircuitHandler>();
-        builder.Services.AddHostedService<PcsProStateBroadcaster>();
-        builder.Services.AddHostedService<ManualModeBroadcaster>();
-        builder.Services.AddHostedService<OperationInProgressBroadcaster>();
-        builder.Services.AddHostedService<AutomationLogBroadcaster>();
+        builder.Services.AddHostedService<StaleDescriptionCleaner>();
         // AutoLaunchService is intentionally omitted — PcsPro:AutoLaunch=false would
         // prevent it from acting, but omitting it avoids an unnecessary hosted service.
         builder.Services.AddRazorPages();
@@ -191,7 +187,6 @@ public sealed class PcsProWebApplicationFactory : WebApplicationFactory<Program>
         app.UseStaticFiles();
         app.UseRouting();
         app.MapBlazorHub();
-        app.MapHub<PcsProHub>("/hubs/pcspro");
         app.MapFallbackToPage("/_Host");
 
         return app;
