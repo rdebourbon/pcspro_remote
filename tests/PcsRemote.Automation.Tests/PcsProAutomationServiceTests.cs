@@ -44,7 +44,8 @@ public sealed class PcsProAutomationServiceTests
             NullLogger<PcsProAutomationService>.Instance,
             processManager,
             timeProvider,
-            deps);
+            deps,
+            new NullAutomationLogService());
     }
 
     private static PcsProAutomationService CreateServiceWithLoginTimeout(
@@ -73,7 +74,8 @@ public sealed class PcsProAutomationServiceTests
             NullLogger<PcsProAutomationService>.Instance,
             processManager,
             timeProvider,
-            deps);
+            deps,
+            new NullAutomationLogService());
     }
 
     /// <summary>
@@ -689,7 +691,8 @@ public sealed class PcsProAutomationServiceTests
                 new FakeScoreboardAutomation(),
                 new FakeChangeMatchAutomation(),
                 new FakeStreamingAutomation(),
-                new FakeHealthCheckAutomation()));
+                new FakeHealthCheckAutomation()),
+            new NullAutomationLogService());
 
         await svc.LaunchAndLoginAsync();
 
@@ -2126,7 +2129,8 @@ public sealed class PcsProAutomationServiceTests
             NullLogger<PcsProAutomationService>.Instance,
             pm,
             tp,
-            deps);
+            deps,
+            new NullAutomationLogService());
 
         await svc.LaunchAndLoginAsync();
 
@@ -2307,7 +2311,8 @@ public sealed class PcsProAutomationServiceTests
             NullLogger<PcsProAutomationService>.Instance,
             pm,
             tp,
-            deps);
+            deps,
+            new NullAutomationLogService());
 
         await svc.LaunchAndLoginAsync();
 

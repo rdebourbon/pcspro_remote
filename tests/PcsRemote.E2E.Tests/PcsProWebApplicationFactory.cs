@@ -152,11 +152,15 @@ public sealed class PcsProWebApplicationFactory : WebApplicationFactory<Program>
         builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
         builder.Services.AddSingleton<IManualModeService, ManualModeService>();
         builder.Services.AddSingleton<IOperationCoordinatorService, OperationCoordinatorService>();
+        builder.Services.AddSingleton<IAutomationLogService, AutomationLogService>();
+        builder.Services.Configure<DebugSectionOptions>(
+            builder.Configuration.GetSection("DebugSection"));
         builder.Services.AddServerSideBlazor();
         builder.Services.AddScoped<CircuitHandler, PcsProCircuitHandler>();
         builder.Services.AddHostedService<PcsProStateBroadcaster>();
         builder.Services.AddHostedService<ManualModeBroadcaster>();
         builder.Services.AddHostedService<OperationInProgressBroadcaster>();
+        builder.Services.AddHostedService<AutomationLogBroadcaster>();
         // AutoLaunchService is intentionally omitted — PcsPro:AutoLaunch=false would
         // prevent it from acting, but omitting it avoids an unnecessary hosted service.
         builder.Services.AddRazorPages();

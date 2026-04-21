@@ -33,6 +33,7 @@ public sealed class MockServiceCollectionExtensionsTests
         var services = new ServiceCollection();
         services.AddSingleton<ILogger<MockPcsProAutomationService>>(
             NullLogger<MockPcsProAutomationService>.Instance);
+        services.AddSingleton<IAutomationLogService>(new NullAutomationLogService());
         services.AddPcsProAutomationService(config);
 
         using var sp = services.BuildServiceProvider();

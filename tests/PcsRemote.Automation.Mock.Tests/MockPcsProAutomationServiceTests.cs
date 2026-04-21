@@ -21,7 +21,8 @@ public sealed class MockPcsProAutomationServiceTests
         configure?.Invoke(opts);
         return new MockPcsProAutomationService(
             Options.Create(opts),
-            NullLogger<MockPcsProAutomationService>.Instance);
+            NullLogger<MockPcsProAutomationService>.Instance,
+            new NullAutomationLogService());
     }
 
     /// <summary>
@@ -35,7 +36,8 @@ public sealed class MockPcsProAutomationServiceTests
         configure?.Invoke(opts);
         var sut = new MockPcsProAutomationService(
             Options.Create(opts),
-            NullLogger<MockPcsProAutomationService>.Instance);
+            NullLogger<MockPcsProAutomationService>.Instance,
+            new NullAutomationLogService());
         return (sut, opts);
     }
 
@@ -926,7 +928,7 @@ public sealed class MockPcsProAutomationServiceTests
         var opts = new MockPcsProOptions();
         configure?.Invoke(opts);
         var logger = new CapturingLogger<MockPcsProAutomationService>();
-        var sut = new MockPcsProAutomationService(Options.Create(opts), logger);
+        var sut = new MockPcsProAutomationService(Options.Create(opts), logger, new NullAutomationLogService());
         return (sut, logger);
     }
 

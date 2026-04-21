@@ -16,7 +16,8 @@ public sealed class LoadedMatchTests
         configure?.Invoke(opts);
         return new MockPcsProAutomationService(
             Options.Create(opts),
-            NullLogger<MockPcsProAutomationService>.Instance);
+            NullLogger<MockPcsProAutomationService>.Instance,
+            new NullAutomationLogService());
     }
 
     [TestMethod]

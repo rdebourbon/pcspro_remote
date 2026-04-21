@@ -27,6 +27,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     private readonly IChangeMatchAutomation _changeMatchAutomation;
     private readonly IStreamingAutomation _streamingAutomation;
     private readonly IHealthCheckAutomation _healthCheckAutomation;
+    private readonly IAutomationLogService _logService;
     private readonly PcsProStateMachine _stateMachine;
 
     /// <summary>
@@ -83,12 +84,14 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         ILogger<PcsProAutomationService> logger,
         IProcessManager processManager,
         TimeProvider timeProvider,
-        AutomationDependencies automationDependencies)
+        AutomationDependencies automationDependencies,
+        IAutomationLogService logService)
     {
         _options = options.Value;
         _logger = logger;
         _processManager = processManager;
         _timeProvider = timeProvider;
+        _logService = logService;
         _loginAutomation = automationDependencies.LoginAutomation;
         _matchSelectionAutomation = automationDependencies.MatchSelectionAutomation;
         _teamNamesAutomation = automationDependencies.TeamNamesAutomation;
@@ -138,6 +141,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     {
         _logger.LogInformation(
             "LaunchAndLoginAsync starting; {ExecutablePath}", _options.ExecutablePath);
+        _logService.AddEntry("Launching PCS Pro\u2026", AutomationLogOutcome.Info);
 
         // Non-blocking probe: if the lock is already held, another operation is in progress.
         if (!_operationLock.Wait(0))
@@ -166,6 +170,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         StartCrashWatcher(process);
 
         // S-003: Login phase — enter credentials and wait for match selection dialog.
+        _logService.AddEntry("Entering credentials\u2026", AutomationLogOutcome.Info);
         if (!await PerformLoginAsync(ct).ConfigureAwait(false))
             return;
 
@@ -174,6 +179,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         // between PerformLoginAsync returning and this lock acquisition.
         await FireUnderLockAsync(PcsProTrigger.CredentialsEntered, guardTerminal: true).ConfigureAwait(false);
 
+        _logService.AddEntry("Launch and login complete", AutomationLogOutcome.Success);
         _logger.LogInformation(
             "LaunchAndLoginAsync complete — service in {State}", CurrentState);
     }
@@ -182,6 +188,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     public async Task StopAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("StopAsync called; current state {State}", CurrentState);
+        _logService.AddEntry("Stopping PCS Pro\u2026", AutomationLogOutcome.Info);
 
         if (CurrentState == PcsProState.NotRunning)
             return;
@@ -245,6 +252,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         _process?.Dispose();
         _process = null;
 
+        _logService.AddEntry("PCS Pro stopped", AutomationLogOutcome.Success);
         _logger.LogInformation("StopAsync complete; current state {State}", CurrentState);
     }
 
@@ -433,6 +441,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         {
             _operationLock.Release();
         }
+        _logService.AddEntry(errorReason, AutomationLogOutcome.Failure);
         FlushStateChangedEvents();
     }
 
@@ -1041,6 +1050,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         _logger.LogInformation(
             "LoadMatchAsync starting; MatchId={MatchId}, current state {State}",
             match.MatchId, CurrentState);
+        _logService.AddEntry("Loading match\u2026", AutomationLogOutcome.Info);
 
         if (Interlocked.CompareExchange(ref _isMatchSelectionOperationInProgress, 1, 0) != 0)
             throw new InvalidOperationException("A lifecycle operation is already in progress.");
@@ -1104,6 +1114,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
                 await FireUnderLockAsync(PcsProTrigger.MatchOpened, guardTerminal: true)
                     .ConfigureAwait(false);
 
+                _logService.AddEntry("Match loaded", AutomationLogOutcome.Success);
                 _logger.LogInformation("LoadMatchAsync complete — service in {State}", CurrentState);
                 return;
             }
@@ -1367,6 +1378,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     public async Task ChangeMatchAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("ChangeMatchAsync starting; current state {State}", CurrentState);
+        _logService.AddEntry("Changing match\u2026", AutomationLogOutcome.Info);
 
         if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
             throw new InvalidOperationException(
@@ -1416,6 +1428,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
 
             // §4.3.3 — Fire state transition.
             await FireUnderLockAsync(PcsProTrigger.ChangeMatch, guardTerminal: true).ConfigureAwait(false);
+            _logService.AddEntry("Returned to match selection", AutomationLogOutcome.Success);
             _logger.LogInformation("ChangeMatchAsync complete — state {State}", CurrentState);
         }
         catch (OperationCanceledException)
@@ -1431,6 +1444,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     {
         // Step 1: Log entry.
         _logger.LogInformation("DismissAsync called; current state {State}", CurrentState);
+        _logService.AddEntry("Dismissing error\u2026", AutomationLogOutcome.Info);
 
         // Step 2: State guard — only valid from Error.
         if (CurrentState != PcsProState.Error)
@@ -1473,6 +1487,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         _process?.Dispose();
         _process = null;
 
+        _logService.AddEntry("Error dismissed", AutomationLogOutcome.Success);
         _logger.LogInformation("DismissAsync complete; current state {State}", CurrentState);
     }
 
@@ -1481,6 +1496,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     {
         // Step 1: Log entry.
         _logger.LogInformation("RetryAsync called; current state {State}", CurrentState);
+        _logService.AddEntry("Retrying automation\u2026", AutomationLogOutcome.Info);
 
         // Step 2: State guard — only valid from Error.
         if (CurrentState != PcsProState.Error)
@@ -1556,6 +1572,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     public async Task StartStreamingAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("StartStreamingAsync starting; current state {State}", CurrentState);
+        _logService.AddEntry("Starting streaming\u2026", AutomationLogOutcome.Info);
 
         if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
             throw new InvalidOperationException(
@@ -1605,6 +1622,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             return;
         }
 
+        _logService.AddEntry("Streaming started", AutomationLogOutcome.Success);
         _logger.LogInformation("StartStreamingAsync completed successfully");
     }
 
@@ -1612,6 +1630,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     public async Task StopStreamingAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("StopStreamingAsync starting; current state {State}", CurrentState);
+        _logService.AddEntry("Stopping streaming\u2026", AutomationLogOutcome.Info);
 
         if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
             throw new InvalidOperationException(
@@ -1659,6 +1678,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             return;
         }
 
+        _logService.AddEntry("Streaming stopped", AutomationLogOutcome.Success);
         _logger.LogInformation("StopStreamingAsync completed successfully");
     }
 
@@ -1666,6 +1686,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     public async Task<MatchTeams> UseCurrentMatchAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("UseCurrentMatchAsync starting; current state {State}", CurrentState);
+        _logService.AddEntry("Attaching to current match\u2026", AutomationLogOutcome.Info);
 
         if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
             throw new InvalidOperationException(
@@ -1762,6 +1783,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             }
 
             _teamNamesAutomation.TryCloseTeamsDialog();
+            _logService.AddEntry("Attached to current match", AutomationLogOutcome.Success);
             _logger.LogInformation(
                 "UseCurrentMatchAsync succeeded — Home={HomeClub}/{HomeTeam} Away={AwayClub}/{AwayTeam}",
                 homeTeam.ClubName, homeTeam.TeamName, awayTeam.ClubName, awayTeam.TeamName);

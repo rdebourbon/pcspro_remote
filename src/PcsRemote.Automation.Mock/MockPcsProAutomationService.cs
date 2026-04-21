@@ -10,6 +10,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
 {
     private readonly MockPcsProOptions _options;
     private readonly ILogger<MockPcsProAutomationService> _logger;
+    private readonly IAutomationLogService _logService;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly Random _rng;
     private PcsProState _currentState = PcsProState.NotRunning;
@@ -20,12 +21,15 @@ public class MockPcsProAutomationService : IPcsProAutomationService
 
     public MockPcsProAutomationService(
         IOptions<MockPcsProOptions> options,
-        ILogger<MockPcsProAutomationService> logger)
+        ILogger<MockPcsProAutomationService> logger,
+        IAutomationLogService logService)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(logService);
         _options = options.Value;
         _logger = logger;
+        _logService = logService;
         _rng = _options.RngSeed.HasValue ? new Random(_options.RngSeed.Value) : Random.Shared;
     }
 
@@ -56,6 +60,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     public async Task LaunchAndLoginAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("LaunchAndLoginAsync starting");
+        _logService.AddEntry("Launching PCS Pro\u2026", AutomationLogOutcome.Info);
 
         if (!_semaphore.Wait(0))
             throw new InvalidOperationException("A lifecycle operation is already in progress.");
@@ -84,6 +89,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
             Transition(PcsProState.LoginScreen);
             _logger.LogDebug("Reached {State}", PcsProState.LoginScreen);
 
+            _logService.AddEntry("Entering credentials\u2026", AutomationLogOutcome.Info);
             await Task.Delay(_options.CredentialsEnteredDelay, ct);
             if (ShouldInjectErrorAt(MockForcedErrorMode.LoginScreenToMatchSelection))
             {
@@ -97,6 +103,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
             }
 
             Transition(PcsProState.MatchSelection);
+            _logService.AddEntry("Launch and login complete", AutomationLogOutcome.Success);
             _logger.LogInformation("LaunchAndLoginAsync complete — reached {State}", PcsProState.MatchSelection);
         }
         finally
@@ -108,6 +115,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     public async Task LoadMatchAsync(MatchInfo match, CancellationToken ct = default)
     {
         _logger.LogInformation("LoadMatchAsync starting for match {MatchId}", match?.MatchId);
+        _logService.AddEntry("Loading match\u2026", AutomationLogOutcome.Info);
 
         if (!_semaphore.Wait(0))
             throw new InvalidOperationException("A lifecycle operation is already in progress.");
@@ -156,6 +164,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
             }
             _loadedMatch = match;
             Transition(PcsProState.MatchLoaded);
+            _logService.AddEntry("Match loaded", AutomationLogOutcome.Success);
             _logger.LogInformation("LoadMatchAsync complete — reached {State}", PcsProState.MatchLoaded);
         }
         finally
@@ -167,6 +176,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     public async Task StopAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("StopAsync starting from {State}", _currentState);
+        _logService.AddEntry("Stopping PCS Pro\u2026", AutomationLogOutcome.Info);
 
         if (!_semaphore.Wait(0))
             throw new InvalidOperationException("A lifecycle operation is already in progress.");
@@ -179,6 +189,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
             await Task.Delay(_options.StopDelay, ct);
             LastErrorReason = null;
             Transition(PcsProState.NotRunning);
+            _logService.AddEntry("PCS Pro stopped", AutomationLogOutcome.Success);
             _logger.LogInformation("StopAsync complete — reached {State}", PcsProState.NotRunning);
         }
         finally
@@ -190,6 +201,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     public async Task ChangeMatchAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("ChangeMatchAsync starting from {State}", _currentState);
+        _logService.AddEntry("Changing match\u2026", AutomationLogOutcome.Info);
 
         if (!_semaphore.Wait(0))
             throw new InvalidOperationException("A lifecycle operation is already in progress.");
@@ -202,6 +214,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
 
             await Task.Delay(_options.ChangeMatchDelay, ct);
             Transition(PcsProState.MatchSelection);
+            _logService.AddEntry("Returned to match selection", AutomationLogOutcome.Success);
             _logger.LogInformation("ChangeMatchAsync complete — reached {State}", PcsProState.MatchSelection);
         }
         finally
@@ -213,6 +226,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     public async Task StartStreamingAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("StartStreamingAsync starting from {State}", _currentState);
+        _logService.AddEntry("Starting streaming\u2026", AutomationLogOutcome.Info);
 
         if (!_semaphore.Wait(0))
             throw new InvalidOperationException("A lifecycle operation is already in progress.");
@@ -231,6 +245,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
 
             await Task.Delay(_options.StartStreamingDelay, ct);
             _isStreaming = true;
+            _logService.AddEntry("Streaming started", AutomationLogOutcome.Success);
             _logger.LogInformation("StartStreamingAsync complete — streaming is now active");
         }
         finally
@@ -242,6 +257,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     public async Task StopStreamingAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("StopStreamingAsync starting from {State}", _currentState);
+        _logService.AddEntry("Stopping streaming\u2026", AutomationLogOutcome.Info);
 
         if (!_semaphore.Wait(0))
             throw new InvalidOperationException("A lifecycle operation is already in progress.");
@@ -260,6 +276,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
 
             await Task.Delay(_options.StopStreamingDelay, ct);
             _isStreaming = false;
+            _logService.AddEntry("Streaming stopped", AutomationLogOutcome.Success);
             _logger.LogInformation("StopStreamingAsync complete — streaming is now inactive");
         }
         finally
@@ -271,6 +288,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     public Task DismissAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("DismissAsync starting from {State}", _currentState);
+        _logService.AddEntry("Dismissing error\u2026", AutomationLogOutcome.Info);
 
         if (!_semaphore.Wait(0))
             throw new InvalidOperationException("A lifecycle operation is already in progress.");
@@ -283,6 +301,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
 
             LastErrorReason = null;
             Transition(PcsProState.NotRunning);
+            _logService.AddEntry("Error dismissed", AutomationLogOutcome.Success);
             _logger.LogInformation("DismissAsync complete — transitioned to {State}", PcsProState.NotRunning);
         }
         finally
@@ -296,6 +315,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     public async Task RetryAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("RetryAsync starting from {State}", _currentState);
+        _logService.AddEntry("Retrying automation\u2026", AutomationLogOutcome.Info);
 
         if (!_semaphore.Wait(0))
             throw new InvalidOperationException("A lifecycle operation is already in progress.");
@@ -322,6 +342,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     public Task<MatchTeams> UseCurrentMatchAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("UseCurrentMatchAsync starting from {State}", _currentState);
+        _logService.AddEntry("Attaching to current match\u2026", AutomationLogOutcome.Info);
 
         if (!_semaphore.Wait(0))
             throw new InvalidOperationException("A lifecycle operation is already in progress.");
@@ -334,6 +355,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
 
             // Mock: transition directly to MatchLoaded. LoadedMatch remains null (AC-8).
             Transition(PcsProState.MatchLoaded);
+            _logService.AddEntry("Attached to current match", AutomationLogOutcome.Success);
             _logger.LogInformation("UseCurrentMatchAsync complete — reached {State}", PcsProState.MatchLoaded);
             return Task.FromResult(new MatchTeams(
                 new TeamNameInfo("Home CC", "Home XI"),
@@ -418,6 +440,7 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     {
         LastErrorReason = reason;
         Transition(PcsProState.Error);
+        _logService.AddEntry(reason, AutomationLogOutcome.Failure);
         _logger.LogWarning("Error injected during lifecycle: {Reason}", reason);
     }
 
