@@ -2,7 +2,7 @@
 
 This document tracks all deferred functionality, accepted risks, and future work items identified during development. Items are sourced from HLPS/IS/Spec reviews, adversarial code reviews, and feature gap discovery during diagnostic testing.
 
-**Last updated:** 2026-04-21 (S-010 spec review)
+**Last updated:** 2026-04-21 (S-012 spec v0.2)
 
 ---
 
@@ -21,8 +21,8 @@ Discovered during hands-on testing against real PCS Pro on the garage PC. Full d
 | GAP-007 | Match Selection Grid — Structured Data Extraction | Diagnostic testing | ✅ Delivered (IS-010 S-004) | ✅ Complete |
 | GAP-008 | Title Change Detection — Same Match Type | Diagnostic testing | ✅ Resolved (commit `1129b1f`) | ✅ Complete |
 | GAP-009 | Team Name Display & YouTube Title Formatting Rules | User requirement | Deferred to HLPS-011 | ❌ Not started |
-| GAP-010 | "Use Current Match" — Skip Match Selection | User observation | IS-010 S-011 (Tier 3) | ⬜ Spec pending |
-| GAP-011 | Periodic PCS Pro Health-Check Poll | User observation | IS-010 S-012 (Tier 3) | ⬜ Spec pending |
+| GAP-010 | "Use Current Match" — Skip Match Selection | User observation | IS-010 S-011 (Tier 3) | ✅ Delivered (`acc0897`) |
+| GAP-011 | Periodic PCS Pro Health-Check Poll | User observation | IS-010 S-012 (Tier 3) | 🔄 Spec in review (v0.2) |
 
 ---
 
@@ -36,6 +36,7 @@ Items identified during adversarial reviews that were accepted but deferred to l
 | DEF-002 | `MatchInfo` club name fields | S-010 spec R1 (Opus + GPT) | SPEC-S-010 | With DEF-001 | `MatchInfo` does not carry club names — they come from a different lifecycle stage. Adding club fields requires defining a population path. |
 | DEF-003 | FlaUI stub implementations pending garage PC | IS-006 S-006 code review | S-006 delivery | Garage PC visit | `FlaUiScoreboardAutomation` and `FlaUiChangeMatchAutomation` have implementation stubs for methods that need garage PC testing (I-U-5, I-U-6). |
 | DEF-004 | Web UI club name display | S-010 spec | SPEC-S-010 | Future HLPS | Club names will be available in `MatchTeams` after S-010 but the Web UI won't display them separately. Requires UI design. |
+| DEF-005 | Live stream status health signal | S-012 spec R1 (Opus + GPT) | SPEC-S-012 | Future HLPS | HLPS-010 §2.9 lists live stream status (button child text in `LiveStreamingControls`) as a monitored signal. Requires heavier FlaUI reads in the poll. Deferred to keep S-012 poll lightweight. |
 
 ---
 
@@ -55,9 +56,9 @@ These are in-scope for IS-010 but marked "Can-Defer" — they can be deferred to
 
 | Step | Title | Status | Notes |
 |---|---|---|---|
-| S-010 | Team Names Structured Return Type | 🔄 Spec in review (v0.2) | Core type change, FlaUI club read |
-| S-011 | Use Current Match (GAP-010) | ⬜ Not started | State machine extension + attach flow |
-| S-012 | Health-Check Poll (GAP-011) | ⬜ Not started | Periodic state scan, configurable interval |
+| S-010 | Team Names Structured Return Type | ✅ Delivered (`40412e0`) | Core type change, FlaUI club read |
+| S-011 | Use Current Match (GAP-010) | ✅ Delivered (`acc0897`) | State machine extension + attach flow |
+| S-012 | Health-Check Poll (GAP-011) | 🔄 Spec in review (v0.2) | Periodic state scan, configurable interval |
 
 ---
 
