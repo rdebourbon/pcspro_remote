@@ -206,8 +206,10 @@ public sealed class MockPcsProAutomationServiceTests
 
         var teams = await sut.GetTeamNamesAsync();
 
-        teams.HomeTeam.Should().NotBeNullOrEmpty();
-        teams.AwayTeam.Should().NotBeNullOrEmpty();
+        teams.Home.TeamName.Should().NotBeNullOrEmpty();
+        teams.Away.TeamName.Should().NotBeNullOrEmpty();
+        teams.Home.ClubName.Should().NotBeNullOrEmpty();
+        teams.Away.ClubName.Should().NotBeNullOrEmpty();
     }
 
     // ──────────────────────────────────────────────────────────────────────

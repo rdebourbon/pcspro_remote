@@ -1,3 +1,5 @@
+using PcsRemote.Core;
+
 namespace PcsRemote.Automation.Tests;
 
 /// <summary>
@@ -8,13 +10,25 @@ namespace PcsRemote.Automation.Tests;
 internal sealed class FakeTeamNamesAutomation : ITeamNamesAutomation
 {
     /// <summary>
-    /// The string returned by <see cref="ReadHomeTeamName"/>.
+    /// The club name returned for the home team.
+    /// Defaults to <c>"Home CC"</c>.
+    /// </summary>
+    public string HomeClubName { get; set; } = "Home CC";
+
+    /// <summary>
+    /// The team name returned for the home team.
     /// Defaults to <c>"Home XI"</c>.
     /// </summary>
     public string HomeTeamName { get; set; } = "Home XI";
 
     /// <summary>
-    /// The string returned by <see cref="ReadAwayTeamName"/>.
+    /// The club name returned for the away team.
+    /// Defaults to <c>"Away CC"</c>.
+    /// </summary>
+    public string AwayClubName { get; set; } = "Away CC";
+
+    /// <summary>
+    /// The team name returned for the away team.
     /// Defaults to <c>"Away XI"</c>.
     /// </summary>
     public string AwayTeamName { get; set; } = "Away XI";
@@ -69,21 +83,21 @@ internal sealed class FakeTeamNamesAutomation : ITeamNamesAutomation
     }
 
     /// <inheritdoc/>
-    public string ReadHomeTeamName()
+    public TeamNameInfo ReadHomeTeamName()
     {
         if (ThrowOnReadHomeTeamName)
             throw new InvalidOperationException(
                 "FakeTeamNamesAutomation: element not found (ThrowOnReadHomeTeamName = true)");
-        return HomeTeamName;
+        return new TeamNameInfo(HomeClubName, HomeTeamName);
     }
 
     /// <inheritdoc/>
-    public string ReadAwayTeamName()
+    public TeamNameInfo ReadAwayTeamName()
     {
         if (ThrowOnReadAwayTeamName)
             throw new InvalidOperationException(
                 "FakeTeamNamesAutomation: element not found (ThrowOnReadAwayTeamName = true)");
-        return AwayTeamName;
+        return new TeamNameInfo(AwayClubName, AwayTeamName);
     }
 
     /// <inheritdoc/>

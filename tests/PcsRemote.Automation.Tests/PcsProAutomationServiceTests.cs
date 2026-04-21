@@ -1174,8 +1174,10 @@ public sealed class PcsProAutomationServiceTests
 
         var result = await svc.GetTeamNamesAsync();
 
-        result.HomeTeam.Should().Be("Home XI");
-        result.AwayTeam.Should().Be("Away XI");
+        result.Home.TeamName.Should().Be("Home XI");
+        result.Away.TeamName.Should().Be("Away XI");
+        result.Home.ClubName.Should().Be("Home CC");
+        result.Away.ClubName.Should().Be("Away CC");
         svc.CurrentState.Should().Be(PcsProState.MatchLoaded);
     }
 
@@ -1206,8 +1208,10 @@ public sealed class PcsProAutomationServiceTests
 
         var result = await svc.GetTeamNamesAsync();
 
-        result.HomeTeam.Should().BeEmpty();
-        result.AwayTeam.Should().BeEmpty();
+        result.Home.TeamName.Should().BeEmpty();
+        result.Away.TeamName.Should().BeEmpty();
+        result.Home.ClubName.Should().BeEmpty();
+        result.Away.ClubName.Should().BeEmpty();
         svc.CurrentState.Should().Be(PcsProState.Error);
         fake.CloseTeamsDialogAttempted.Should().BeTrue("TryCloseTeamsDialog must be called on open failure");
     }
@@ -1224,8 +1228,10 @@ public sealed class PcsProAutomationServiceTests
 
         var result = await svc.GetTeamNamesAsync();
 
-        result.HomeTeam.Should().BeEmpty();
-        result.AwayTeam.Should().BeEmpty();
+        result.Home.TeamName.Should().BeEmpty();
+        result.Away.TeamName.Should().BeEmpty();
+        result.Home.ClubName.Should().BeEmpty();
+        result.Away.ClubName.Should().BeEmpty();
         svc.CurrentState.Should().Be(PcsProState.Error);
         fake.CloseTeamsDialogAttempted.Should().BeTrue();
     }
@@ -1242,8 +1248,10 @@ public sealed class PcsProAutomationServiceTests
 
         var result = await svc.GetTeamNamesAsync();
 
-        result.HomeTeam.Should().BeEmpty();
-        result.AwayTeam.Should().BeEmpty();
+        result.Home.TeamName.Should().BeEmpty();
+        result.Away.TeamName.Should().BeEmpty();
+        result.Home.ClubName.Should().BeEmpty();
+        result.Away.ClubName.Should().BeEmpty();
         svc.CurrentState.Should().Be(PcsProState.Error);
         fake.CloseTeamsDialogAttempted.Should().BeTrue();
     }
@@ -1260,8 +1268,10 @@ public sealed class PcsProAutomationServiceTests
 
         var result = await svc.GetTeamNamesAsync();
 
-        result.HomeTeam.Should().BeEmpty();
-        result.AwayTeam.Should().BeEmpty();
+        result.Home.TeamName.Should().BeEmpty();
+        result.Away.TeamName.Should().BeEmpty();
+        result.Home.ClubName.Should().BeEmpty();
+        result.Away.ClubName.Should().BeEmpty();
         svc.CurrentState.Should().Be(PcsProState.Error);
         fake.CloseUnexpectedDialogAttempted.Should().BeTrue();
         fake.CloseTeamsDialogAttempted.Should().BeTrue("TryCloseTeamsDialog must be called on all error paths");
@@ -2000,8 +2010,8 @@ internal sealed class SlowOpenTeamsDialogFake : ITeamNamesAutomation
         _gate.Wait();      // blocks until Release() is called
     }
 
-    public string ReadHomeTeamName() => "Home XI";
-    public string ReadAwayTeamName() => "Away XI";
+    public TeamNameInfo ReadHomeTeamName() => new("Home CC", "Home XI");
+    public TeamNameInfo ReadAwayTeamName() => new("Away CC", "Away XI");
     public void TryCloseTeamsDialog() { }
     public bool IsUnexpectedDialogPresent() => false;
     public void TryCloseUnexpectedDialog() { }

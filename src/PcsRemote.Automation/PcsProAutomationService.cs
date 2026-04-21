@@ -946,7 +946,9 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
                 _logger.LogError(ex, "GetTeamNamesAsync: failed to open teams dialog");
                 _teamNamesAutomation.TryCloseTeamsDialog();
                 await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "Teams dialog failed to open").ConfigureAwait(false);
-                return new MatchTeams(string.Empty, string.Empty);
+                return new MatchTeams(
+                    new TeamNameInfo(string.Empty, string.Empty),
+                    new TeamNameInfo(string.Empty, string.Empty));
             }
 
             ct.ThrowIfCancellationRequested();
@@ -958,12 +960,14 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
                 _teamNamesAutomation.TryCloseUnexpectedDialog();
                 _teamNamesAutomation.TryCloseTeamsDialog();
                 await FireErrorUnderLockAsync(PcsProTrigger.UnexpectedDialog, "Unexpected dialog blocked team name extraction").ConfigureAwait(false);
-                return new MatchTeams(string.Empty, string.Empty);
+                return new MatchTeams(
+                    new TeamNameInfo(string.Empty, string.Empty),
+                    new TeamNameInfo(string.Empty, string.Empty));
             }
 
             // §4.4 — Read home and away team names.
-            string homeTeam;
-            string awayTeam;
+            TeamNameInfo homeTeam;
+            TeamNameInfo awayTeam;
             try
             {
                 homeTeam = _teamNamesAutomation.ReadHomeTeamName();
@@ -974,14 +978,16 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
                 _logger.LogError(ex, "GetTeamNamesAsync: failed to read team names");
                 _teamNamesAutomation.TryCloseTeamsDialog();
                 await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "Team names could not be read").ConfigureAwait(false);
-                return new MatchTeams(string.Empty, string.Empty);
+                return new MatchTeams(
+                    new TeamNameInfo(string.Empty, string.Empty),
+                    new TeamNameInfo(string.Empty, string.Empty));
             }
 
             // §4.5 — Close the dialog and return on success.
             _teamNamesAutomation.TryCloseTeamsDialog();
             _logger.LogInformation(
-                "GetTeamNamesAsync succeeded — HomeTeam={HomeTeam} AwayTeam={AwayTeam}",
-                homeTeam, awayTeam);
+                "GetTeamNamesAsync succeeded — Home={HomeClub}/{HomeTeam} Away={AwayClub}/{AwayTeam}",
+                homeTeam.ClubName, homeTeam.TeamName, awayTeam.ClubName, awayTeam.TeamName);
             return new MatchTeams(homeTeam, awayTeam);
         }
         catch (OperationCanceledException)

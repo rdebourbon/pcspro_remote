@@ -1,3 +1,5 @@
+using PcsRemote.Core;
+
 namespace PcsRemote.Automation;
 
 /// <summary>
@@ -21,19 +23,20 @@ internal interface ITeamNamesAutomation
     void OpenTeamsDialog();
 
     /// <summary>
-    /// Returns the home team name string using the access pattern resolved for I-U-3
-    /// (ValuePattern, SelectedItem, or element Name).
+    /// Returns the home team's club and team name information using the access pattern
+    /// resolved for I-U-3 (ValuePattern, SelectedItem, or element Name).
     /// AutomationId placeholder must be replaced during garage PC development (I-U-2).
     /// </summary>
     /// <remarks><b>Interaction method — may throw.</b></remarks>
-    string ReadHomeTeamName();
+    TeamNameInfo ReadHomeTeamName();
 
     /// <summary>
-    /// Returns the away team name string using the same access pattern as <see cref="ReadHomeTeamName"/>.
+    /// Returns the away team's club and team name information using the same access pattern
+    /// as <see cref="ReadHomeTeamName"/>.
     /// AutomationId placeholder must be replaced during garage PC development (I-U-2).
     /// </summary>
     /// <remarks><b>Interaction method — may throw.</b></remarks>
-    string ReadAwayTeamName();
+    TeamNameInfo ReadAwayTeamName();
 
     /// <summary>
     /// Attempts to close the Match Details/Teams dialog. Best-effort: does not throw if

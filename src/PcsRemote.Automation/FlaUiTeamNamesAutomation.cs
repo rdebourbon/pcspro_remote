@@ -1,6 +1,7 @@
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Definitions;
 using Microsoft.Extensions.Logging;
+using PcsRemote.Core;
 
 namespace PcsRemote.Automation;
 
@@ -64,10 +65,10 @@ internal sealed class FlaUiTeamNamesAutomation : ITeamNamesAutomation
     }
 
     /// <inheritdoc/>
-    public string ReadHomeTeamName() => ReadTeamName(teamIndex: 0, "home");
+    public TeamNameInfo ReadHomeTeamName() => ReadTeamName(teamIndex: 0, "home");
 
     /// <inheritdoc/>
-    public string ReadAwayTeamName() => ReadTeamName(teamIndex: 1, "away");
+    public TeamNameInfo ReadAwayTeamName() => ReadTeamName(teamIndex: 1, "away");
 
     /// <inheritdoc/>
     public void TryCloseTeamsDialog()
@@ -148,7 +149,7 @@ internal sealed class FlaUiTeamNamesAutomation : ITeamNamesAutomation
 
     // ── Private helpers ──────────────────────────────────────────────────
 
-    private string ReadTeamName(int teamIndex, string label)
+    private TeamNameInfo ReadTeamName(int teamIndex, string label)
     {
         var window = _locator.FindMainWindow()
             ?? throw new InvalidOperationException("PCS Pro main window not found.");
@@ -170,6 +171,8 @@ internal sealed class FlaUiTeamNamesAutomation : ITeamNamesAutomation
         }
 
         var teamView = teamViews[teamIndex];
+
+        // Read team name (cbxTeam) — throws on failure
         var teamCombo = UIAutomationHelpers.FindDescendant(
             teamView,
             cf.ByAutomationId(KnownElements.TeamComboBoxAutomationId))
@@ -182,21 +185,72 @@ internal sealed class FlaUiTeamNamesAutomation : ITeamNamesAutomation
             throw new InvalidOperationException($"Could not read {label} team name from ComboBox.");
         }
 
-        _logger.LogDebug("Read {TeamLabel} team name: {TeamName}", label, teamName);
-        return teamName;
+        // Read club name (cboClub) — non-throwing; defaults to empty on failure
+        var clubName = ReadClubName(teamView, cf, label);
+
+        _logger.LogDebug(
+            "Read {TeamLabel} team — ClubName={ClubName}, TeamName={TeamName}",
+            label, clubName, teamName);
+
+        return new TeamNameInfo(clubName, teamName);
+    }
+
+    private string ReadClubName(
+        AutomationElement teamView,
+        FlaUI.Core.Conditions.ConditionFactory cf,
+        string label)
+    {
+        try
+        {
+            var clubCombo = UIAutomationHelpers.FindDescendant(
+                teamView,
+                cf.ByAutomationId(KnownElements.ClubComboBoxAutomationId));
+
+            if (clubCombo == null)
+            {
+                _logger.LogWarning(
+                    "Club ComboBox not found for {TeamLabel} team (AutomationId=\"{AutomationId}\")",
+                    label, KnownElements.ClubComboBoxAutomationId);
+                return string.Empty;
+            }
+
+            var (value, succeeded) = TryReadComboBoxValue(clubCombo);
+            if (!succeeded)
+            {
+                _logger.LogWarning(
+                    "All read strategies failed for {TeamLabel} club ComboBox",
+                    label);
+            }
+
+            return value;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to read club ComboBox for {TeamLabel} team",
+                label);
+            return string.Empty;
+        }
     }
 
     private static string ReadComboBoxValue(AutomationElement comboBox)
+        => TryReadComboBoxValue(comboBox).Value;
+
+    private static (string Value, bool Succeeded) TryReadComboBoxValue(AutomationElement comboBox)
     {
+        bool anySucceeded = false;
+
         // Strategy 1: ValuePattern (most reliable for WPF ComboBox selected text)
         try
         {
             if (comboBox.Patterns.Value.IsSupported)
             {
                 var val = comboBox.Patterns.Value.Pattern.Value.Value;
+                anySucceeded = true;
                 if (!string.IsNullOrEmpty(val))
                 {
-                    return val;
+                    return (val, true);
                 }
             }
         }
@@ -209,9 +263,10 @@ internal sealed class FlaUiTeamNamesAutomation : ITeamNamesAutomation
         try
         {
             var name = comboBox.Name;
+            anySucceeded = true;
             if (!string.IsNullOrWhiteSpace(name))
             {
-                return name;
+                return (name, true);
             }
         }
         catch
@@ -224,6 +279,7 @@ internal sealed class FlaUiTeamNamesAutomation : ITeamNamesAutomation
         {
             var combo = comboBox.AsComboBox();
             var selected = combo.SelectedItem;
+            anySucceeded = true;
             if (selected != null)
             {
                 try
@@ -231,7 +287,7 @@ internal sealed class FlaUiTeamNamesAutomation : ITeamNamesAutomation
                     var selectedName = selected.Name;
                     if (!string.IsNullOrWhiteSpace(selectedName))
                     {
-                        return selectedName;
+                        return (selectedName, true);
                     }
                 }
                 catch
@@ -245,6 +301,6 @@ internal sealed class FlaUiTeamNamesAutomation : ITeamNamesAutomation
             // Fall through
         }
 
-        return string.Empty;
+        return (string.Empty, anySucceeded);
     }
 }

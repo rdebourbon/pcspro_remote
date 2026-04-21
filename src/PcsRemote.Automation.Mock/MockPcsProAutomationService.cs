@@ -314,7 +314,9 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     ];
 
     public Task<MatchTeams> GetTeamNamesAsync(CancellationToken ct = default)
-        => Task.FromResult(new MatchTeams("Home XI", "Away XI"));
+        => Task.FromResult(new MatchTeams(
+            new TeamNameInfo("Home CC", "Home XI"),
+            new TeamNameInfo("Away CC", "Away XI")));
 
     public Task RefreshScoreboardAsync(CancellationToken ct = default)
         => Task.CompletedTask;
