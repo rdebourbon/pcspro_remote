@@ -46,4 +46,23 @@ internal interface ILoginAutomation
     /// or if no dialog is found.
     /// </summary>
     void TryCloseUnexpectedDialog();
+
+    /// <summary>
+    /// Reads the current text content of the username field in the login dialog.
+    /// Returns <see langword="null"/> when the field cannot be located or the main window
+    /// is not found. Does not throw.
+    /// </summary>
+    string? ReadUsername();
+
+    /// <summary>
+    /// Enters the given username into the login dialog username field.
+    /// </summary>
+    /// <exception cref="Exception">Thrown if the username field element cannot be located.</exception>
+    void EnterUsername(string username);
+
+    /// <summary>
+    /// Clicks the "Switch User" hyperlink in the login dialog.
+    /// </summary>
+    /// <exception cref="Exception">Thrown if the switch-user element cannot be located.</exception>
+    void ClickSwitchUser();
 }

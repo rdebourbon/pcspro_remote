@@ -23,6 +23,16 @@ internal sealed class PcsProOptions
     public string Password { get; set; } = string.Empty;
 
     /// <summary>
+    /// The expected PCS Pro login username. When set, the automation compares this value
+    /// against the pre-populated username in the login dialog and triggers a switch-user
+    /// flow on mismatch. When empty, the username check is skipped and the existing login
+    /// flow proceeds unchanged.
+    /// Must not be committed to source control — supply via gitignored configuration,
+    /// environment variable, or .NET User Secrets.
+    /// </summary>
+    public string ExpectedUsername { get; set; } = string.Empty;
+
+    /// <summary>
     /// The site/club name used to filter the match selection ComboBox (e.g., "Ashtead CC").
     /// When empty or null, the site filter step is skipped during match search.
     /// </summary>

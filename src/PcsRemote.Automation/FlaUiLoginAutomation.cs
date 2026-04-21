@@ -171,4 +171,82 @@ internal sealed class FlaUiLoginAutomation : ILoginAutomation
             _logger.LogDebug(ex, "TryCloseUnexpectedDialog failed with exception");
         }
     }
+
+    /// <inheritdoc/>
+    public string? ReadUsername()
+    {
+        try
+        {
+            var window = _locator.FindMainWindow();
+            if (window == null)
+            {
+                return null;
+            }
+
+            var cf = _locator.Automation.ConditionFactory;
+            var usernameField = UIAutomationHelpers.FindDescendant(
+                window,
+                cf.ByAutomationId(KnownElements.LoginUsernameFieldAutomationId));
+
+            if (usernameField == null)
+            {
+                return null;
+            }
+
+            var value = usernameField.AsTextBox().Text;
+            _logger.LogDebug("ReadUsername: username field located");
+            return value;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "ReadUsername failed with exception");
+            return null;
+        }
+    }
+
+    /// <inheritdoc/>
+    public void EnterUsername(string username)
+    {
+        var window = _locator.FindMainWindow()
+            ?? throw new InvalidOperationException("PCS Pro main window not found.");
+
+        var cf = _locator.Automation.ConditionFactory;
+        var usernameField = UIAutomationHelpers.FindDescendant(
+            window,
+            cf.ByAutomationId(KnownElements.LoginUsernameFieldAutomationId))
+            ?? throw new InvalidOperationException(
+                $"Username field not found (AutomationId=\"{KnownElements.LoginUsernameFieldAutomationId}\").");
+
+        usernameField.Focus();
+        Thread.Sleep(200);
+
+        Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_A);
+        Keyboard.Type(username);
+
+        Thread.Sleep(300);
+
+        _logger.LogDebug("Username entered via keyboard simulation");
+    }
+
+    /// <inheritdoc/>
+    public void ClickSwitchUser()
+    {
+        var window = _locator.FindMainWindow()
+            ?? throw new InvalidOperationException("PCS Pro main window not found.");
+
+        var cf = _locator.Automation.ConditionFactory;
+        var switchUserLink = UIAutomationHelpers.FindDescendant(
+            window,
+            cf.ByName(KnownElements.LoginSwitchUserText))
+            ?? throw new InvalidOperationException(
+                $"Switch User element not found (Name=\"{KnownElements.LoginSwitchUserText}\").");
+
+        var error = UIAutomationHelpers.InvokeButtonSafely(switchUserLink, _logger);
+        if (error != null)
+        {
+            throw new InvalidOperationException($"Switch User click failed: {error}");
+        }
+
+        _logger.LogDebug("Switch User link invoked");
+    }
 }

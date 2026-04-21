@@ -43,6 +43,18 @@ internal sealed class FakeLoginAutomation : ILoginAutomation
     /// <summary><see langword="true"/> after <see cref="TryCloseUnexpectedDialog"/> has been called.</summary>
     public bool CloseDialogAttempted { get; private set; }
 
+    /// <summary>
+    /// Controls the value returned by <see cref="ReadUsername"/>.
+    /// Defaults to <see langword="null"/> (field not found / not yet visible).
+    /// </summary>
+    public string? UsernameValue { get; set; }
+
+    /// <summary>The username captured by the most recent <see cref="EnterUsername"/> call.</summary>
+    public string? CapturedUsername { get; private set; }
+
+    /// <summary><see langword="true"/> after <see cref="ClickSwitchUser"/> has been called.</summary>
+    public bool SwitchUserClicked { get; private set; }
+
     /// <inheritdoc/>
     public bool IsLoginDialogVisible() => LoginDialogVisible;
 
@@ -70,4 +82,23 @@ internal sealed class FakeLoginAutomation : ILoginAutomation
 
     /// <inheritdoc/>
     public void TryCloseUnexpectedDialog() => CloseDialogAttempted = true;
+
+    /// <inheritdoc/>
+    public string? ReadUsername() => UsernameValue;
+
+    /// <inheritdoc/>
+    public void EnterUsername(string username)
+    {
+        if (ThrowOnInteraction)
+            throw new InvalidOperationException("FakeLoginAutomation: element not found (ThrowOnInteraction = true)");
+        CapturedUsername = username;
+    }
+
+    /// <inheritdoc/>
+    public void ClickSwitchUser()
+    {
+        if (ThrowOnInteraction)
+            throw new InvalidOperationException("FakeLoginAutomation: element not found (ThrowOnInteraction = true)");
+        SwitchUserClicked = true;
+    }
 }
