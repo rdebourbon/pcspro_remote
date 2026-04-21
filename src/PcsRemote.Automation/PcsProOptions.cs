@@ -49,4 +49,11 @@ internal sealed class PcsProOptions
     /// Clamped to [5, 60] at poll start; out-of-range values produce a warning log.
     /// </summary>
     public int HealthCheckIntervalSeconds { get; set; } = 10;
+
+    /// <summary>
+    /// The club name used for broadcast title formatting. When set, the automation
+    /// strips this prefix from team display names and reorders so the club team
+    /// appears first in the title. When empty, no stripping or reordering is applied.
+    /// </summary>
+    public string ClubName { get; set; } = string.Empty;
 }

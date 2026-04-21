@@ -1174,7 +1174,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             return;
         }
 
-        _pendingLoadedMatch = match;
+        _pendingLoadedMatch = FormatMatchForTitle(match);
         await PollForMatchLoadedAsync(startTimestamp, ct).ConfigureAwait(false);
     }
 
@@ -1888,5 +1888,19 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "UseCurrentMatchAsync was cancelled").ConfigureAwait(false);
             throw;
         }
+    }
+
+    private MatchInfo FormatMatchForTitle(MatchInfo match)
+    {
+        var clubName = _options.ClubName;
+        if (string.IsNullOrEmpty(clubName))
+        {
+            return match;
+        }
+
+        var (first, second) = TeamNameFormatter.FormatForTitle(
+            match.HomeTeam, match.AwayTeam, clubName);
+
+        return match with { HomeTeam = first, AwayTeam = second };
     }
 }

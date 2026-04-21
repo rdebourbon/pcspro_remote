@@ -162,7 +162,9 @@ public class MockPcsProAutomationService : IPcsProAutomationService
                 TransitionToError("Timed out opening selected match");
                 return;
             }
-            _loadedMatch = match;
+            // match is non-nullable but the null-conditional on line 117 narrows
+            // the compiler's flow analysis; the parameter contract guarantees non-null here.
+            _loadedMatch = FormatMatchForTitle(match!);
             Transition(PcsProState.MatchLoaded);
             _logService.AddEntry("Match loaded", AutomationLogOutcome.Success);
             _logger.LogInformation("LoadMatchAsync complete — reached {State}", PcsProState.MatchLoaded);
@@ -454,6 +456,20 @@ public class MockPcsProAutomationService : IPcsProAutomationService
 
         _currentState = newState;
         OnStateChanged(newState);
+    }
+
+    private MatchInfo FormatMatchForTitle(MatchInfo match)
+    {
+        var clubName = _options.ClubName;
+        if (string.IsNullOrEmpty(clubName))
+        {
+            return match;
+        }
+
+        var (first, second) = TeamNameFormatter.FormatForTitle(
+            match.HomeTeam, match.AwayTeam, clubName);
+
+        return match with { HomeTeam = first, AwayTeam = second };
     }
 }
 

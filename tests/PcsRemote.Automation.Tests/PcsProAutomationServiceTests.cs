@@ -2559,6 +2559,75 @@ public sealed class PcsProAutomationServiceTests
         svc.CurrentState.Should().Be(PcsProState.Error,
             "exception from ClickSwitchUser should be caught and fire error");
     }
+
+    // =======================================================================
+    // S-003 — Club Name Stripping Integration (TC-16, TC-17)
+    // =======================================================================
+
+    // -----------------------------------------------------------------------
+    // TC-16 — LoadMatchAsync with club name configured → formatted names
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LoadMatchAsync_WithClubNameConfigured_FormatsLoadedMatchTeamNames()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MatchLoaded = true };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+        var options = Options.Create(new PcsProOptions
+        {
+            ExecutablePath = @"C:\cricket.exe",
+            WorkingDirectory = @"C:\",
+            Password = "test-password",
+            ClubName = "HHCC",
+        });
+        var deps = new AutomationDependencies(
+            new FakeLoginAutomation(),
+            fakeMatchSel,
+            new FakeTeamNamesAutomation(),
+            new FakeScoreboardAutomation(),
+            new FakeChangeMatchAutomation(),
+            new FakeStreamingAutomation(),
+            new FakeHealthCheckAutomation());
+        var svc = new PcsProAutomationService(
+            options,
+            NullLogger<PcsProAutomationService>.Instance,
+            pm, tp, deps,
+            new NullAutomationLogService());
+        await svc.LaunchAndLoginAsync();
+
+        var machine = (PcsProStateMachine)typeof(PcsProAutomationService)
+            .GetField("_stateMachine", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(svc)!;
+        machine.Fire(PcsProTrigger.SearchTriggered);
+        machine.Fire(PcsProTrigger.SpinnerGone);
+
+        var match = new MatchInfo("test-1", HomeTeam: "Club B - 2nd XI", AwayTeam: "HHCC - 1st XI");
+        await svc.LoadMatchAsync(match);
+
+        svc.LoadedMatch.Should().NotBeNull();
+        svc.LoadedMatch!.HomeTeam.Should().Be("1st XI", "club team should be stripped and placed first");
+        svc.LoadedMatch!.AwayTeam.Should().Be("Club B - 2nd XI", "non-club team should be unchanged");
+    }
+
+    // -----------------------------------------------------------------------
+    // TC-17 — LoadMatchAsync with club name empty → unchanged team names
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task LoadMatchAsync_WithClubNameEmpty_LeavesTeamNamesUnchanged()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MatchLoaded = true };
+        var (svc, _, _) = await CreateServiceAtMatchSelectionReadyAsync(fakeMatchSel);
+
+        var match = new MatchInfo("test-2", HomeTeam: "HHCC - 1st XI", AwayTeam: "Club B - 2nd XI");
+        await svc.LoadMatchAsync(match);
+
+        svc.LoadedMatch.Should().NotBeNull();
+        svc.LoadedMatch!.HomeTeam.Should().Be("HHCC - 1st XI");
+        svc.LoadedMatch!.AwayTeam.Should().Be("Club B - 2nd XI");
+    }
 }
 
 // -----------------------------------------------------------------------

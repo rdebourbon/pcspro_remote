@@ -26,4 +26,10 @@ public class MockPcsProOptions
     /// a specific H-SC-8 failure mode in isolation.
     /// </summary>
     public MockForcedErrorMode ForcedErrorMode { get; set; } = MockForcedErrorMode.None;
+
+    /// <summary>
+    /// Club name for broadcast title formatting. Mirrors PcsProOptions.ClubName
+    /// to maintain DI boundary interchangeability.
+    /// </summary>
+    public string ClubName { get; set; } = string.Empty;
 }
