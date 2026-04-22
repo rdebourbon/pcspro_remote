@@ -81,6 +81,9 @@ internal sealed class FakeLoginAutomation : ILoginAutomation
     public bool IsUnexpectedDialogPresent() => UnexpectedDialogPresent;
 
     /// <inheritdoc/>
+    public string? GetUnexpectedDialogName() => UnexpectedDialogPresent ? "FakeUnexpectedDialog" : null;
+
+    /// <inheritdoc/>
     public void TryCloseUnexpectedDialog() => CloseDialogAttempted = true;
 
     /// <inheritdoc/>

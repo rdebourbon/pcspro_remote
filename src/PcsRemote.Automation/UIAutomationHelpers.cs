@@ -402,7 +402,9 @@ internal static class UIAutomationHelpers
     }
 
     /// <summary>
-    /// Returns <c>true</c> if any non-known dialog is present as a child window.
+    /// Returns <c>true</c> if any non-known, visible dialog is present as a child window.
+    /// Filters out offscreen/invisible WPF internal elements (adorner layers, popup hosts)
+    /// that expose <c>ControlType.Window</c> but are not user-facing dialogs.
     /// Must not throw — probe semantics.
     /// </summary>
     internal static bool HasUnexpectedDialog(AutomationElement window, ConditionFactory cf)
@@ -413,6 +415,9 @@ internal static class UIAutomationHelpers
 
             foreach (var childWindow in childWindows)
             {
+                if (IsOffscreenOrInvisible(childWindow))
+                    continue;
+
                 if (!IsKnownDialog(childWindow, cf))
                 {
                     return true;
@@ -420,6 +425,29 @@ internal static class UIAutomationHelpers
             }
 
             return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> if the element is offscreen or has a zero-area bounding rectangle.
+    /// Used to filter out invisible WPF internal child windows. Never throws.
+    /// </summary>
+    private static bool IsOffscreenOrInvisible(AutomationElement element)
+    {
+        try
+        {
+            if (element.Properties.IsOffscreen.IsSupported &&
+                element.Properties.IsOffscreen.ValueOrDefault)
+            {
+                return true;
+            }
+
+            var rect = element.Properties.BoundingRectangle.ValueOrDefault;
+            return rect.Width <= 0 || rect.Height <= 0;
         }
         catch
         {

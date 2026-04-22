@@ -2892,6 +2892,7 @@ internal sealed class SwitchUserThrowsFakeLoginAutomation : ILoginAutomation
     public void ClickSubmit() { }
     public bool IsMatchSelectionVisible() => true;
     public bool IsUnexpectedDialogPresent() => false;
+    public string? GetUnexpectedDialogName() => null;
     public void TryCloseUnexpectedDialog() { }
     public string? ReadUsername() => "WrongUser";
     public void EnterUsername(string username) { }
@@ -2912,6 +2913,7 @@ internal sealed class SwitchUserIgnoredFakeLoginAutomation : ILoginAutomation
     public void ClickSubmit() { }
     public bool IsMatchSelectionVisible() => true;
     public bool IsUnexpectedDialogPresent() => false;
+    public string? GetUnexpectedDialogName() => null;
     public void TryCloseUnexpectedDialog() { }
     public string? ReadUsername() => "WrongUser";
     public void EnterUsername(string username) { } // deliberately ignores the entered username

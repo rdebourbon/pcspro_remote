@@ -153,6 +153,36 @@ internal sealed class FlaUiLoginAutomation : ILoginAutomation
     }
 
     /// <inheritdoc/>
+    public string? GetUnexpectedDialogName()
+    {
+        try
+        {
+            var window = _locator.FindMainWindow();
+            if (window == null)
+                return null;
+
+            var cf = _locator.Automation.ConditionFactory;
+            var childWindows = UIAutomationHelpers.FindAllDescendants(
+                window, cf.ByControlType(ControlType.Window));
+
+            foreach (var childWindow in childWindows)
+            {
+                if (!UIAutomationHelpers.IsKnownDialog(childWindow, cf))
+                {
+                    return UIAutomationHelpers.SafeGetName(childWindow);
+                }
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "GetUnexpectedDialogName failed with exception");
+            return null;
+        }
+    }
+
+    /// <inheritdoc/>
     public void TryCloseUnexpectedDialog()
     {
         try

@@ -42,6 +42,12 @@ internal interface ILoginAutomation
     bool IsUnexpectedDialogPresent();
 
     /// <summary>
+    /// Returns the name of the first unexpected dialog, or <see langword="null"/> if none found.
+    /// Used for diagnostic logging. Does not throw.
+    /// </summary>
+    string? GetUnexpectedDialogName();
+
+    /// <summary>
     /// Attempts to close the unexpected dialog. Best-effort: does not throw if close fails
     /// or if no dialog is found.
     /// </summary>

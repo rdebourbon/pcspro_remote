@@ -810,11 +810,14 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         if (!_loginAutomation.IsUnexpectedDialogPresent())
             return false;
 
-        _logger.LogWarning("PerformLoginAsync: unexpected dialog detected during login phase");
+        var dialogName = _loginAutomation.GetUnexpectedDialogName();
+        _logger.LogWarning(
+            "PerformLoginAsync: unexpected dialog detected during login phase - {DialogName}",
+            dialogName ?? "(unnamed)");
         _loginAutomation.TryCloseUnexpectedDialog();
         await FireErrorUnderLockAsync(
             PcsProTrigger.UnexpectedDialog,
-            "An unexpected dialog appeared during login").ConfigureAwait(false);
+            $"An unexpected dialog appeared during login: {dialogName ?? "(unnamed)"}").ConfigureAwait(false);
         return true;
     }
 
