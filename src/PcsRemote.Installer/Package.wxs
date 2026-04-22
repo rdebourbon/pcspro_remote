@@ -45,6 +45,31 @@
                 Source="WriteConfig.ps1"
                 KeyPath="yes" />
         </Component>
+        <Component Id="InstallTaskSchedulerScriptComponent" Guid="*">
+          <File Id="InstallTaskSchedulerPs1"
+                Source="InstallTaskScheduler.ps1"
+                KeyPath="yes" />
+        </Component>
+        <Component Id="UninstallTaskSchedulerScriptComponent" Guid="*">
+          <File Id="UninstallTaskSchedulerPs1"
+                Source="UninstallTaskScheduler.ps1"
+                KeyPath="yes" />
+        </Component>
+        <Component Id="InstallFirewallScriptComponent" Guid="*">
+          <File Id="InstallFirewallPs1"
+                Source="InstallFirewall.ps1"
+                KeyPath="yes" />
+        </Component>
+        <Component Id="UninstallFirewallScriptComponent" Guid="*">
+          <File Id="UninstallFirewallPs1"
+                Source="UninstallFirewall.ps1"
+                KeyPath="yes" />
+        </Component>
+        <Component Id="InstallEnvVarScriptComponent" Guid="*">
+          <File Id="InstallEnvVarPs1"
+                Source="InstallEnvVar.ps1"
+                KeyPath="yes" />
+        </Component>
         <Component Id="ConfigTransportComponent" Guid="*">
           <RegistryValue Root="HKLM" Key="SOFTWARE\PcsRemote\Install"
                          Name="InstallFolder" Value="[INSTALLFOLDER]"
@@ -59,6 +84,10 @@
                          Name="ClientSecret" Value="[YOUTUBE_CLIENTSECRET]" Type="string" />
           <RegistryValue Root="HKLM" Key="SOFTWARE\PcsRemote\Install"
                          Name="LiveStreamId" Value="[YOUTUBE_LIVESTREAMID]" Type="string" />
+          <RegistryValue Root="HKLM" Key="SOFTWARE\PcsRemote\Install"
+                         Name="Password" Value="[PCSPRO_PASSWORD]" Type="string" />
+          <RegistryValue Root="HKLM" Key="SOFTWARE\PcsRemote\Install"
+                         Name="LogonUser" Value="[%USERDOMAIN]\[LogonUser]" Type="string" />
         </Component>
       </Directory>
     </StandardDirectory>
@@ -66,6 +95,11 @@
     <Feature Id="MainFeature" Title="PCS Remote" Level="1">
       <ComponentRef Id="AppSettingsComponent" />
       <ComponentRef Id="WriteConfigScriptComponent" />
+      <ComponentRef Id="InstallTaskSchedulerScriptComponent" />
+      <ComponentRef Id="UninstallTaskSchedulerScriptComponent" />
+      <ComponentRef Id="InstallFirewallScriptComponent" />
+      <ComponentRef Id="UninstallFirewallScriptComponent" />
+      <ComponentRef Id="InstallEnvVarScriptComponent" />
       <ComponentRef Id="ConfigTransportComponent" />
       <ComponentGroupRef Id="PublishOutput" />
     </Feature>
@@ -128,11 +162,106 @@
                   Impersonate="no"
                   HideTarget="yes" />
 
+    <!-- ============================================================
+         System Artifact CAs (S-005)
+         Task Scheduler, Firewall, and Environment Variable CAs.
+         All follow the same WixQuietExec + registry transport pattern.
+         Install CAs run on fresh install; uninstall CAs run on removal.
+         ============================================================ -->
+
+    <!-- Task Scheduler — Install -->
+    <CustomAction Id="CA_SetInstallTaskSchedulerData"
+                  Property="CA_InstallTaskSchedulerExec"
+                  Value='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]InstallTaskScheduler.ps1"'
+                  HideTarget="yes" />
+    <CustomAction Id="CA_InstallTaskSchedulerExec"
+                  DllEntry="WixQuietExec"
+                  BinaryRef="Wix4UtilCA_X86"
+                  Execute="deferred"
+                  Impersonate="no"
+                  HideTarget="yes" />
+
+    <!-- Task Scheduler — Uninstall -->
+    <CustomAction Id="CA_SetUninstallTaskSchedulerData"
+                  Property="CA_UninstallTaskSchedulerExec"
+                  Value='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]UninstallTaskScheduler.ps1"'
+                  HideTarget="yes" />
+    <CustomAction Id="CA_UninstallTaskSchedulerExec"
+                  DllEntry="WixQuietExec"
+                  BinaryRef="Wix4UtilCA_X86"
+                  Execute="deferred"
+                  Impersonate="no"
+                  HideTarget="yes" />
+
+    <!-- Firewall — Install -->
+    <CustomAction Id="CA_SetInstallFirewallData"
+                  Property="CA_InstallFirewallExec"
+                  Value='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]InstallFirewall.ps1"'
+                  HideTarget="yes" />
+    <CustomAction Id="CA_InstallFirewallExec"
+                  DllEntry="WixQuietExec"
+                  BinaryRef="Wix4UtilCA_X86"
+                  Execute="deferred"
+                  Impersonate="no"
+                  HideTarget="yes" />
+
+    <!-- Firewall — Uninstall -->
+    <CustomAction Id="CA_SetUninstallFirewallData"
+                  Property="CA_UninstallFirewallExec"
+                  Value='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]UninstallFirewall.ps1"'
+                  HideTarget="yes" />
+    <CustomAction Id="CA_UninstallFirewallExec"
+                  DllEntry="WixQuietExec"
+                  BinaryRef="Wix4UtilCA_X86"
+                  Execute="deferred"
+                  Impersonate="no"
+                  HideTarget="yes" />
+
+    <!-- Environment Variable — Install (no uninstall counterpart per HLPS item 8) -->
+    <CustomAction Id="CA_SetInstallEnvVarData"
+                  Property="CA_InstallEnvVarExec"
+                  Value='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]InstallEnvVar.ps1"'
+                  HideTarget="yes" />
+    <CustomAction Id="CA_InstallEnvVarExec"
+                  DllEntry="WixQuietExec"
+                  BinaryRef="Wix4UtilCA_X86"
+                  Execute="deferred"
+                  Impersonate="no"
+                  HideTarget="yes" />
+
     <InstallExecuteSequence>
+      <!-- S-004: Config write on fresh install -->
       <Custom Action="CA_SetWriteConfigData" Before="CA_WriteConfigExec"
               Condition="NOT Installed" />
       <Custom Action="CA_WriteConfigExec" After="WriteRegistryValues"
               Condition="NOT Installed" />
+
+      <!-- S-005: System artifact install CAs — chained after config write -->
+      <Custom Action="CA_SetInstallTaskSchedulerData" Before="CA_InstallTaskSchedulerExec"
+              Condition="NOT Installed" />
+      <Custom Action="CA_InstallTaskSchedulerExec" After="CA_WriteConfigExec"
+              Condition="NOT Installed" />
+
+      <Custom Action="CA_SetInstallFirewallData" Before="CA_InstallFirewallExec"
+              Condition="NOT Installed" />
+      <Custom Action="CA_InstallFirewallExec" After="CA_InstallTaskSchedulerExec"
+              Condition="NOT Installed" />
+
+      <Custom Action="CA_SetInstallEnvVarData" Before="CA_InstallEnvVarExec"
+              Condition="NOT Installed" />
+      <Custom Action="CA_InstallEnvVarExec" After="CA_InstallFirewallExec"
+              Condition="NOT Installed" />
+
+      <!-- S-005: System artifact uninstall CAs — before file removal -->
+      <Custom Action="CA_SetUninstallFirewallData" Before="CA_UninstallFirewallExec"
+              Condition='REMOVE="ALL"' />
+      <Custom Action="CA_UninstallFirewallExec" Before="CA_UninstallTaskSchedulerExec"
+              Condition='REMOVE="ALL"' />
+
+      <Custom Action="CA_SetUninstallTaskSchedulerData" Before="CA_UninstallTaskSchedulerExec"
+              Condition='REMOVE="ALL"' />
+      <Custom Action="CA_UninstallTaskSchedulerExec" Before="RemoveFiles"
+              Condition='REMOVE="ALL"' />
     </InstallExecuteSequence>
 
   </Package>
