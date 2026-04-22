@@ -23,15 +23,18 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
     private readonly PcsProWindowLocator _locator;
     private readonly ILogger<FlaUiMatchSelectionAutomation> _logger;
     private readonly PcsProOptions _options;
+    private readonly TimeProvider _timeProvider;
 
     public FlaUiMatchSelectionAutomation(
         PcsProWindowLocator locator,
         ILogger<FlaUiMatchSelectionAutomation> logger,
-        IOptions<PcsProOptions> options)
+        IOptions<PcsProOptions> options,
+        TimeProvider timeProvider)
     {
         _locator = locator;
         _logger = logger;
         _options = options.Value;
+        _timeProvider = timeProvider;
     }
 
     /// <inheritdoc/>
@@ -375,7 +378,7 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
         Thread.Sleep(KeyboardPauseMs);
 
         Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_A);
-        string dateText = DateTime.Today.ToString("dd/MM/yyyy");
+        string dateText = DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime).ToString("dd/MM/yyyy");
         Keyboard.Type(dateText);
         Thread.Sleep(KeyboardPauseMs);
 

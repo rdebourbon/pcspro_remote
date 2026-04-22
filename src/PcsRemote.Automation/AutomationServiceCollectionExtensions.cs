@@ -27,7 +27,17 @@ public static class AutomationServiceCollectionExtensions
         services.Configure<PcsProOptions>(configuration.GetSection("PcsPro"));
         services.Configure<ScoreboardOptions>(configuration.GetSection("Scoreboard"));
         services.AddSingleton<IProcessManager, SystemProcessManager>();
-        services.AddSingleton(TimeProvider.System);
+
+        var dateOverride = configuration["TestDateOverride"];
+        if (!string.IsNullOrEmpty(dateOverride) && DateOnly.TryParse(dateOverride, out var overrideDate))
+        {
+            services.AddSingleton<TimeProvider>(new FixedDateTimeProvider(overrideDate));
+        }
+        else
+        {
+            services.AddSingleton(TimeProvider.System);
+        }
+
         services.AddSingleton<PcsProWindowLocator>();
         services.AddSingleton<ILoginAutomation, FlaUiLoginAutomation>();
         services.AddSingleton<IMatchSelectionAutomation, FlaUiMatchSelectionAutomation>();

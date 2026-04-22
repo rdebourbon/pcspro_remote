@@ -35,6 +35,9 @@ else if (_currentState == PcsProState.MatchSelection)
             <button class="load-matches-button" disabled="@(_operationInProgress || _manualModeActive)" @onclick="FetchMatchesAsync">
                 Load Today&rsquo;s Matches
             </button>
+            <button class="use-current-match-button" disabled="@(_operationInProgress || _manualModeActive)" @onclick="UseCurrentMatchAsync">
+                Use Current Match
+            </button>
         </div>
     }
 }
@@ -167,6 +170,29 @@ else if (_currentState == PcsProState.Error)
         _loadedMatch = match;
         _matches = null;
         await AutomationService.LoadMatchAsync(match);
+    }
+
+    private async Task UseCurrentMatchAsync()
+    {
+        if (_operationInProgress)
+            return;
+
+        if (ManualModeService.IsManualModeActive)
+        {
+            NotificationService.Notify(NotificationSeverity.Warning, "Automation is paused — disable manual mode before issuing commands");
+            return;
+        }
+
+        try
+        {
+            var teams = await AutomationService.UseCurrentMatchAsync();
+            _loadedMatch = new MatchInfo("current", teams.Home.TeamName, teams.Away.TeamName, "Current Match", DateOnly.FromDateTime(DateTime.Today));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogError(ex, "UseCurrentMatchAsync failed");
+            NotificationService.Notify(NotificationSeverity.Error, "Failed to attach to current match");
+        }
     }
 
     private async void OnManualModeChanged(object? sender, bool isActive)
