@@ -2,7 +2,7 @@
 
 This document tracks all deferred functionality, accepted risks, and future work items identified during development. Items are sourced from HLPS/IS/Spec reviews, adversarial code reviews, and feature gap discovery during diagnostic testing.
 
-**Last updated:** 2026-04-21 (HLPS-012 COMPLETE)
+**Last updated:** 2026-04-22 (HLPS-013 COMPLETE)
 
 ---
 
@@ -20,7 +20,7 @@ Discovered during hands-on testing against real PCS Pro on the garage PC. Full d
 | GAP-006 | Match Selection — Site/Competition Filter Awareness | Diagnostic testing | Unassigned | ❌ Not started |
 | GAP-007 | Match Selection Grid — Structured Data Extraction | Diagnostic testing | ✅ Delivered (IS-010 S-004) | ✅ Complete |
 | GAP-008 | Title Change Detection — Same Match Type | Diagnostic testing | ✅ Resolved (commit `1129b1f`) | ✅ Complete |
-| GAP-009 | Team Name Display & YouTube Title Formatting Rules | User requirement | Unassigned | ❌ Not started |
+| GAP-009 | Team Name Display & YouTube Title Formatting Rules | User requirement | ✅ Delivered (HLPS-013 S-003/S-004) | ✅ Complete |
 | GAP-010 | "Use Current Match" — Skip Match Selection | User observation | IS-010 S-011 (Tier 3) | ✅ Delivered (`acc0897`) |
 | GAP-011 | Periodic PCS Pro Health-Check Poll | User observation | IS-010 S-012 (Tier 3) | ✅ Delivered (`ee716e0`) |
 
@@ -69,10 +69,10 @@ These were explicitly scoped out of earlier HLPS and remain unassigned:
 - GAP-002: Auto switch user (backend-only — if detected login username ≠ expected, automation uses "Switch User" and re-enters correct credentials; no user prompting)
 - GAP-005: Date filter override (testing convenience)
 - GAP-006: Filter awareness (site/competition filter UI)
-- GAP-009: Team name formatting rules (HHCC prefix stripping, home team identification)
-- GAP-013: YouTube setup tray shortcut (replace `--youtube-setup` CLI with right-click menu item)
-- GAP-015: Club logo PNG (branding — Web UI, favicon, tray icon, installer; awaiting asset)
-- GAP-016: Custom tray host icon (text-based design at 16x16/24x24/32x32)
+- ~~GAP-009~~: Resolved in S-003/S-004
+- ~~GAP-013~~: Resolved in S-005
+- ~~GAP-015~~: Resolved in S-006
+- ~~GAP-016~~: Resolved in S-007
 - ~~DEF-001/DEF-002~~: Resolved in S-004
 - DEF-004: Web UI club name display (future HLPS)
 
@@ -83,10 +83,10 @@ These were explicitly scoped out of earlier HLPS and remain unassigned:
 | ID | Title | Description | Target HLPS | Status |
 |---|---|---|---|---|
 | GAP-012 | WiX MSI Installer | Full MSI installer replacing manual setup. Sets environment variables (YouTube API keys, PCS Pro password) at install time, registers Task Scheduler entry, handles upgrades. Replaces HLPS-007 manual deployment model entirely. | HLPS-007 (Deployment) | ❌ Not started |
-| GAP-013 | YouTube Setup Tray Shortcut | Add a right-click context menu item on the tray icon ("YouTube Setup...") that launches the OAuth flow in the default browser. Replaces the current `--youtube-setup` CLI argument approach. | HLPS-011 or HLPS-007 | ❌ Not started |
+| GAP-013 | YouTube Setup Tray Shortcut | Add a right-click context menu item on the tray icon ("YouTube Setup...") that launches the OAuth flow in the default browser. Replaces the current `--youtube-setup` CLI argument approach. | ✅ Delivered (HLPS-013 S-005) | ✅ Complete |
 | GAP-014 | Disable UI During Automation | User observation | ✅ Delivered (HLPS-011 S-005) | ✅ Complete |
-| GAP-015 | Club Logo PNG | Use the proper club logo PNG everywhere: Web UI header/navbar, favicon, tray icon, installer splash. User will provide the file. | HLPS-011 or HLPS-007 | ❌ Not started (awaiting asset) |
-| GAP-016 | Tray Host Icon | Custom .ico for the system tray — simple text-based "PCS Remote" design mimicking the existing PCS Pro icon style. Needs to work at 16x16/24x24/32x32. | HLPS-011 or HLPS-007 | ❌ Not started |
+| GAP-015 | Club Logo PNG | Use the proper club logo PNG everywhere: Web UI header/navbar, favicon, tray icon, installer splash. User will provide the file. | ✅ Delivered (HLPS-013 S-006) | ✅ Complete |
+| GAP-016 | Tray Host Icon | Custom .ico for the system tray — simple text-based "PCS Remote" design mimicking the existing PCS Pro icon style. Needs to work at 16x16/24x24/32x32. | ✅ Delivered (HLPS-013 S-007) | ✅ Complete |
 | GAP-017 | Real-Time Automation Log | User observation | ✅ Delivered (HLPS-011 S-003/S-004/S-006) | ✅ Complete |
 
 ---
