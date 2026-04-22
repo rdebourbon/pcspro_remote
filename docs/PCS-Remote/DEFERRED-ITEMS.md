@@ -82,7 +82,7 @@ These were explicitly scoped out of earlier HLPS and remain unassigned:
 
 | ID | Title | Description | Target HLPS | Status |
 |---|---|---|---|---|
-| GAP-012 | WiX MSI Installer | Full MSI installer replacing manual setup. Sets environment variables (YouTube API keys, PCS Pro password) at install time, registers Task Scheduler entry, handles upgrades. Replaces HLPS-007 manual deployment model entirely. | HLPS-007 (Deployment) | ❌ Not started |
+| GAP-012 | WiX MSI Installer | Full MSI installer replacing manual setup. Writes YouTube API credentials and PCS Pro path to `appsettings.json`, stores PCS Pro password as a System environment variable, registers Task Scheduler entry, opens firewall port, and handles upgrades. Replaces HLPS-007 manual deployment model entirely. | ✅ Delivered (HLPS-014) | ✅ Complete |
 | GAP-013 | YouTube Setup Tray Shortcut | Add a right-click context menu item on the tray icon ("YouTube Setup...") that launches the OAuth flow in the default browser. Replaces the current `--youtube-setup` CLI argument approach. | ✅ Delivered (HLPS-013 S-005) | ✅ Complete |
 | GAP-014 | Disable UI During Automation | User observation | ✅ Delivered (HLPS-011 S-005) | ✅ Complete |
 | GAP-015 | Club Logo PNG | Use the proper club logo PNG everywhere: Web UI header/navbar, favicon, tray icon, installer splash. User will provide the file. | ✅ Delivered (HLPS-013 S-006) | ✅ Complete |

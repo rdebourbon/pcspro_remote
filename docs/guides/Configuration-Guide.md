@@ -4,11 +4,58 @@ This guide is the authoritative reference for configuring PCS Remote on the gara
 
 ---
 
-## Quick Start — First-Time Deployment Procedure
+## Quick Start — First-Time Installation (MSI)
 
-Follow these steps in order. A newcomer with Administrator access should be able to complete the setup in under 30 minutes using only this guide.
+Follow these steps in order. A newcomer with Administrator access should be able to complete the setup in under 15 minutes using only this guide.
 
-**Prerequisites**: Windows 10 or 11, Administrator account, PCS Pro (cricket.exe) already installed.
+**Prerequisites**: Windows 10 or 11 (64-bit), Administrator account, PCS Pro (cricket.exe) already installed.
+
+1. **Build the MSI installer**  
+   On the developer machine, open PowerShell and run:
+   ```powershell
+   scripts\build-installer.ps1
+   ```
+   This produces `artifacts\PcsRemote-Setup.msi`. To build a specific version:
+   ```powershell
+   scripts\build-installer.ps1 -Version 1.2.0.0
+   ```
+
+2. **Copy the MSI to the garage PC**  
+   Copy `artifacts\PcsRemote-Setup.msi` to the garage PC via USB drive, network share, or any convenient method.
+
+3. **Run the installer**  
+   Double-click `PcsRemote-Setup.msi` on the garage PC. Accept the UAC prompt, then follow the wizard:
+   - **Install location** — accept the default (`C:\PcsRemote\`) or choose a different folder.
+   - **PCS Pro executable path** — accept the default (`C:\Program Files (x86)\PCS Pro\cricket.exe`) or enter the correct path.
+   - **Port** — accept the default (`5000`) or enter a different port number.
+   - **PCS Pro password** — enter the PCS Pro login password.
+   - **YouTube Client ID and Client Secret** — enter the YouTube API credentials.
+   - **Live Stream ID** — enter the YouTube live stream ID.
+   - Click **Install** and wait for completion.
+
+   The installer handles everything: deploying application files, writing `appsettings.json`, creating the Task Scheduler task, opening the Windows Firewall port, and setting the PCS Pro password as a System environment variable.
+
+4. **Verify the installation**  
+   Log off and log on again. The PCS Remote tray icon should appear within 30 seconds. Right-click the tray icon → **"Open Browser"** to open the control panel.
+
+---
+
+## Updating via MSI (Upgrades)
+
+For subsequent software releases:
+
+1. Build a new MSI with an incremented version:
+   ```powershell
+   scripts\build-installer.ps1 -Version 1.1.0.0
+   ```
+2. Copy the new MSI to the garage PC and double-click to install. The installer detects the previous version and upgrades in-place. `appsettings.json` is preserved — the wizard does not run its configuration step during an upgrade.
+3. Log off and log on to restart the application.
+
+---
+
+## Fallback — PowerShell Deployment
+
+> **Note:** The MSI installer (above) is the primary deployment method. The PowerShell scripts below are retained as a fallback for environments where the MSI cannot be used.
 
 1. **Build the deployment artefact**  
    On the developer machine, open PowerShell and run:
@@ -40,13 +87,13 @@ Follow these steps in order. A newcomer with Administrator access should be able
    - Wait for the tray icon to appear before proceeding to step 4.
 
 4. **Execute the Smoke Test Checklist**  
-   Open `docs\guides\Smoke-Test-Checklist.md` and run through all items to verify the deployment.
+   Open `docs\PCS-Remote\HLPS-014-WiX-Installer\SMOKE-TEST-CHECKLIST.md` and run through all items to verify the deployment.
 
 ---
 
-## Update Deployments
+## Fallback — PowerShell Update Deployments
 
-For subsequent software releases:
+For subsequent software releases using the PowerShell fallback:
 
 1. Re-run `scripts\publish.ps1` on the developer machine to rebuild from the latest code.
 2. Re-run the deployment script (password unchanged):
@@ -65,7 +112,7 @@ For subsequent software releases:
 | Requirement | Notes |
 |---|---|
 | Windows 10/11 | 64-bit |
-| Administrator account | Required for deployment script only |
+| Administrator account | Required for MSI installation and PowerShell deployment |
 | .NET runtime | **Not required** — the artefact is self-contained |
 | PCS Pro (cricket.exe) | Must be installed before real-mode use |
 
@@ -169,7 +216,7 @@ Change `PcsPro:UseMock` in `appsettings.json`, then restart the application.
 If port 5000 conflicts with another application:
 
 1. Change `Kestrel:Endpoints:Http:Url` in `appsettings.json` to the new port (e.g., `"http://0.0.0.0:8080"`).
-2. Re-run the deployment script to update the Windows Firewall rule:
+2. Update the Windows Firewall rule. If using the MSI, uninstall and reinstall with the new port. If using PowerShell deployment:
    ```powershell
    scripts\Deploy-PcsRemote.ps1 -AppUser "DOMAIN\username" -SkipPasswordUpdate -Port 8080
    ```

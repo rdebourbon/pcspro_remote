@@ -117,12 +117,141 @@ If the garage PC has been restarted (for example, after a power cut or Windows U
 
 ## SmartScreen prompt
 
-If Windows shows a **"Windows protected your PC"** prompt when first running the application:
+If Windows shows a **"Windows protected your PC"** prompt when first running the application or the MSI installer:
 
 1. Click **"More info"**
 2. Click **"Run anyway"**
 
-This is a one-time prompt for unsigned executables and will not appear again.
+This is a one-time prompt for unsigned executables and installers. It will not appear again for the same file.
+
+---
+
+## Uninstalling PCS Remote
+
+To remove PCS Remote:
+
+1. Open **Settings → Apps → Apps & features** (Windows 10) or **Settings → Apps → Installed apps** (Windows 11).
+2. Find **PCS Remote** in the list and click **Uninstall**.
+3. Follow the prompts.
+
+The uninstaller removes application files, the Task Scheduler task, and the Windows Firewall rule. The following are intentionally **preserved** after uninstall:
+- The `PcsPro__Password` System environment variable (contains the PCS Pro password)
+- The log directory (`C:\PcsRemote\logs\`) and its contents
+
+To remove these manually after uninstall:
+```powershell
+# Remove the environment variable
+[System.Environment]::SetEnvironmentVariable("PcsPro__Password", $null, "Machine")
+
+# Remove the log directory
+Remove-Item -Recurse -Force "C:\PcsRemote\logs"
+```
+
+---
+
+## MSI verbose logging
+
+If your IT contact needs detailed installation logs for troubleshooting, run the MSI from an elevated Command Prompt:
+
+```
+msiexec /i PcsRemote-Setup.msi /l*v install.log
+```
+
+This creates a verbose log file (`install.log`) in the current directory. Credential values (PCS Pro password, YouTube Client Secret) are automatically redacted in the log — they appear as `*****`.
+
+---
+
+## Manual remediation for degraded installs
+
+If the MSI installer completes but one of the system artifacts was not created (for example, if a custom action failed), your IT contact can create the missing artifact manually.
+
+### Task Scheduler task
+
+If the PCS Remote task is missing from Task Scheduler, recreate it with the commands below. Replace the user and paths as needed:
+
+```powershell
+$installDir = 'C:\PcsRemote'
+$logonUser  = 'DOMAIN\username'
+
+$action    = New-ScheduledTaskAction `
+    -Execute (Join-Path $installDir 'PcsRemote.TrayHost.exe') `
+    -WorkingDirectory $installDir
+$trigger   = New-ScheduledTaskTrigger -AtLogOn -User $logonUser
+$settings  = New-ScheduledTaskSettingsSet `
+    -ExecutionTimeLimit (New-TimeSpan -Seconds 0) `
+    -MultipleInstances IgnoreNew `
+    -RestartCount 999 `
+    -RestartInterval (New-TimeSpan -Seconds 30)
+$principal = New-ScheduledTaskPrincipal `
+    -UserId $logonUser -LogonType Interactive -RunLevel Limited
+
+Register-ScheduledTask -TaskName 'PcsRemote' `
+    -Action $action -Trigger $trigger `
+    -Settings $settings -Principal $principal -Force
+```
+
+> **Note:** The task runs at **limited** privilege under the specified logon user, with auto-restart on failure (every 30 seconds, up to 999 retries). This matches the task created by the MSI installer.
+
+### Windows Firewall rule
+
+If the `PcsRemote-HTTP` firewall rule is missing:
+
+```powershell
+New-NetFirewallRule -Name "PcsRemote-HTTP" -DisplayName "PCS Remote HTTP" `
+    -Direction Inbound -Protocol TCP -LocalPort 5000 -Action Allow
+```
+
+Replace `5000` with the port entered during installation if different.
+
+### Environment variable
+
+If the `PcsPro__Password` System environment variable is missing:
+
+```powershell
+$securePwd = Read-Host -AsSecureString 'Enter PCS Pro password'
+$bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePwd)
+try {
+    $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    [System.Environment]::SetEnvironmentVariable('PcsPro__Password', $plain, 'Machine')
+    $plain = $null
+}
+finally {
+    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+}
+```
+
+This avoids exposing the password in the terminal scrollback or shell history. The BSTR is freed in the `finally` block to minimise the window during which the plaintext is held in unmanaged memory.
+
+### Configuration file (`appsettings.json`)
+
+If `appsettings.json` was not created in the installation directory, create it manually from the template below, replacing the placeholder values with those entered during the wizard:
+
+```json
+{
+  "PcsPro": {
+    "ExecutablePath": "C:\\Program Files (x86)\\PCS Pro\\cricket.exe",
+    "WorkingDirectory": "C:\\Program Files (x86)\\PCS Pro",
+    "AutoLaunch": true,
+    "UseMock": false,
+    "Password": ""
+  },
+  "Kestrel": {
+    "Endpoints": {
+      "Http": {
+        "Url": "http://0.0.0.0:5000"
+      }
+    }
+  },
+  "YouTube": {
+    "ClientId": "",
+    "ClientSecret": "",
+    "LiveStreamId": "",
+    "UseMock": false
+  }
+}
+```
+
+Adjust `ExecutablePath`, `WorkingDirectory`, and the port number as needed. Fill in the YouTube API credentials and Live Stream ID with the values entered during the original installation. Leave `Password` empty — the PCS Pro password is stored in the environment variable, not in this file.
 
 ---
 
