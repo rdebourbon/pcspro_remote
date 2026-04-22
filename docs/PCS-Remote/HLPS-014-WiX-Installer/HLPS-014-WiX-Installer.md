@@ -102,7 +102,7 @@ This HLPS delivers a Windows Installer (MSI) package built with WiX v5 that repl
 |---|---|
 | A-1 | The target machine runs Windows 10 or 11 x64. |
 | A-2 | The installer is run by a user with local Administrator rights. |
-| A-3 | WiX v5 SDK is used via `dotnet tool` or NuGet SDK — no standalone WiX Toolset install required on the build machine. |
+| A-3 | `WixToolset.Sdk/5.0.2` is used via NuGet SDK — no standalone WiX Toolset install required on the build machine. (Updated from "WiX v5 SDK" by S-001 PoC; v7.0.0 evaluated but rejected due to OSMF EULA build-time enforcement.) |
 | A-4 | The MSI is built on the same development machine that builds the application. Cross-compilation is not required. |
 | A-5 | The installing user account is the same account that will log on to the garage PC for daily operation (the Task Scheduler ONLOGON trigger uses this account). |
 | A-6 | PCS Pro is already installed on the target machine before PCS Remote is installed. |
@@ -158,10 +158,10 @@ This HLPS delivers a Windows Installer (MSI) package built with WiX v5 that repl
 
 | ID | Description | Owner | Blocking? | Status | Resolution Plan |
 |---|---|---|---|---|---|
-| I-U-1 | WiX v5 SDK compatibility with the project's .NET 8 build toolchain — does `WixToolset.Sdk` work as a project SDK alongside the existing solution? | Agent | Yes | Open | Build a minimal PoC WiX project in the first IS step to validate SDK integration before proceeding. |
-| I-U-2 | Custom action hosting model — should custom actions use C# DLL custom actions (WiX DTF), PowerShell via `WixQuietExec`, or batch scripts? | Agent | Yes | Open | Evaluate WiX v5 `WixToolset.Dnc.wixext` (managed hosting) vs `WixToolset.Util.wixext` (`WixQuietExec`) during the PoC step. Choose based on debuggability and minimal dependency. |
+| I-U-1 | WiX v5 SDK compatibility with the project's .NET 8 build toolchain — does `WixToolset.Sdk` work as a project SDK alongside the existing solution? | Agent | Yes | Resolved | `WixToolset.Sdk/5.0.2` builds cleanly with .NET 8 SDK. v7.0.0 rejected (OSMF EULA build-time enforcement, `WIX7015`). Installer project uses local `Directory.Build.props` and CPM opt-out to avoid conflicts with root build configuration. |
+| I-U-2 | Custom action hosting model — should custom actions use C# DLL custom actions (WiX DTF), PowerShell via `WixQuietExec`, or batch scripts? | Agent | Yes | Resolved | PowerShell via `WixToolset.Util.wixext` / `WixQuietExec`. Both DTF and PowerShell prototyped successfully. PowerShell selected for: lower build complexity (no separate net472 project), native cmdlets for all required system operations, easier debugging, and equivalent I-C-4 compliance. See SPEC-S-001 §7 for full evaluation. |
 | I-U-3 | Task Scheduler COM API vs `schtasks.exe` — which approach is more reliable for MSI custom actions? `schtasks.exe` is simpler but less capable; COM API offers full control but requires more code. | Agent | No | Open | Decide during IS custom-action step based on chosen hosting model (I-U-2). |
-| I-U-4 | WiX v5 UI customisation — does WiX v5 support custom dialog panels for PCS Pro path and password input, or does this require WixUI extensions? | Agent | No | Open | Validate during PoC step alongside I-U-1. |
+| I-U-4 | WiX v5 UI customisation — does WiX v5 support custom dialog panels for PCS Pro path and password input, or does this require WixUI extensions? | Agent | No | Partially Resolved | `WixToolset.UI.wixext` 5.0.2 builds and integrates successfully; `WixUI_InstallDir` standard dialog set works. Custom wizard panels with additional input fields deferred to S-003 for full validation. |
 | I-U-5 | Upgrade behaviour for `appsettings.json` — can WiX's `NeverOverwrite` attribute reliably preserve user-modified config, or is a custom merge action needed? | Agent | Yes | Resolved | `NeverOverwrite` on the `appsettings.json` component. Config-write custom action conditioned on fresh install only (not upgrade). Application code provides defaults for new keys via .NET configuration layering — no custom merge needed. |
 | I-U-6 | Environment variable removal on uninstall — should the password env var be unconditionally removed, or should the uninstaller leave it? | User | No | Resolved | Leave in place to avoid accidental credential loss. |
 

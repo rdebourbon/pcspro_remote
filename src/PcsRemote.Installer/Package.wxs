@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="PCS Remote"
+           Manufacturer="High Halstow Cricket Club"
+           Version="1.0.0.0"
+           UpgradeCode="2DCBF298-D066-4428-A8C5-55337B615297"
+           Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <StandardDirectory Id="ProgramFilesFolder">
+      <Directory Id="INSTALLFOLDER" Name="PcsRemote">
+        <Component Id="ReadmeComponent" Guid="*">
+          <File Id="ReadmeFile" Source="Payload\README.txt" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="PCS Remote" Level="1">
+      <ComponentRef Id="ReadmeComponent" />
+    </Feature>
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+  </Package>
+
+</Wix>

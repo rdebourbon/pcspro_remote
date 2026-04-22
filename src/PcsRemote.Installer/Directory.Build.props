@@ -1,0 +1,4 @@
+<Project>
+  <!-- Block inheritance of root Directory.Build.props — WiX SDK does not consume
+       Nullable, ImplicitUsings, or TreatWarningsAsErrors. -->
+</Project>

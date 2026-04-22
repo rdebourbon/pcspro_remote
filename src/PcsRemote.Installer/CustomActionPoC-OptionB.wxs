@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Fragment>
+
+    <!-- Option B: PowerShell custom action via WixQuietExec.
+         Sets a property with the command line, then invokes WixQuietExec
+         as a deferred CA running elevated. -->
+
+    <SetProperty Id="CA_HelloPowerShell"
+                 Before="CA_HelloPowerShell"
+                 Sequence="execute"
+                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;Set-Content -Path ([System.IO.Path]::Combine($env:TEMP, 'PcsRemote-PoC-PS.log')) -Value ('Hello from PowerShell CA at ' + (Get-Date -Format o))&quot;" />
+
+    <CustomAction Id="CA_HelloPowerShell"
+                  DllEntry="WixQuietExec"
+                  BinaryRef="Wix4UtilCA_X86"
+                  Execute="deferred"
+                  Return="check"
+                  Impersonate="no" />
+
+    <InstallExecuteSequence>
+      <Custom Action="CA_HelloPowerShell" After="InstallFiles" Condition="NOT Installed" />
+    </InstallExecuteSequence>
+
+  </Fragment>
+
+</Wix>

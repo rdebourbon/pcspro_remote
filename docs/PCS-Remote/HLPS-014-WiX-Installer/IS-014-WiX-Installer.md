@@ -14,7 +14,7 @@
 
 This Implementation Sequence breaks HLPS-014 into eight ordered steps across three phases:
 
-1. **Foundation (S-001 → S-002):** Scaffold the WiX v5 project and resolve blocking unknowns (I-U-1, I-U-2), then harvest the TrayHost publish output into the MSI. Highest technical risk — tackled first to fail fast.
+1. **Foundation (S-001 → S-002):** Scaffold the WiX project (`WixToolset.Sdk/5.0.2`) and resolve blocking unknowns (I-U-1, I-U-2), then harvest the TrayHost publish output into the MSI. Highest technical risk — tackled first to fail fast.
 2. **Installer behaviour (S-003 → S-006):** Build the wizard UI, configuration write, system artifact custom actions (Task Scheduler, Firewall, env var), and upgrade/migration logic. Each step adds an independently testable capability.
 3. **Integration (S-007 → S-008):** Build script, ARP metadata, credential hiding, documentation updates, and end-to-end smoke test.
 
@@ -28,11 +28,11 @@ All steps are strictly sequential — each builds on the MSI produced by the pre
 
 ---
 
-## S-001 — WiX v5 Project Scaffold & PoC
+## S-001 — WiX Project Scaffold & PoC
 
-**What:** Create a new `src/PcsRemote.Installer` WiX v5 project using the `WixToolset.Sdk`. Add it to the solution. Configure a minimal product definition (ProductCode, UpgradeCode, version, manufacturer). Include a trivial payload (e.g., a single text file) to validate the full build → MSI → install → uninstall cycle. Evaluate the custom action hosting model by implementing a minimal "hello world" custom action using both `WixToolset.Dnc.wixext` (managed C# hosting) and `WixToolset.Util.wixext` (`WixQuietExec` PowerShell), then select the approach with better debuggability and fewer dependencies.
+**What:** Create a new `src/PcsRemote.Installer` WiX project using `WixToolset.Sdk/5.0.2`. The project is **not** added to `PCS_Remote.slnx` (the `.slnx` format does not support per-project build exclusion) — it is built independently via `dotnet build src/PcsRemote.Installer`. Configure a minimal product definition (ProductCode, UpgradeCode, version, manufacturer). Include a trivial payload (e.g., a single text file) to validate the full build → MSI → install → uninstall cycle. Evaluate the custom action hosting model by implementing a minimal "hello world" custom action using both `WixToolset.Dtf` (managed C#/.NET Framework hosting) and `WixToolset.Util.wixext` (`WixQuietExec` PowerShell), then select the approach with better debuggability and fewer dependencies.
 
-**Why:** Resolves I-U-1 (SDK compatibility), I-U-2 (CA hosting model), and partially validates I-U-4 (UI extensibility — full resolution in S-003). These blocking unknowns must be settled before any real installer work can proceed. The PoC validates that the entire WiX v5 toolchain works with the project's .NET 8 build environment.
+**Why:** Resolves I-U-1 (SDK compatibility), I-U-2 (CA hosting model), and partially validates I-U-4 (UI extensibility — full resolution in S-003). These blocking unknowns must be settled before any real installer work can proceed. The PoC validates that the entire WiX toolchain works with the project's .NET 8 build environment.
 
 **Dependencies:** None.
 
