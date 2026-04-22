@@ -13,7 +13,7 @@ Discovered during hands-on testing against real PCS Pro on the garage PC. Full d
 | ID | Title | Source | Assigned HLPS | Status |
 |---|---|---|---|---|
 | GAP-001 | Debug / Advanced Menu in Web UI | User observation | ✅ Delivered (HLPS-011 S-007/S-008) | ✅ Complete |
-| GAP-002 | Auto Switch User on Wrong Login | User observation | Unassigned | ❌ Not started |
+| GAP-002 | Auto Switch User on Wrong Login | User observation | ✅ Delivered (HLPS-013 S-001/S-002) | ✅ Complete |
 | GAP-003 | Clear Authentication Errors on Web UI | User observation | ✅ Delivered (HLPS-011 S-001) | ✅ Complete |
 | GAP-004 | Reusable Safe Interaction Helpers | Diagnostic testing | ✅ Delivered (IS-010 S-002) | ✅ Complete |
 | GAP-005 | Date Filter Override for Testing | Diagnostic testing | Unassigned | ❌ Not started |
@@ -66,7 +66,7 @@ These are in-scope for IS-010 but marked "Can-Defer" — they can be deferred to
 
 These were explicitly scoped out of earlier HLPS and remain unassigned:
 
-- GAP-002: Auto switch user (backend-only — if detected login username ≠ expected, automation uses "Switch User" and re-enters correct credentials; no user prompting)
+- ~~GAP-002~~: Resolved in S-001/S-002
 - GAP-005: Date filter override (testing convenience)
 - GAP-006: Filter awareness (site/competition filter UI)
 - ~~GAP-009~~: Resolved in S-003/S-004
