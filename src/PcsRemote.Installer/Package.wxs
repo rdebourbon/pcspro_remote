@@ -20,8 +20,21 @@
     <!-- INSTALLFOLDER is structurally under ProgramFilesFolder so WiX can
          auto-generate component GUIDs (WIX0231 requires a standard-directory
          ancestor). The Property override sets the actual default to
-         C:\PcsRemote\ at install time. -->
-    <Property Id="INSTALLFOLDER" Value="C:\PcsRemote\" Secure="yes" />
+         C:\PcsRemote\ at install time. On upgrade, the RegistrySearch detects
+         the previous install directory from the registry transport (32-bit
+         view, consistent with WriteRegistryValues). -->
+    <Property Id="INSTALLFOLDER" Value="C:\PcsRemote\" Secure="yes">
+      <!-- On upgrade, detect previous install dir from registry transport.
+           Type="raw" preferred over "directory" — returns the stored path even
+           if the directory was removed, so the upgrade reinstalls to the
+           originally chosen location. 32-bit registry view is implicit (x86
+           package) — consistent with WriteRegistryValues in S-004/S-005.
+           Key path must match ConfigTransportComponent's InstallFolder value
+           (see RegistryValue elements below). -->
+      <RegistrySearch Id="PrevInstallDir" Root="HKLM"
+                      Key="SOFTWARE\PcsRemote\Install" Name="InstallFolder"
+                      Type="raw" Bitness="always32" />
+    </Property>
 
     <Property Id="PCSPRO_EXEPATH" Value="C:\Program Files (x86)\PCS Pro\cricket.exe" Secure="yes" />
     <Property Id="PCSPRO_PASSWORD" Hidden="yes" Secure="yes" />
@@ -230,38 +243,41 @@
                   HideTarget="yes" />
 
     <InstallExecuteSequence>
-      <!-- S-004: Config write on fresh install -->
+      <!-- S-004: Config write on fresh install only (not upgrade).
+           On upgrade, existing appsettings.json is preserved by NeverOverwrite
+           + this CA skip. New config keys in future versions are handled by
+           .NET configuration layering (code defaults — HLPS-014 scope item 7). -->
       <Custom Action="CA_SetWriteConfigData" Before="CA_WriteConfigExec"
-              Condition="NOT Installed" />
+              Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
       <Custom Action="CA_WriteConfigExec" After="WriteRegistryValues"
-              Condition="NOT Installed" />
+              Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
 
       <!-- S-005: System artifact install CAs — chained after config write -->
       <Custom Action="CA_SetInstallTaskSchedulerData" Before="CA_InstallTaskSchedulerExec"
-              Condition="NOT Installed" />
+              Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
       <Custom Action="CA_InstallTaskSchedulerExec" After="CA_WriteConfigExec"
-              Condition="NOT Installed" />
+              Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
 
       <Custom Action="CA_SetInstallFirewallData" Before="CA_InstallFirewallExec"
-              Condition="NOT Installed" />
+              Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
       <Custom Action="CA_InstallFirewallExec" After="CA_InstallTaskSchedulerExec"
-              Condition="NOT Installed" />
+              Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
 
       <Custom Action="CA_SetInstallEnvVarData" Before="CA_InstallEnvVarExec"
-              Condition="NOT Installed" />
+              Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
       <Custom Action="CA_InstallEnvVarExec" After="CA_InstallFirewallExec"
-              Condition="NOT Installed" />
+              Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
 
-      <!-- S-005: System artifact uninstall CAs — before file removal -->
+      <!-- S-005: System artifact uninstall CAs — standalone uninstall only (not upgrade) -->
       <Custom Action="CA_SetUninstallFirewallData" Before="CA_UninstallFirewallExec"
-              Condition='REMOVE="ALL"' />
+              Condition='REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE' />
       <Custom Action="CA_UninstallFirewallExec" Before="CA_UninstallTaskSchedulerExec"
-              Condition='REMOVE="ALL"' />
+              Condition='REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE' />
 
       <Custom Action="CA_SetUninstallTaskSchedulerData" Before="CA_UninstallTaskSchedulerExec"
-              Condition='REMOVE="ALL"' />
+              Condition='REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE' />
       <Custom Action="CA_UninstallTaskSchedulerExec" Before="RemoveFiles"
-              Condition='REMOVE="ALL"' />
+              Condition='REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE' />
     </InstallExecuteSequence>
 
   </Package>
