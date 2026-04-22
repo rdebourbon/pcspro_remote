@@ -1,4 +1,4 @@
-# PCS Remote — Task Scheduler Install Custom Action
+# PCS Remote - Task Scheduler Install Custom Action
 # Creates the PcsRemote scheduled task for auto-start on user logon.
 # Reads install directory and logon user from registry transport
 # (HKLM:\SOFTWARE\PcsRemote\Install, written by WriteRegistryValues).

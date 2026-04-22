@@ -1,4 +1,4 @@
-# PCS Remote — Environment Variable Install Custom Action
+# PCS Remote - Environment Variable Install Custom Action
 # Sets the PcsPro__Password system environment variable from the
 # wizard-entered password, read from registry transport.
 # The password value is NEVER logged, echoed, or exposed.
@@ -17,7 +17,7 @@ try
     {
         $logDir = if ($installDir) { $installDir } else { $env:TEMP }
         $logPath = Join-Path $logDir 'install-envvar-ca.log'
-        "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') INFO: Password is empty — skipping env var write to preserve existing value." |
+        "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') INFO: Password is empty - skipping env var write to preserve existing value." |
             Out-File $logPath -Append -Encoding utf8
     }
     else

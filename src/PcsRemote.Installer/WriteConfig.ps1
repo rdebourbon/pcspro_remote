@@ -1,4 +1,4 @@
-# PCS Remote — Configuration Write Custom Action
+# PCS Remote - Configuration Write Custom Action
 # Modifies appsettings.json with wizard-collected values on fresh install.
 # Reads values from registry (HKLM:\SOFTWARE\PcsRemote\Install) to avoid
 # command-line quoting/injection issues with special characters.
@@ -30,7 +30,7 @@ try
     $cfg.PcsPro.AutoLaunch = $true
     $cfg.PcsPro.UseMock = $false
 
-    # YouTube settings — add keys not present in the template
+    # YouTube settings - add keys not present in the template
     $cfg.YouTube | Add-Member -NotePropertyName 'ClientId' -NotePropertyValue $clientId -Force
     $cfg.YouTube | Add-Member -NotePropertyName 'ClientSecret' -NotePropertyValue $clientSecret -Force
     $cfg.YouTube | Add-Member -NotePropertyName 'LiveStreamId' -NotePropertyValue $liveStreamId -Force
@@ -43,7 +43,7 @@ try
 catch
 {
     # Fail-forward (HLPS I-C-3): log the error, exit 0 so the install continues.
-    # Guard the log write itself — if INSTALLFOLDER is inaccessible, fall back to %TEMP%.
+    # Guard the log write itself - if INSTALLFOLDER is inaccessible, fall back to %TEMP%.
     try
     {
         $logDir = if ($installDir) { $installDir } else { $env:TEMP }

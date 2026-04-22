@@ -1,6 +1,6 @@
-# PCS Remote — Firewall Uninstall Custom Action
+# PCS Remote - Firewall Uninstall Custom Action
 # Removes the PcsRemote-HTTP firewall rule.
-# Uses hardcoded rule name — no registry dependency.
+# Uses hardcoded rule name - no registry dependency.
 
 $ErrorActionPreference = 'Stop'
 

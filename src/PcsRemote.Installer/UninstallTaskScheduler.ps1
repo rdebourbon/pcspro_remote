@@ -1,6 +1,6 @@
-# PCS Remote — Task Scheduler Uninstall Custom Action
+# PCS Remote - Task Scheduler Uninstall Custom Action
 # Stops and removes the PcsRemote scheduled task.
-# Uses hardcoded task name — no registry dependency.
+# Uses hardcoded task name - no registry dependency.
 
 $ErrorActionPreference = 'Stop'
 

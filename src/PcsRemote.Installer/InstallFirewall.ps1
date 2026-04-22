@@ -1,4 +1,4 @@
-# PCS Remote — Firewall Install Custom Action
+# PCS Remote - Firewall Install Custom Action
 # Creates the PcsRemote-HTTP inbound TCP firewall rule for the configured port.
 # Reads port from registry transport (HKLM:\SOFTWARE\PcsRemote\Install).
 
