@@ -300,6 +300,24 @@ body {
     cursor: not-allowed;
 }
 
+.error-display__dismiss-btn {
+    background: transparent;
+    color: var(--pcs-text-muted);
+    border: 1px solid var(--pcs-border);
+    border-radius: 8px;
+    padding: 0.65rem 1.5rem;
+    font-size: 0.92rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: 0.75rem;
+    transition: background .15s, color .15s;
+}
+
+.error-display__dismiss-btn:hover {
+    background: var(--pcs-card-hover);
+    color: var(--pcs-text);
+}
+
 /* ---- Radzen notification toast nudge ---- */
 .rz-notification {
     bottom: 1rem !important;
