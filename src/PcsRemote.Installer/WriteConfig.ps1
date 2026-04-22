@@ -12,7 +12,7 @@ try
     $reg = Get-ItemProperty -Path $regPath
 
     $installDir = $reg.InstallFolder
-    $exePath = $reg.ExePath
+    $exePath = $reg.ExePath.Trim('"')
     $port = $reg.Port
     $clientId = $reg.ClientId
     $clientSecret = $reg.ClientSecret

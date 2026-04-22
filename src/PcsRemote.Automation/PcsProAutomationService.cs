@@ -312,10 +312,12 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// </summary>
     private async Task<IProcessHandle?> TryStartProcessAsync()
     {
+        var exePath = _options.ExecutablePath.Trim('"');
+        var workDir = _options.WorkingDirectory.Trim('"');
         var startInfo = new ProcessStartInfo
         {
-            FileName = _options.ExecutablePath,
-            WorkingDirectory = _options.WorkingDirectory,
+            FileName = exePath,
+            WorkingDirectory = workDir,
             UseShellExecute = false,
         };
 
