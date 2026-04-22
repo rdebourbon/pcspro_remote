@@ -13,13 +13,26 @@
 
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- ============================================================
+         MSI Properties — wizard inputs with defaults
+         ============================================================ -->
+
     <!-- INSTALLFOLDER is structurally under ProgramFilesFolder so WiX can
          auto-generate component GUIDs (WIX0231 requires a standard-directory
-         ancestor). The Property override below sets the actual default to
-         C:\PcsRemote\ at install time — users can still change it via the
-         wizard's directory picker. -->
-    <Property Id="INSTALLFOLDER" Value="C:\PcsRemote\" />
+         ancestor). The Property override sets the actual default to
+         C:\PcsRemote\ at install time. -->
+    <Property Id="INSTALLFOLDER" Value="C:\PcsRemote\" Secure="yes" />
 
+    <Property Id="PCSPRO_EXEPATH" Value="C:\Program Files (x86)\PCS Pro\cricket.exe" Secure="yes" />
+    <Property Id="PCSPRO_PASSWORD" Hidden="yes" Secure="yes" />
+    <Property Id="HTTP_PORT" Value="5000" Secure="yes" />
+    <Property Id="YOUTUBE_CLIENTID" Secure="yes" />
+    <Property Id="YOUTUBE_CLIENTSECRET" Hidden="yes" Secure="yes" />
+    <Property Id="YOUTUBE_LIVESTREAMID" Secure="yes" />
+
+    <!-- ============================================================
+         Directory structure and file installation
+         ============================================================ -->
     <StandardDirectory Id="ProgramFilesFolder">
       <Directory Id="INSTALLFOLDER" Name="PcsRemote">
         <Component Id="AppSettingsComponent" Guid="*" NeverOverwrite="yes">
@@ -35,7 +48,36 @@
       <ComponentGroupRef Id="PublishOutput" />
     </Feature>
 
+    <!-- ============================================================
+         Wizard UI — WixUI_InstallDir with custom dialog panels
+         Navigation: Welcome → License → InstallDir → PcsProSettings
+                     → YouTubeSettings → VerifyReady → Install
+         ============================================================ -->
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+    <UI>
+      <!-- Override InstallDirDlg Next → go to PcsProSettingsDlg -->
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog"
+               Value="PcsProSettingsDlg" Order="5"
+               Condition="WIXUI_DONTVALIDATEPATH OR WIXUI_INSTALLDIR_VALID=&quot;1&quot;" />
+
+      <!-- PcsProSettingsDlg navigation -->
+      <Publish Dialog="PcsProSettingsDlg" Control="Back" Event="NewDialog"
+               Value="InstallDirDlg" />
+      <Publish Dialog="PcsProSettingsDlg" Control="Next" Event="NewDialog"
+               Value="YouTubeSettingsDlg" />
+
+      <!-- YouTubeSettingsDlg navigation -->
+      <Publish Dialog="YouTubeSettingsDlg" Control="Back" Event="NewDialog"
+               Value="PcsProSettingsDlg" />
+      <Publish Dialog="YouTubeSettingsDlg" Control="Next" Event="NewDialog"
+               Value="VerifyReadyDlg" />
+
+      <!-- Override VerifyReadyDlg Back → go to YouTubeSettingsDlg -->
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog"
+               Value="YouTubeSettingsDlg" Order="5"
+               Condition="NOT Installed" />
+    </UI>
 
   </Package>
 

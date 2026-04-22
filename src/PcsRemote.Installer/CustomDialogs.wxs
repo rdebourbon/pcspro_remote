@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Fragment>
+    <UI>
+
+      <!-- ============================================================
+           Dialog 1 — PCS Pro Settings
+           Collects: executable path, password, HTTP port
+           ============================================================ -->
+      <Dialog Id="PcsProSettingsDlg" Width="370" Height="270"
+              Title="[ProductName] Setup — PCS Pro Settings">
+
+        <!-- Banner -->
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0"
+                 Width="370" Height="44" TabSkip="no"
+                 Text="!(loc.InstallDirDlgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44"
+                 Width="370" Height="0" />
+
+        <!-- Title and description -->
+        <Control Id="Title" Type="Text" X="15" Y="6"
+                 Width="200" Height="15" Transparent="yes" NoPrefix="yes"
+                 Text="{\WixUI_Font_Title}PCS Pro Settings" />
+        <Control Id="Description" Type="Text" X="25" Y="23"
+                 Width="280" Height="15" Transparent="yes" NoPrefix="yes"
+                 Text="Configure PCS Pro integration and HTTP port." />
+
+        <!-- PCS Pro executable path -->
+        <Control Id="ExePathLabel" Type="Text" X="20" Y="60"
+                 Width="330" Height="13" NoPrefix="yes"
+                 Text="PCS Pro executable path:" />
+        <Control Id="ExePathEdit" Type="Edit" X="20" Y="74"
+                 Width="330" Height="18" Property="PCSPRO_EXEPATH" />
+
+        <!-- PCS Pro password -->
+        <Control Id="PasswordLabel" Type="Text" X="20" Y="102"
+                 Width="330" Height="13" NoPrefix="yes"
+                 Text="PCS Pro password:" />
+        <Control Id="PasswordEdit" Type="Edit" X="20" Y="116"
+                 Width="330" Height="18" Property="PCSPRO_PASSWORD"
+                 Password="yes" />
+
+        <!-- HTTP port -->
+        <Control Id="PortLabel" Type="Text" X="20" Y="144"
+                 Width="330" Height="13" NoPrefix="yes"
+                 Text="HTTP listening port:" />
+        <Control Id="PortEdit" Type="Edit" X="20" Y="158"
+                 Width="330" Height="18" Property="HTTP_PORT" />
+
+        <!-- Bottom line and buttons -->
+        <Control Id="BottomLine" Type="Line" X="0" Y="234"
+                 Width="370" Height="0" />
+
+        <Control Id="Back" Type="PushButton" X="180" Y="243"
+                 Width="56" Height="17" Text="!(loc.WixUIBack)" />
+
+        <Control Id="Next" Type="PushButton" X="236" Y="243"
+                 Width="56" Height="17" Default="yes"
+                 Text="!(loc.WixUINext)" />
+
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243"
+                 Width="56" Height="17" Cancel="yes"
+                 Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <!-- ============================================================
+           Dialog 2 — YouTube Settings
+           Collects: Client ID, Client Secret, LiveStream ID
+           ============================================================ -->
+      <Dialog Id="YouTubeSettingsDlg" Width="370" Height="270"
+              Title="[ProductName] Setup — YouTube Settings">
+
+        <!-- Banner -->
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0"
+                 Width="370" Height="44" TabSkip="no"
+                 Text="!(loc.InstallDirDlgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44"
+                 Width="370" Height="0" />
+
+        <!-- Title and description -->
+        <Control Id="Title" Type="Text" X="15" Y="6"
+                 Width="200" Height="15" Transparent="yes" NoPrefix="yes"
+                 Text="{\WixUI_Font_Title}YouTube Settings" />
+        <Control Id="Description" Type="Text" X="25" Y="23"
+                 Width="280" Height="15" Transparent="yes" NoPrefix="yes"
+                 Text="Configure YouTube API credentials and stream." />
+
+        <!-- YouTube Client ID -->
+        <Control Id="ClientIdLabel" Type="Text" X="20" Y="60"
+                 Width="330" Height="13" NoPrefix="yes"
+                 Text="YouTube API Client ID:" />
+        <Control Id="ClientIdEdit" Type="Edit" X="20" Y="74"
+                 Width="330" Height="18" Property="YOUTUBE_CLIENTID" />
+
+        <!-- YouTube Client Secret -->
+        <Control Id="ClientSecretLabel" Type="Text" X="20" Y="102"
+                 Width="330" Height="13" NoPrefix="yes"
+                 Text="YouTube API Client Secret:" />
+        <Control Id="ClientSecretEdit" Type="Edit" X="20" Y="116"
+                 Width="330" Height="18" Property="YOUTUBE_CLIENTSECRET"
+                 Password="yes" />
+
+        <!-- YouTube LiveStream ID -->
+        <Control Id="LiveStreamIdLabel" Type="Text" X="20" Y="144"
+                 Width="330" Height="13" NoPrefix="yes"
+                 Text="YouTube LiveStream ID:" />
+        <Control Id="LiveStreamIdEdit" Type="Edit" X="20" Y="158"
+                 Width="330" Height="18" Property="YOUTUBE_LIVESTREAMID" />
+
+        <!-- Bottom line and buttons -->
+        <Control Id="BottomLine" Type="Line" X="0" Y="234"
+                 Width="370" Height="0" />
+
+        <Control Id="Back" Type="PushButton" X="180" Y="243"
+                 Width="56" Height="17" Text="!(loc.WixUIBack)" />
+
+        <Control Id="Next" Type="PushButton" X="236" Y="243"
+                 Width="56" Height="17" Default="yes"
+                 Text="!(loc.WixUINext)" />
+
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243"
+                 Width="56" Height="17" Cancel="yes"
+                 Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+    </UI>
+  </Fragment>
+
+</Wix>
