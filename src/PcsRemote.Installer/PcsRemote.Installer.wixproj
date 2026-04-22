@@ -3,11 +3,27 @@
   <PropertyGroup>
     <OutputType>Package</OutputType>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <!-- ICE48: intentional — INSTALLFOLDER defaults to C:\PcsRemote\ per HLPS-014 §2 -->
+    <SuppressIces>ICE48</SuppressIces>
   </PropertyGroup>
+
+  <ItemGroup>
+    <BindPath Include="..\..\publish" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
     <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+    <PackageReference Include="WixToolset.Heat" Version="5.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <HarvestDirectory Include="..\..\publish"
+                      ComponentGroupName="PublishOutput"
+                      DirectoryRefId="INSTALLFOLDER"
+                      SuppressRootDirectory="true"
+                      SuppressRegistry="true"
+                      Transforms="ExcludeAppSettings.xslt" />
   </ItemGroup>
 
 </Project>

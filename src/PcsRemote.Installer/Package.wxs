@@ -8,18 +8,31 @@
            UpgradeCode="2DCBF298-D066-4428-A8C5-55337B615297"
            Scope="perMachine">
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MajorUpgrade Schedule="afterInstallExecute"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- INSTALLFOLDER is structurally under ProgramFilesFolder so WiX can
+         auto-generate component GUIDs (WIX0231 requires a standard-directory
+         ancestor). The Property override below sets the actual default to
+         C:\PcsRemote\ at install time — users can still change it via the
+         wizard's directory picker. -->
+    <Property Id="INSTALLFOLDER" Value="C:\PcsRemote\" />
 
     <StandardDirectory Id="ProgramFilesFolder">
       <Directory Id="INSTALLFOLDER" Name="PcsRemote">
-        <Component Id="ReadmeComponent" Guid="*">
-          <File Id="ReadmeFile" Source="Payload\README.txt" KeyPath="yes" />
+        <Component Id="AppSettingsComponent" Guid="*" NeverOverwrite="yes">
+          <File Id="AppSettingsJson"
+                Source="..\..\publish\appsettings.json"
+                KeyPath="yes" />
         </Component>
       </Directory>
     </StandardDirectory>
 
     <Feature Id="MainFeature" Title="PCS Remote" Level="1">
-      <ComponentRef Id="ReadmeComponent" />
+      <ComponentRef Id="AppSettingsComponent" />
+      <ComponentGroupRef Id="PublishOutput" />
     </Feature>
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
