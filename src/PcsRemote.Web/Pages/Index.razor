@@ -28,6 +28,15 @@ else if (_currentState == PcsProState.MatchSelection)
             <MatchCard Match="@match" IsInteractive="@(!_manualModeActive && !_operationInProgress)" DisabledTitle="@(_operationInProgress ? "Automation in progress\u2026" : "")" OnSelected="SelectMatchAsync" />
         }
     }
+    else
+    {
+        <div class="load-matches-prompt">
+            <p class="load-matches-prompt__text">PCS Pro is logged in and ready.</p>
+            <button class="load-matches-button" disabled="@(_operationInProgress || _manualModeActive)" @onclick="FetchMatchesAsync">
+                Load Today&rsquo;s Matches
+            </button>
+        </div>
+    }
 }
 
 else if (_currentState == PcsProState.MatchLoaded)
@@ -69,7 +78,7 @@ else if (_currentState == PcsProState.Error)
         _manualModeActive = ManualModeService.IsManualModeActive;
         _operationInProgress = CoordinatorService.IsOperationInProgress;
 
-        if (_currentState == PcsProState.MatchSelection || _currentState == PcsProState.MatchSelectionReady)
+        if (_currentState == PcsProState.MatchSelectionReady)
             await FetchMatchesAsync();
     }
 
@@ -83,14 +92,9 @@ else if (_currentState == PcsProState.Error)
 
             if (newState == PcsProState.MatchSelection)
             {
-                // R-4: fetch triggers only on MatchSelection entry (not MatchSelectionReady)
-                if (!_fetchInProgress)
-                {
-                    try { await FetchMatchesAsync(); }
-                    catch { /* Fetch errors are non-fatal; UI remains in last stable state. */ }
-                }
-                else
-                    StateHasChanged();
+                // Clear stale cards so the "Load Matches" button appears on re-entry.
+                _matches = null;
+                StateHasChanged();
             }
             else if (newState == PcsProState.MatchSelectionReady)
             {

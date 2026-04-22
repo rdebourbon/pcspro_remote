@@ -28,6 +28,14 @@ internal sealed class FakeLoginAutomation : ILoginAutomation
     public bool UnexpectedDialogPresent { get; set; }
 
     /// <summary>
+    /// When <see langword="true"/> (default), <see cref="ClickSubmit"/> sets
+    /// <see cref="LoginDialogVisible"/> to <see langword="false"/> — simulating
+    /// PCS Pro closing the login dialog after successful authentication.
+    /// Set to <see langword="false"/> to simulate a login that never completes.
+    /// </summary>
+    public bool CloseDialogOnSubmit { get; set; } = true;
+
+    /// <summary>
     /// When <see langword="true"/>, <see cref="EnterPassword"/> and <see cref="ClickSubmit"/>
     /// throw <see cref="InvalidOperationException"/> to simulate element-not-found failures.
     /// Defaults to <see langword="false"/>.
@@ -72,6 +80,8 @@ internal sealed class FakeLoginAutomation : ILoginAutomation
         if (ThrowOnInteraction)
             throw new InvalidOperationException("FakeLoginAutomation: element not found (ThrowOnInteraction = true)");
         SubmitClicked = true;
+        if (CloseDialogOnSubmit)
+            LoginDialogVisible = false;
     }
 
     /// <inheritdoc/>

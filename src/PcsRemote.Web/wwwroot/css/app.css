@@ -483,3 +483,120 @@ body {
     color: var(--pcs-red);
     font-size: 0.9rem;
 }
+
+/* ---- Load Matches prompt (post-login landing) ---- */
+.load-matches-prompt {
+    text-align: center;
+    padding: 3rem 1rem;
+}
+
+.load-matches-prompt__text {
+    color: var(--pcs-text-muted);
+    font-size: 0.95rem;
+    margin-bottom: 1.25rem;
+}
+
+.load-matches-button {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    border-radius: 8px;
+    border: none;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--pcs-green);
+    color: var(--pcs-bg);
+    transition: background .15s, opacity .15s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.load-matches-button:hover:not(:disabled) {
+    background: var(--pcs-green-dim);
+    color: var(--pcs-text);
+}
+
+.load-matches-button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+/* ---- Debug section (bottom-right toggle) ---- */
+.debug-section {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    z-index: 900;
+    max-width: 420px;
+    text-align: right;
+}
+
+.debug-section-toggle {
+    display: inline-block;
+    padding: 0.3rem 0.75rem;
+    border-radius: 4px;
+    border: 1px solid var(--pcs-border);
+    background: var(--pcs-surface);
+    color: var(--pcs-text-muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.6;
+    transition: opacity .15s, background .15s;
+}
+
+.debug-section-toggle:hover {
+    opacity: 1;
+    background: var(--pcs-card);
+}
+
+.debug-section-pin-prompt {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    justify-content: flex-end;
+}
+
+.debug-section-pin-input {
+    width: 100px;
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--pcs-border);
+    background: var(--pcs-card);
+    color: var(--pcs-text);
+    font-size: 0.8rem;
+}
+
+.debug-section-pin-submit {
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    border: 1px solid var(--pcs-border);
+    background: var(--pcs-card);
+    color: var(--pcs-text-muted);
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.debug-section-pin-submit:hover {
+    background: var(--pcs-card-hover);
+    color: var(--pcs-text);
+}
+
+.debug-section-pin-error {
+    color: var(--pcs-red);
+    font-size: 0.78rem;
+    align-self: center;
+}
+
+.debug-section-content {
+    margin-top: 0.5rem;
+    background: var(--pcs-surface);
+    border: 1px solid var(--pcs-border);
+    border-radius: 6px;
+    padding: 0.75rem;
+    text-align: left;
+    max-height: 300px;
+    overflow-y: auto;
+    box-shadow: var(--pcs-shadow);
+}

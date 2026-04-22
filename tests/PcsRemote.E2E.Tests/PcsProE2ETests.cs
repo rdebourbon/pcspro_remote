@@ -155,12 +155,12 @@ public class PcsProE2ETests
 
         try
         {
-            // Step 4: Both contexts eventually show "Loading matches…" (PcsProState.MatchSelection label).
+            // Step 4: Both contexts eventually show "Logged in" (PcsProState.MatchSelection label).
             // InvokeAsync(StateHasChanged) queues the DOM update asynchronously on the circuit dispatcher;
             // it does NOT complete synchronously even though the mock transitions are zero-delay.
-            await _page1.Locator(".pcs-status-indicator", new() { HasText = "Loading matches\u2026" })
+            await _page1.Locator(".pcs-status-indicator", new() { HasText = "Logged in" })
                 .WaitForAsync(new() { Timeout = 10_000 });
-            await _page2.Locator(".pcs-status-indicator", new() { HasText = "Loading matches\u2026" })
+            await _page2.Locator(".pcs-status-indicator", new() { HasText = "Logged in" })
                 .WaitForAsync(new() { Timeout = 10_000 });
         }
         finally

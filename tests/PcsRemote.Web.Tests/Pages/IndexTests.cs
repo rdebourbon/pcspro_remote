@@ -30,6 +30,10 @@ public class IndexTests
 
         var cut = ctx.Render<IndexPage>();
 
+        // Click "Load Matches" to trigger fetch (no longer auto-fetched on mount)
+        cut.WaitForAssertion(() => cut.Find(".load-matches-button"));
+        cut.Find(".load-matches-button").Click();
+
         cut.WaitForAssertion(() => cut.Find(".match-loading"));
         cut.FindAll(".match-card").Should().BeEmpty();
     }
@@ -68,7 +72,7 @@ public class IndexTests
         using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
+        mock_drive_to_match_selection(mock, cut);
 
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
         cut.FindAll(".match-card--disabled").Should().BeEmpty();
@@ -88,7 +92,7 @@ public class IndexTests
         using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
+        mock_drive_to_match_selection(mock, cut);
 
         cut.WaitForAssertion(() => cut.Find(".match-empty-state"));
         cut.FindAll(".match-card").Should().BeEmpty();
@@ -110,7 +114,7 @@ public class IndexTests
         using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
+        mock_drive_to_match_selection(mock, cut);
 
         cut.WaitForAssertion(() =>
             mock.Verify(s => s.LoadMatchAsync(
@@ -136,7 +140,10 @@ public class IndexTests
 
         var cut = ctx.Render<IndexPage>();
 
-        // bUnit's WaitForAssertion polls until the async auto-select path (b) fires
+        // Click "Load Matches" to trigger fetch (no longer auto-fetched on mount)
+        cut.WaitForAssertion(() => cut.Find(".load-matches-button"));
+        cut.Find(".load-matches-button").Click();
+
         cut.WaitForAssertion(() =>
             mock.Verify(s => s.LoadMatchAsync(
                 It.Is<MatchInfo>(m => m == singleMatch),
@@ -163,7 +170,7 @@ public class IndexTests
         using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
+        mock_drive_to_match_selection(mock, cut);
 
         // Wait for fetch to populate _matches
         cut.WaitForAssertion(() =>
@@ -197,7 +204,7 @@ public class IndexTests
         using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
+        mock_drive_to_match_selection(mock, cut);
 
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
 
@@ -230,12 +237,14 @@ public class IndexTests
 
         var cut = ctx.Render<IndexPage>();
 
-        // First entry → fetch → 2 matches → cards shown
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
+        // First entry → click button → fetch → 2 matches → cards shown
+        mock_drive_to_match_selection(mock, cut);
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
 
-        // Re-entry → second fetch (TCS, pending)
+        // Re-entry → click button → second fetch (TCS, pending)
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
+        cut.WaitForAssertion(() => cut.Find(".load-matches-button"));
+        cut.Find(".load-matches-button").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -319,7 +328,10 @@ public class IndexTests
 
         var cut = ctx.Render<IndexPage>();
 
-        // Auto-select fires (single match in MatchSelection)
+        // Click "Load Matches" to trigger fetch → auto-select (single match)
+        cut.WaitForAssertion(() => cut.Find(".load-matches-button"));
+        cut.Find(".load-matches-button").Click();
+
         cut.WaitForAssertion(() =>
             mock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
 
@@ -365,7 +377,7 @@ public class IndexTests
         using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
+        mock_drive_to_match_selection(mock, cut);
 
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
         cut.FindAll(".match-card")[0].Click();
@@ -394,8 +406,8 @@ public class IndexTests
         using var ctx = BuildCtx(mock);
 
         var cut = ctx.Render<IndexPage>();
-        // Drive fetch first, then arrive at MatchSelectionReady (path-a)
-        mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchSelection);
+        // Drive to MatchSelection and click "Load Matches" → fetch → auto-select (path-a)
+        mock_drive_to_match_selection(mock, cut);
         cut.WaitForAssertion(() =>
             mock.Verify(s => s.GetTodaysMatchesAsync(It.IsAny<CancellationToken>()), Times.Once));
 
@@ -427,9 +439,12 @@ public class IndexTests
 
         using var ctx = BuildCtx(mock);
 
-        // On mount: OnInitializedAsync reads MatchSelection → calls FetchMatchesAsync
-        // FetchMatchesAsync completes with 1 match → auto-select fires
         var cut = ctx.Render<IndexPage>();
+
+        // Click "Load Matches" to trigger fetch → auto-select (single match)
+        cut.WaitForAssertion(() => cut.Find(".load-matches-button"));
+        cut.Find(".load-matches-button").Click();
+
         cut.WaitForAssertion(() =>
             mock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
 
@@ -460,7 +475,9 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, scoreMock);
         var cut = ctx.Render<IndexPage>();
 
-        // Auto-select fires (single match in MatchSelection); drive to MatchLoaded
+        // Click "Load Matches" → auto-select fires (single match); drive to MatchLoaded
+        cut.WaitForAssertion(() => cut.Find(".load-matches-button"));
+        cut.Find(".load-matches-button").Click();
         cut.WaitForAssertion(() =>
             autoMock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
         autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
@@ -493,6 +510,9 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, scoreMock);
         var cut = ctx.Render<IndexPage>();
 
+        // Click "Load Matches" → auto-select fires (single match); drive to MatchLoaded
+        cut.WaitForAssertion(() => cut.Find(".load-matches-button"));
+        cut.Find(".load-matches-button").Click();
         cut.WaitForAssertion(() =>
             autoMock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
         autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
@@ -526,6 +546,9 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, scoreMock);
         var cut = ctx.Render<IndexPage>();
 
+        // Click "Load Matches" → auto-select fires (single match); drive to MatchLoaded
+        cut.WaitForAssertion(() => cut.Find(".load-matches-button"));
+        cut.Find(".load-matches-button").Click();
         cut.WaitForAssertion(() =>
             autoMock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
         autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
@@ -561,7 +584,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, manualModeMock: manualModeMock);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_match_selection(autoMock);
+        mock_drive_to_match_selection(autoMock, cut);
 
         cut.WaitForAssertion(() =>
         {
@@ -602,7 +625,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, manualModeMock: manualModeMock, notificationService: notificationSvc);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_match_selection(autoMock);
+        mock_drive_to_match_selection(autoMock, cut);
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
 
         // Simulate the race: service reports active but event has not yet propagated
@@ -638,7 +661,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_match_selection(autoMock);
+        mock_drive_to_match_selection(autoMock, cut);
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
 
         cut.FindAll(".match-card")[0].Click();
@@ -703,7 +726,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_match_selection(autoMock);
+        mock_drive_to_match_selection(autoMock, cut);
 
         cut.WaitForAssertion(() =>
         {
@@ -731,7 +754,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_match_selection(autoMock);
+        mock_drive_to_match_selection(autoMock, cut);
 
         cut.WaitForAssertion(() =>
             cut.Find(".match-card--disabled").GetAttribute("title")
@@ -757,7 +780,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_match_selection(autoMock);
+        mock_drive_to_match_selection(autoMock, cut);
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
 
         // Coordinator fires in-progress — component field updates but re-render may not have hidden the cards yet.
@@ -795,7 +818,7 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
         var cut = ctx.Render<IndexPage>();
 
-        mock_drive_to_match_selection(autoMock);
+        mock_drive_to_match_selection(autoMock, cut);
         cut.WaitForAssertion(() =>
             cut.FindAll(".match-card--disabled").Should().HaveCount(2));
 
@@ -824,7 +847,10 @@ public class IndexTests
         using var ctx = BuildCtx(autoMock, coordinatorMock: coordinatorMock);
         var cut = ctx.Render<IndexPage>();
 
-        // Fetch completes; state is already MatchSelection on mount — no event needed
+        // Click "Load Matches" to trigger fetch (button disabled state handled separately)
+        cut.WaitForAssertion(() => cut.Find(".load-matches-button"));
+        cut.Find(".load-matches-button").Click();
+
         cut.WaitForAssertion(() =>
         {
             cut.FindAll(".match-card").Should().HaveCount(2);
@@ -833,9 +859,11 @@ public class IndexTests
         });
     }
 
-    private static void mock_drive_to_match_selection(Mock<IPcsProAutomationService> autoMock)
+    private static void mock_drive_to_match_selection(Mock<IPcsProAutomationService> autoMock, IRenderedComponent<IndexPage> cut)
     {
         autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchSelection);
+        cut.WaitForAssertion(() => cut.Find(".load-matches-button"));
+        cut.Find(".load-matches-button").Click();
     }
 
     private static Mock<IPcsProAutomationService> BuildMock(PcsProState initialState)

@@ -20,7 +20,7 @@ public class PcsProStatusIndicatorTests
     [DataRow(PcsProState.NotRunning,              "status-grey",   "PCS Pro not running")]
     [DataRow(PcsProState.Launching,               "status-yellow", "PCS Pro starting\u2026")]
     [DataRow(PcsProState.LoginScreen,             "status-yellow", "Logging in\u2026")]
-    [DataRow(PcsProState.MatchSelection,          "status-yellow", "Loading matches\u2026")]
+    [DataRow(PcsProState.MatchSelection,          "status-green", "Logged in")]
     [DataRow(PcsProState.MatchSelectionSearching, "status-yellow", "Searching\u2026")]
     [DataRow(PcsProState.MatchSelectionReady,     "status-yellow", "Select a match")]
     [DataRow(PcsProState.MatchLoaded,             "status-green",  "Match loaded")]

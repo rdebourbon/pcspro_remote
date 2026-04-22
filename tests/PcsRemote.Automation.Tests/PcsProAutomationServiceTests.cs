@@ -612,7 +612,6 @@ public sealed class PcsProAutomationServiceTests
         var fake = new FakeLoginAutomation
         {
             LoginDialogVisible = false,    // login dialog never appears → poll stalls
-            MatchSelectionVisible = false,
         };
         var handle = new FakeProcessHandle { MainWindowVisible = true };
         var pm = new FakeProcessManager { StartedHandle = handle };
@@ -643,7 +642,6 @@ public sealed class PcsProAutomationServiceTests
         var fake = new FakeLoginAutomation
         {
             LoginDialogVisible = false,
-            MatchSelectionVisible = false,
         };
         var handle = new FakeProcessHandle { MainWindowVisible = true };
         var pm = new FakeProcessManager { StartedHandle = handle };
@@ -673,7 +671,7 @@ public sealed class PcsProAutomationServiceTests
         var fake = new FakeLoginAutomation
         {
             LoginDialogVisible = true,     // login dialog appears → credentials submitted
-            MatchSelectionVisible = false,  // match selection never appears → post-submit timeout
+            CloseDialogOnSubmit = false,   // login dialog never closes → post-submit timeout
         };
         var handle = new FakeProcessHandle { MainWindowVisible = true };
         var pm = new FakeProcessManager { StartedHandle = handle };
@@ -761,7 +759,6 @@ public sealed class PcsProAutomationServiceTests
         var fake = new FakeLoginAutomation
         {
             LoginDialogVisible = false,    // login phase stalls waiting for dialog
-            MatchSelectionVisible = false,
         };
         var handle = new FakeProcessHandle { MainWindowVisible = true };
         var pm = new FakeProcessManager { StartedHandle = handle };
@@ -812,7 +809,6 @@ public sealed class PcsProAutomationServiceTests
         var fake = new FakeLoginAutomation
         {
             LoginDialogVisible = false,    // stalls in Task.Delay — gives ct time to be cancelled
-            MatchSelectionVisible = false,
         };
         var handle = new FakeProcessHandle { MainWindowVisible = true };
         var pm = new FakeProcessManager { StartedHandle = handle };

@@ -770,9 +770,9 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
                 continue; // skip delay — check match selection immediately
             }
 
-            if (submitted && _loginAutomation.IsMatchSelectionVisible())
+            if (submitted && !_loginAutomation.IsLoginDialogVisible())
             {
-                _logger.LogDebug("PerformLoginAsync: match selection dialog detected — login accepted");
+                _logger.LogDebug("PerformLoginAsync: login dialog closed — login accepted");
                 return true;
             }
 
@@ -951,7 +951,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
 
         var reason = submitted
-            ? $"Match selection dialog did not appear within {_options.LoginScreenTimeoutSeconds} seconds after submitting credentials"
+            ? $"Login dialog did not close within {_options.LoginScreenTimeoutSeconds} seconds after submitting credentials"
             : $"Login screen did not appear within {_options.LoginScreenTimeoutSeconds} seconds";
 
         _logger.LogWarning("PerformLoginAsync: timeout — {Reason}", reason);
