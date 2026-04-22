@@ -164,7 +164,7 @@
          All wizard values are read from registry by the script. -->
     <CustomAction Id="CA_SetWriteConfigData"
                   Property="CA_WriteConfigExec"
-                  Value='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]WriteConfig.ps1"'
+                  Value='&quot;powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]WriteConfig.ps1"'
                   HideTarget="yes" />
 
     <!-- Step 2: Deferred CA executes PowerShell via WixQuietExec (32-bit).
@@ -188,7 +188,7 @@
     <!-- Task Scheduler — Install -->
     <CustomAction Id="CA_SetInstallTaskSchedulerData"
                   Property="CA_InstallTaskSchedulerExec"
-                  Value='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]InstallTaskScheduler.ps1"'
+                  Value='&quot;powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]InstallTaskScheduler.ps1"'
                   HideTarget="yes" />
     <CustomAction Id="CA_InstallTaskSchedulerExec"
                   DllEntry="WixQuietExec"
@@ -200,7 +200,7 @@
     <!-- Task Scheduler — Uninstall -->
     <CustomAction Id="CA_SetUninstallTaskSchedulerData"
                   Property="CA_UninstallTaskSchedulerExec"
-                  Value='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]UninstallTaskScheduler.ps1"'
+                  Value='&quot;powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]UninstallTaskScheduler.ps1"'
                   HideTarget="yes" />
     <CustomAction Id="CA_UninstallTaskSchedulerExec"
                   DllEntry="WixQuietExec"
@@ -212,7 +212,7 @@
     <!-- Firewall — Install -->
     <CustomAction Id="CA_SetInstallFirewallData"
                   Property="CA_InstallFirewallExec"
-                  Value='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]InstallFirewall.ps1"'
+                  Value='&quot;powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]InstallFirewall.ps1"'
                   HideTarget="yes" />
     <CustomAction Id="CA_InstallFirewallExec"
                   DllEntry="WixQuietExec"
@@ -224,7 +224,7 @@
     <!-- Firewall — Uninstall -->
     <CustomAction Id="CA_SetUninstallFirewallData"
                   Property="CA_UninstallFirewallExec"
-                  Value='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]UninstallFirewall.ps1"'
+                  Value='&quot;powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]UninstallFirewall.ps1"'
                   HideTarget="yes" />
     <CustomAction Id="CA_UninstallFirewallExec"
                   DllEntry="WixQuietExec"
@@ -236,7 +236,7 @@
     <!-- Environment Variable — Install (no uninstall counterpart per HLPS item 8) -->
     <CustomAction Id="CA_SetInstallEnvVarData"
                   Property="CA_InstallEnvVarExec"
-                  Value='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]InstallEnvVar.ps1"'
+                  Value='&quot;powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]InstallEnvVar.ps1"'
                   HideTarget="yes" />
     <CustomAction Id="CA_InstallEnvVarExec"
                   DllEntry="WixQuietExec"
