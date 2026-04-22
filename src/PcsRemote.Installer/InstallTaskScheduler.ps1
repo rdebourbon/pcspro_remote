@@ -21,7 +21,7 @@ try
         -ExecutionTimeLimit (New-TimeSpan -Seconds 0) `
         -MultipleInstances IgnoreNew `
         -RestartCount 999 `
-        -RestartInterval (New-TimeSpan -Seconds 30)
+        -RestartInterval (New-TimeSpan -Minutes 1)
     $principal = New-ScheduledTaskPrincipal -UserId $logonUser -LogonType Interactive -RunLevel Limited
 
     Register-ScheduledTask `
