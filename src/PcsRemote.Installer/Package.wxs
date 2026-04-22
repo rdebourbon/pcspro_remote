@@ -40,11 +40,33 @@
                 Source="..\..\publish\appsettings.json"
                 KeyPath="yes" />
         </Component>
+        <Component Id="WriteConfigScriptComponent" Guid="*">
+          <File Id="WriteConfigPs1"
+                Source="WriteConfig.ps1"
+                KeyPath="yes" />
+        </Component>
+        <Component Id="ConfigTransportComponent" Guid="*">
+          <RegistryValue Root="HKLM" Key="SOFTWARE\PcsRemote\Install"
+                         Name="InstallFolder" Value="[INSTALLFOLDER]"
+                         Type="string" KeyPath="yes" />
+          <RegistryValue Root="HKLM" Key="SOFTWARE\PcsRemote\Install"
+                         Name="ExePath" Value="[PCSPRO_EXEPATH]" Type="string" />
+          <RegistryValue Root="HKLM" Key="SOFTWARE\PcsRemote\Install"
+                         Name="Port" Value="[HTTP_PORT]" Type="string" />
+          <RegistryValue Root="HKLM" Key="SOFTWARE\PcsRemote\Install"
+                         Name="ClientId" Value="[YOUTUBE_CLIENTID]" Type="string" />
+          <RegistryValue Root="HKLM" Key="SOFTWARE\PcsRemote\Install"
+                         Name="ClientSecret" Value="[YOUTUBE_CLIENTSECRET]" Type="string" />
+          <RegistryValue Root="HKLM" Key="SOFTWARE\PcsRemote\Install"
+                         Name="LiveStreamId" Value="[YOUTUBE_LIVESTREAMID]" Type="string" />
+        </Component>
       </Directory>
     </StandardDirectory>
 
     <Feature Id="MainFeature" Title="PCS Remote" Level="1">
       <ComponentRef Id="AppSettingsComponent" />
+      <ComponentRef Id="WriteConfigScriptComponent" />
+      <ComponentRef Id="ConfigTransportComponent" />
       <ComponentGroupRef Id="PublishOutput" />
     </Feature>
 
@@ -78,6 +100,40 @@
                Value="YouTubeSettingsDlg" Order="5"
                Condition="NOT Installed" />
     </UI>
+
+    <!-- ============================================================
+         Configuration Write CA (S-004)
+         Writes wizard-collected values into appsettings.json on
+         fresh install only. Skipped on upgrade/repair.
+         Values are transported via registry (ConfigTransportComponent)
+         to eliminate command-line quoting/injection risks.
+         ============================================================ -->
+
+    <!-- Step 1: Immediate CA sets the deferred CA's command line.
+         Only INSTALLFOLDER is in the command (directory path — safe).
+         All wizard values are read from registry by the script. -->
+    <CustomAction Id="CA_SetWriteConfigData"
+                  Property="CA_WriteConfigExec"
+                  Value='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[INSTALLFOLDER]WriteConfig.ps1"'
+                  HideTarget="yes" />
+
+    <!-- Step 2: Deferred CA executes PowerShell via WixQuietExec (32-bit).
+         Uses WixQuietExec (not WixQuietExec64) so that the 32-bit PowerShell
+         process reads the same WOW6432Node registry view where the 32-bit MSI
+         wrote the transport values via WriteRegistryValues. -->
+    <CustomAction Id="CA_WriteConfigExec"
+                  DllEntry="WixQuietExec"
+                  BinaryRef="Wix4UtilCA_X86"
+                  Execute="deferred"
+                  Impersonate="no"
+                  HideTarget="yes" />
+
+    <InstallExecuteSequence>
+      <Custom Action="CA_SetWriteConfigData" Before="CA_WriteConfigExec"
+              Condition="NOT Installed" />
+      <Custom Action="CA_WriteConfigExec" After="WriteRegistryValues"
+              Condition="NOT Installed" />
+    </InstallExecuteSequence>
 
   </Package>
 
