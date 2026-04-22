@@ -4,7 +4,7 @@
 
   <Package Name="PCS Remote"
            Manufacturer="High Halstow Cricket Club"
-           Version="1.0.0.0"
+           Version="$(var.ProductVersion)"
            UpgradeCode="2DCBF298-D066-4428-A8C5-55337B615297"
            Scope="perMachine">
 
@@ -12,6 +12,9 @@
                   DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
 
     <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="PcsRemote.ico" SourceFile="..\PcsRemote.TrayHost\Resources\pcs-remote-normal.ico" />
+    <Property Id="ARPPRODUCTICON" Value="PcsRemote.ico" />
 
     <!-- ============================================================
          MSI Properties — wizard inputs with defaults

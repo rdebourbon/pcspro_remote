@@ -5,6 +5,8 @@
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
     <!-- ICE48: intentional — INSTALLFOLDER defaults to C:\PcsRemote\ per HLPS-014 §2 -->
     <SuppressIces>ICE48</SuppressIces>
+    <Version>1.0.0.0</Version>
+    <DefineConstants>$(DefineConstants);ProductVersion=$(Version)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
