@@ -649,3 +649,67 @@ body {
     overflow-y: auto;
     box-shadow: var(--pcs-shadow);
 }
+
+/* ---- Operation status banner (header bar) ---- */
+.operation-status-banner {
+    background: rgba(82,192,122,.1);
+    border-bottom: 2px solid var(--pcs-green);
+    color: var(--pcs-green);
+    text-align: center;
+    padding: 8px 16px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+/* ---- Automation log display (debug panel) ---- */
+.automation-log-display {
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
+.automation-log-empty {
+    color: var(--pcs-text-muted);
+    font-style: italic;
+    margin: 0;
+}
+
+.automation-log-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.automation-log-entry {
+    display: flex;
+    gap: 0.5rem;
+    padding: 2px 0;
+    border-bottom: 1px solid rgba(42,72,52,.4);
+    align-items: baseline;
+}
+
+.automation-log-timestamp {
+    color: var(--pcs-text-muted);
+    font-family: 'Consolas', 'Courier New', monospace;
+    flex-shrink: 0;
+}
+
+.automation-log-action {
+    color: var(--pcs-text);
+    flex: 1;
+    word-break: break-word;
+}
+
+.automation-log-outcome {
+    font-weight: 700;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 1px 6px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.automation-log-outcome-success { background: rgba(82,192,122,.15); color: var(--pcs-green); }
+.automation-log-outcome-failure { background: rgba(224,82,82,.15); color: var(--pcs-red); }
+.automation-log-outcome-skipped { background: rgba(122,154,130,.15); color: var(--pcs-grey); }

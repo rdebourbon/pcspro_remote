@@ -16,7 +16,7 @@ internal static class MatchRowParser
     private const char Delimiter = '|';
     private const int MinSegmentCount = 5;
     private const int DateColumnIndex = 0;
-    private const string DateFormat = "dd/MM/yyyy";
+    private static readonly string[] DateFormats = ["dd/MM/yyyy", "d MMM yyyy", "d/M/yyyy"];
     private static readonly CultureInfo EnGb = CultureInfo.GetCultureInfo("en-GB");
 
     /// <summary>
@@ -47,7 +47,7 @@ internal static class MatchRowParser
         }
 
         var dateText = segments[DateColumnIndex].Trim();
-        if (!DateOnly.TryParseExact(dateText, DateFormat, EnGb, DateTimeStyles.None, out var matchDate))
+        if (!DateOnly.TryParseExact(dateText, DateFormats, EnGb, DateTimeStyles.None, out var matchDate))
         {
             return false;
         }

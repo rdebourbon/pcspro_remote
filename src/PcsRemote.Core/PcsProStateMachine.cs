@@ -69,6 +69,7 @@ public sealed class PcsProStateMachine
 
         _machine.Configure(PcsProState.MatchSelection)
             .Permit(PcsProTrigger.SearchTriggered, PcsProState.MatchSelectionSearching)
+            .Permit(PcsProTrigger.AttachToMatch, PcsProState.MatchLoaded)
             .Permit(PcsProTrigger.UnexpectedDialog, PcsProState.Error)
             .Permit(PcsProTrigger.Timeout, PcsProState.Error);
 

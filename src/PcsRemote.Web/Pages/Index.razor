@@ -130,6 +130,7 @@ else if (_currentState == PcsProState.Error)
     private async Task FetchMatchesAsync()
     {
         _fetchInProgress = true;
+        _operationInProgress = true;
         _matches = null;
         StateHasChanged();
 
@@ -150,6 +151,7 @@ else if (_currentState == PcsProState.Error)
         finally
         {
             _fetchInProgress = false;
+            _operationInProgress = false;
             StateHasChanged();
         }
     }
@@ -183,6 +185,9 @@ else if (_currentState == PcsProState.Error)
             return;
         }
 
+        _operationInProgress = true;
+        StateHasChanged();
+
         try
         {
             var teams = await AutomationService.UseCurrentMatchAsync();
@@ -192,6 +197,11 @@ else if (_currentState == PcsProState.Error)
         {
             Logger.LogError(ex, "UseCurrentMatchAsync failed");
             NotificationService.Notify(NotificationSeverity.Error, "Failed to attach to current match");
+        }
+        finally
+        {
+            _operationInProgress = false;
+            StateHasChanged();
         }
     }
 

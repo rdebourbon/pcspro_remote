@@ -90,11 +90,39 @@ public sealed class MatchRowParserTests
     [TestMethod]
     public void TryParse_WhenWrongDateFormat_ReturnsFalse()
     {
-        // US date format should fail — expects dd/MM/yyyy
+        // US date format should fail — expects dd/MM/yyyy or d MMM yyyy
         var success = MatchRowParser.TryParse("06/15/2025|Team A|Team B|Comp|League", out var result);
 
         success.Should().BeFalse();
         result.Should().BeNull();
+    }
+
+    [TestMethod]
+    public void TryParse_WhenLongDateFormat_ReturnsTrueAndParsesCorrectly()
+    {
+        // PCS Pro DataGrid uses "d MMM yyyy" format (e.g., "1 Jun 2025")
+        const string row = "1 Jun 2025|High Halstow CC Womens 1st XI|Tunbridge Wells CC Womens 2nd XI|Kent Women's Premier League - Division One|Kent Women's 40ov Premier League|Rayners Meadow|Won - WOMENS 1ST|No|Play-Cricket|(Administrator)|Yes";
+
+        var success = MatchRowParser.TryParse(row, out var result);
+
+        success.Should().BeTrue();
+        result.Should().NotBeNull();
+        result!.HomeTeam.Should().Be("High Halstow CC Womens 1st XI");
+        result.AwayTeam.Should().Be("Tunbridge Wells CC Womens 2nd XI");
+        result.MatchType.Should().Be("Kent Women's 40ov Premier League");
+        result.MatchDate.Should().Be(new DateOnly(2025, 6, 1));
+    }
+
+    [TestMethod]
+    public void TryParse_WhenLongDateFormatDoubleDigitDay_ReturnsTrueAndParsesCorrectly()
+    {
+        const string row = "15 Jun 2025|Team A|Team B|Comp|Friendly";
+
+        var success = MatchRowParser.TryParse(row, out var result);
+
+        success.Should().BeTrue();
+        result.Should().NotBeNull();
+        result!.MatchDate.Should().Be(new DateOnly(2025, 6, 15));
     }
 
     [TestMethod]

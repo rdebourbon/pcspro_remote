@@ -23,6 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Radzen.Blazor" GeneratePathProperty="true" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Extensions.Logging" />
     <PackageReference Include="Serilog.Sinks.Console" />
@@ -36,6 +37,12 @@
     <!-- Copy Web wwwroot so UseStaticFiles() can serve css/app.css from TrayHost's content root -->
     <Content Include="..\PcsRemote.Web\wwwroot\**\*"
              Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+    <!-- Copy Radzen.Blazor static web assets so _content/ paths resolve in production.
+         TrayHost uses Microsoft.NET.Sdk (not Web SDK) so NuGet static web assets
+         are not automatically included in the publish output. -->
+    <Content Include="$(PkgRadzen_Blazor)\staticwebassets\**\*"
+             Link="wwwroot\_content\Radzen.Blazor\%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

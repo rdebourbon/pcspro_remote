@@ -1811,10 +1811,11 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
 
     private async Task<MatchTeams> UseCurrentMatchCoreAsync(CancellationToken ct)
     {
-        if (_stateMachine.CurrentState != PcsProState.NotRunning)
+        var state = _stateMachine.CurrentState;
+        if (state != PcsProState.NotRunning && state != PcsProState.MatchSelection)
             throw new InvalidOperationException(
-                $"UseCurrentMatchAsync requires state {PcsProState.NotRunning} " +
-                $"but current state is {_stateMachine.CurrentState}.");
+                $"UseCurrentMatchAsync requires state {PcsProState.NotRunning} or " +
+                $"{PcsProState.MatchSelection} but current state is {state}.");
 
         // Step 2: Verify PCS Pro is running by locating the main window.
         if (!_matchSelectionAutomation.IsMainWindowPresent())

@@ -2001,6 +2001,25 @@ public sealed class PcsProAutomationServiceTests
     }
 
     [TestMethod]
+    public async Task UseCurrentMatchAsync_FromMatchSelection_TransitionsToMatchLoaded()
+    {
+        // Arrange: service at MatchSelection (post-login), match loaded in PCS Pro.
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MainWindowPresent = true, MatchLoaded = true };
+        var fakeTeams = new FakeTeamNamesAutomation();
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(
+            matchSelectionAutomation: fakeMatchSel,
+            teamNamesAutomation: fakeTeams);
+
+        // Act
+        var result = await svc.UseCurrentMatchAsync();
+
+        // Assert
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded);
+        result.Home.TeamName.Should().NotBeEmpty();
+        result.Away.TeamName.Should().NotBeEmpty();
+    }
+
+    [TestMethod]
     public async Task UseCurrentMatchAsync_HappyPath_LoadedMatchIsNull()
     {
         // Arrange (AC-8)
@@ -2058,15 +2077,15 @@ public sealed class PcsProAutomationServiceTests
     [TestMethod]
     public async Task UseCurrentMatchAsync_WrongState_ThrowsIOE()
     {
-        // Arrange (AC-7): service at MatchSelection, not NotRunning.
-        var (svc, _) = await CreateServiceAtMatchSelectionAsync();
+        // Arrange (AC-7): service at MatchLoaded — neither NotRunning nor MatchSelection.
+        var (svc, _) = await CreateServiceAtMatchLoadedAsync();
 
         // Act
         var act = () => svc.UseCurrentMatchAsync();
 
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*requires state NotRunning*");
+            .WithMessage("*requires state*");
     }
 
     [TestMethod]

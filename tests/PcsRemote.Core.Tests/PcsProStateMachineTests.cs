@@ -33,6 +33,7 @@ public sealed class PcsProStateMachineTests
     [DataRow(PcsProState.Error,                   PcsProTrigger.Retry,              PcsProState.NotRunning,             DisplayName = "Error + Retry → NotRunning")]
     [DataRow(PcsProState.Error,                   PcsProTrigger.Dismiss,            PcsProState.NotRunning,             DisplayName = "Error + Dismiss → NotRunning")]
     [DataRow(PcsProState.NotRunning,              PcsProTrigger.AttachToMatch,       PcsProState.MatchLoaded,            DisplayName = "NotRunning + AttachToMatch → MatchLoaded")]
+    [DataRow(PcsProState.MatchSelection,          PcsProTrigger.AttachToMatch,       PcsProState.MatchLoaded,            DisplayName = "MatchSelection + AttachToMatch → MatchLoaded")]
     public void ValidDeterministicTransition_ProducesExpectedDestination(
         PcsProState from, PcsProTrigger trigger, PcsProState expected)
     {
@@ -79,7 +80,6 @@ public sealed class PcsProStateMachineTests
     [DataRow(PcsProState.Launching,               PcsProTrigger.AttachToMatch,  DisplayName = "Launching + AttachToMatch is invalid")]
     [DataRow(PcsProState.Error,                   PcsProTrigger.AttachToMatch,  DisplayName = "Error + AttachToMatch is invalid")]
     [DataRow(PcsProState.LoginScreen,             PcsProTrigger.AttachToMatch,  DisplayName = "LoginScreen + AttachToMatch is invalid")]
-    [DataRow(PcsProState.MatchSelection,          PcsProTrigger.AttachToMatch,  DisplayName = "MatchSelection + AttachToMatch is invalid")]
     [DataRow(PcsProState.MatchSelectionSearching, PcsProTrigger.AttachToMatch,  DisplayName = "MatchSelectionSearching + AttachToMatch is invalid")]
     [DataRow(PcsProState.MatchSelectionReady,     PcsProTrigger.AttachToMatch,  DisplayName = "MatchSelectionReady + AttachToMatch is invalid")]
     [DataRow(PcsProState.NotRunning,              PcsProTrigger.Dismiss,        DisplayName = "NotRunning + Dismiss is invalid")]
