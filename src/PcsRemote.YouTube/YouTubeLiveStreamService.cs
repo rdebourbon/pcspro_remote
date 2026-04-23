@@ -531,8 +531,10 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
 
     // ─── Configuration and token helpers ─────────────────────────────────
 
-    private const string TokenKey =
-        "Google.Apis.Auth.OAuth2.Responses.TokenResponse-user";
+    // Must match the userId passed to GoogleWebAuthorizationBroker.AuthorizeAsync.
+    // DpapiFileDataStore uses keys directly as filenames (no type-qualification),
+    // unlike Google's built-in FileDataStore which prefixes with the type name.
+    private const string TokenKey = "user";
 
     private void ValidateConfiguration()
     {
