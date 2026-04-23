@@ -83,6 +83,9 @@ public sealed class ScoreboardService : IScoreboardService
     /// <inheritdoc/>
     public async Task ForceRefreshAsync(CancellationToken ct = default)
     {
+        // Step 1: Tell PCS Pro to refresh its scoreboard data from Play-Cricket servers.
+        await _automationService.RefreshScoreboardAsync(ct);
+
         byte[]? previousHash;
 
         lock (_lock)
@@ -92,6 +95,7 @@ public sealed class ScoreboardService : IScoreboardService
             _forceRefreshInProgress = true;
         }
 
+        // Step 2: Capture the updated scoreboard image.
         byte[] image;
         try
         {

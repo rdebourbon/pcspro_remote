@@ -243,6 +243,18 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
             _logger.LogInformation("YouTube OAuth2 setup starting — clearing cached token to force re-consent");
             await _dataStore.DeleteAsync<TokenResponse>(TokenKey).ConfigureAwait(false);
 
+            // Verify the delete actually removed the token — DpapiFileDataStore.TryDeleteFile
+            // swallows IOException if the file is locked.
+            var verifyToken = await _dataStore.GetAsync<TokenResponse>(TokenKey).ConfigureAwait(false);
+            if (verifyToken is not null)
+            {
+                _logger.LogWarning(
+                    "Token file survived DeleteAsync — clearing entire store as fallback");
+                await _dataStore.ClearAsync().ConfigureAwait(false);
+            }
+
+            _logger.LogInformation("Token store cleared — calling AuthorizeAsync to launch browser consent");
+
             await GoogleWebAuthorizationBroker.AuthorizeAsync(
                 new ClientSecrets
                 {

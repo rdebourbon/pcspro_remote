@@ -116,15 +116,19 @@ public sealed class DpapiFileDataStore : IDataStore
         return filePath;
     }
 
-    private static void TryDeleteFile(string path)
+    private void TryDeleteFile(string path)
     {
         try
         {
-            File.Delete(path);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+                _logger.LogDebug("Token file deleted: {Path}", path);
+            }
         }
-        catch (IOException)
+        catch (IOException ex)
         {
-            // Best-effort deletion; the file may be locked.
+            _logger.LogWarning(ex, "Failed to delete token file {Path} — file may be locked", path);
         }
     }
 }
