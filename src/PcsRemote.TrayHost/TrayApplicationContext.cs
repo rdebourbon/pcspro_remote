@@ -134,15 +134,20 @@ internal sealed class TrayApplicationContext : ApplicationContext
             if (result)
             {
                 Log.Information("YouTube OAuth2 setup completed successfully via tray menu");
+                ShowBalloon("YouTube Setup", "OAuth2 authorisation complete.", ToolTipIcon.Info);
             }
             else
             {
                 Log.Warning("YouTube OAuth2 setup was not completed — check configuration");
+                ShowBalloon("YouTube Setup",
+                    "YouTube:ClientId and YouTube:ClientSecret must be set in appsettings.json.",
+                    ToolTipIcon.Warning);
             }
         }
         catch (Exception ex)
         {
             Log.Error(ex, "YouTube OAuth2 setup failed");
+            ShowBalloon("YouTube Setup", "OAuth2 setup failed — see log for details.", ToolTipIcon.Error);
         }
         finally
         {
@@ -231,6 +236,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
             ?? throw new InvalidOperationException(
                 $"Embedded resource '{resourceName}' not found in {assembly.GetName().Name}");
         return new Icon(stream);
+    }
+
+    private void ShowBalloon(string title, string text, ToolTipIcon icon)
+    {
+        if (_disposed)
+            return;
+
+        _invoker.BeginInvoke(() => _notifyIcon.ShowBalloonTip(5000, title, text, icon));
     }
 
     protected override void Dispose(bool disposing)

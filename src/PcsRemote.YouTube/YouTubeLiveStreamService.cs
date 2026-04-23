@@ -240,7 +240,8 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
                 return false;
             }
 
-            _logger.LogInformation("YouTube OAuth2 setup starting...");
+            _logger.LogInformation("YouTube OAuth2 setup starting — clearing cached token to force re-consent");
+            await _dataStore.DeleteAsync<TokenResponse>(TokenKey).ConfigureAwait(false);
 
             await GoogleWebAuthorizationBroker.AuthorizeAsync(
                 new ClientSecrets
