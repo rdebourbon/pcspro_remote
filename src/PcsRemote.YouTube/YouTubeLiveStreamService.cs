@@ -92,7 +92,17 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
         _tokenAvailable = true;
 
         await ValidateLiveStreamIdAsync(ct).ConfigureAwait(false);
-        await ReconcileActiveBroadcastsAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            await ReconcileActiveBroadcastsAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "Broadcast reconciliation failed — starting in Idle state. " +
+                "If a broadcast is already live, use YouTube Studio to manage it");
+        }
     }
 
     /// <inheritdoc/>
@@ -602,23 +612,34 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
 
     private async Task ReconcileActiveBroadcastsAsync(CancellationToken ct)
     {
-        var activeRequest = _youTubeService!.LiveBroadcasts.List("id,snippet,status");
-        activeRequest.BroadcastStatus =
-            LiveBroadcastsResource.ListRequest.BroadcastStatusEnum.Active;
-        activeRequest.Mine = true;
+        // YouTube API: broadcastStatus and mine are mutually exclusive parameters.
+        // Use mine=true and filter by lifecycle status in code.
+        var request = _youTubeService!.LiveBroadcasts.List("id,snippet,status");
+        request.Mine = true;
 
-        var activeResponse = await activeRequest.ExecuteAsync(ct).ConfigureAwait(false);
+        var response = await request.ExecuteAsync(ct).ConfigureAwait(false);
 
-        if (activeResponse.Items is { Count: > 0 })
+        if (response.Items is null or { Count: 0 })
         {
-            if (activeResponse.Items.Count > 1)
+            _logger.LogInformation("No active broadcasts found — starting in Idle state");
+            return;
+        }
+
+        // Find active (live) broadcasts
+        var activeBroadcasts = response.Items
+            .Where(b => string.Equals(b.Status?.LifeCycleStatus, "live", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (activeBroadcasts.Count > 0)
+        {
+            if (activeBroadcasts.Count > 1)
             {
                 _logger.LogWarning(
                     "Multiple active broadcasts found ({Count}) — using most recent",
-                    activeResponse.Items.Count);
+                    activeBroadcasts.Count);
             }
 
-            var broadcast = activeResponse.Items
+            var broadcast = activeBroadcasts
                 .OrderByDescending(b => b.Snippet.ActualStartTimeDateTimeOffset)
                 .First();
 
@@ -647,23 +668,19 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
             return;
         }
 
-        var readyRequest = _youTubeService.LiveBroadcasts.List("id,snippet");
-        readyRequest.BroadcastStatus =
-            LiveBroadcastsResource.ListRequest.BroadcastStatusEnum.Upcoming;
-        readyRequest.Mine = true;
+        // Log orphaned upcoming broadcasts
+        var upcomingBroadcasts = response.Items
+            .Where(b => string.Equals(b.Status?.LifeCycleStatus, "ready", StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(b.Status?.LifeCycleStatus, "testing", StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
-        var readyResponse = await readyRequest.ExecuteAsync(ct).ConfigureAwait(false);
-
-        if (readyResponse.Items is { Count: > 0 })
+        foreach (var orphan in upcomingBroadcasts)
         {
-            foreach (var orphan in readyResponse.Items)
-            {
-                _logger.LogWarning(
-                    "Orphaned broadcast found: {BroadcastId} — {Title}. " +
-                    "Delete via YouTube Studio if no longer needed",
-                    orphan.Id,
-                    orphan.Snippet.Title);
-            }
+            _logger.LogWarning(
+                "Orphaned broadcast found: {BroadcastId} — {Title}. " +
+                "Delete via YouTube Studio if no longer needed",
+                orphan.Id,
+                orphan.Snippet.Title);
         }
 
         _logger.LogInformation("No active broadcasts found — starting in Idle state");
