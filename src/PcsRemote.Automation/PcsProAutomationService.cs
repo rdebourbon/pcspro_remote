@@ -73,11 +73,13 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     private int _isTeamNamesOperationInProgress;
 
     /// <summary>
-    /// 0 = idle, 1 = a match-loaded operation is in progress.
-    /// Shared by <c>RefreshScoreboardAsync</c>, <c>CaptureScoreboardImageAsync</c>, and
-    /// <c>ChangeMatchAsync</c> to prevent any two S-006 operations from running concurrently.
+    /// Serialises match-loaded FlaUI operations so only one runs at a time.
+    /// Callers that can wait use <c>WaitAsync(MatchLoadedGateTimeout, ct)</c>;
+    /// non-critical callers (health probe) use <c>Wait(0)</c> to skip if busy.
     /// </summary>
-    private int _isMatchLoadedOperationInProgress;
+    private readonly SemaphoreSlim _matchLoadedGate = new(1, 1);
+
+    private static readonly TimeSpan MatchLoadedGateTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Tracks whether a switch-user attempt has been made during the current login phase.
@@ -606,7 +608,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// </summary>
     private HealthCheckResult? TryReadHealthProbe()
     {
-        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
+        if (!_matchLoadedGate.Wait(0))
         {
             _logger.LogDebug("Health poll skipped — FlaUI operation in progress");
             return null;
@@ -619,7 +621,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
         finally
         {
-            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+            _matchLoadedGate.Release();
         }
 
         if (!result.ProbeSucceeded)
@@ -1350,9 +1352,9 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     {
         _logger.LogInformation("RefreshScoreboardAsync starting; current state {State}", CurrentState);
 
-        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
+        if (!await _matchLoadedGate.WaitAsync(MatchLoadedGateTimeout, ct).ConfigureAwait(false))
             throw new InvalidOperationException(
-                "A match-loaded operation is already in progress.");
+                "Timed out waiting for a match-loaded operation to complete.");
 
         try
         {
@@ -1360,7 +1362,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
         finally
         {
-            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+            _matchLoadedGate.Release();
         }
     }
 
@@ -1423,9 +1425,22 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     {
         _logger.LogInformation("CaptureScoreboardImageAsync starting; current state {State}", CurrentState);
 
-        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
-            throw new InvalidOperationException(
-                "A match-loaded operation is already in progress.");
+        bool acquired;
+        try
+        {
+            acquired = await _matchLoadedGate.WaitAsync(MatchLoadedGateTimeout, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("CaptureScoreboardImageAsync skipped — cancelled while waiting for the gate");
+            return Array.Empty<byte>();
+        }
+
+        if (!acquired)
+        {
+            _logger.LogDebug("CaptureScoreboardImageAsync skipped — another operation holds the gate");
+            return Array.Empty<byte>();
+        }
 
         try
         {
@@ -1433,7 +1448,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
         finally
         {
-            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+            _matchLoadedGate.Release();
         }
     }
 
@@ -1487,9 +1502,9 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         _logger.LogInformation("ChangeMatchAsync starting; current state {State}", CurrentState);
         _logService.AddEntry("Changing match\u2026", AutomationLogOutcome.Info);
 
-        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
+        if (!await _matchLoadedGate.WaitAsync(MatchLoadedGateTimeout, ct).ConfigureAwait(false))
             throw new InvalidOperationException(
-                "A match-loaded operation is already in progress.");
+                "Timed out waiting for a match-loaded operation to complete.");
 
         try
         {
@@ -1497,7 +1512,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
         finally
         {
-            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+            _matchLoadedGate.Release();
         }
     }
 
@@ -1681,9 +1696,9 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         _logger.LogInformation("StartStreamingAsync starting; current state {State}", CurrentState);
         _logService.AddEntry("Starting streaming\u2026", AutomationLogOutcome.Info);
 
-        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
+        if (!await _matchLoadedGate.WaitAsync(MatchLoadedGateTimeout, ct).ConfigureAwait(false))
             throw new InvalidOperationException(
-                "A match-loaded operation is already in progress.");
+                "Timed out waiting for a match-loaded operation to complete.");
 
         try
         {
@@ -1691,7 +1706,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
         finally
         {
-            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+            _matchLoadedGate.Release();
         }
     }
 
@@ -1739,9 +1754,9 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         _logger.LogInformation("StopStreamingAsync starting; current state {State}", CurrentState);
         _logService.AddEntry("Stopping streaming\u2026", AutomationLogOutcome.Info);
 
-        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
+        if (!await _matchLoadedGate.WaitAsync(MatchLoadedGateTimeout, ct).ConfigureAwait(false))
             throw new InvalidOperationException(
-                "A match-loaded operation is already in progress.");
+                "Timed out waiting for a match-loaded operation to complete.");
 
         try
         {
@@ -1749,7 +1764,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
         finally
         {
-            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+            _matchLoadedGate.Release();
         }
     }
 
@@ -1795,9 +1810,9 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         _logger.LogInformation("UseCurrentMatchAsync starting; current state {State}", CurrentState);
         _logService.AddEntry("Attaching to current match\u2026", AutomationLogOutcome.Info);
 
-        if (Interlocked.CompareExchange(ref _isMatchLoadedOperationInProgress, 1, 0) != 0)
+        if (!await _matchLoadedGate.WaitAsync(MatchLoadedGateTimeout, ct).ConfigureAwait(false))
             throw new InvalidOperationException(
-                "A match-loaded operation is already in progress.");
+                "Timed out waiting for a match-loaded operation to complete.");
 
         try
         {
@@ -1805,7 +1820,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
         finally
         {
-            Interlocked.Exchange(ref _isMatchLoadedOperationInProgress, 0);
+            _matchLoadedGate.Release();
         }
     }
 

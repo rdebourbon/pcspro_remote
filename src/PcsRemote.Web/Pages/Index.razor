@@ -161,7 +161,7 @@ else if (_currentState == PcsProState.Error)
         finally
         {
             _fetchInProgress = false;
-            _operationInProgress = false;
+            _operationInProgress = CoordinatorService.IsOperationInProgress;
             StateHasChanged();
         }
     }

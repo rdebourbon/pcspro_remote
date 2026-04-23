@@ -1391,19 +1391,22 @@ public sealed class PcsProAutomationServiceTests
     // -----------------------------------------------------------------------
 
     [TestMethod]
-    public async Task RefreshScoreboardAsync_WhenOperationAlreadyInProgress_ThrowsInvalidOperationException()
+    public async Task RefreshScoreboardAsync_WhenOperationAlreadyInProgress_TimesOut()
     {
         var (svc, _) = await CreateServiceAtMatchLoadedAsync();
 
-        // Simulate an in-progress operation by setting the shared Interlocked flag directly.
-        // FlaUI calls are synchronous so a real concurrent call would deadlock the test thread.
+        // Acquire the SemaphoreSlim gate to simulate an in-progress operation.
         var field = typeof(PcsProAutomationService)
-            .GetField("_isMatchLoadedOperationInProgress", BindingFlags.NonPublic | BindingFlags.Instance)!; // field exists
-        field.SetValue(svc, 1);
+            .GetField("_matchLoadedGate", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var gate = (SemaphoreSlim)field.GetValue(svc)!;
+        gate.Wait(0); // drain the semaphore
 
-        await svc.Invoking(_ => _.RefreshScoreboardAsync())
-            .Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*already in progress*");
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        await svc.Invoking(_ => _.RefreshScoreboardAsync(cts.Token))
+            .Should().ThrowAsync<OperationCanceledException>(
+                because: "the gate is held and the token cancels before the 30 s timeout");
+
+        gate.Release(); // clean up
     }
 
     // -----------------------------------------------------------------------
@@ -1475,7 +1478,7 @@ public sealed class PcsProAutomationServiceTests
     // -----------------------------------------------------------------------
 
     [TestMethod]
-    public async Task RefreshScoreboardAsync_WhenAlreadyCancelled_ThrowsOCEAndTransitionsToError()
+    public async Task RefreshScoreboardAsync_WhenAlreadyCancelled_ThrowsOCE()
     {
         var (svc, _) = await CreateServiceAtMatchLoadedAsync();
         using var cts = new CancellationTokenSource();
@@ -1484,7 +1487,8 @@ public sealed class PcsProAutomationServiceTests
         await svc.Invoking(_ => _.RefreshScoreboardAsync(cts.Token))
             .Should().ThrowAsync<OperationCanceledException>();
 
-        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded,
+            because: "cancellation at the gate is a clean abort, not an automation error");
     }
 
     // -----------------------------------------------------------------------
@@ -1560,16 +1564,18 @@ public sealed class PcsProAutomationServiceTests
     // -----------------------------------------------------------------------
 
     [TestMethod]
-    public async Task CaptureScoreboardImageAsync_WhenAlreadyCancelled_ThrowsOCEAndTransitionsToError()
+    public async Task CaptureScoreboardImageAsync_WhenAlreadyCancelled_ReturnsEmpty()
     {
         var (svc, _) = await CreateServiceAtMatchLoadedAsync();
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        await svc.Invoking(_ => _.CaptureScoreboardImageAsync(cts.Token))
-            .Should().ThrowAsync<OperationCanceledException>();
+        var result = await svc.CaptureScoreboardImageAsync(cts.Token);
 
-        svc.CurrentState.Should().Be(PcsProState.Error);
+        result.Should().BeEmpty(
+            because: "capture gracefully returns empty when cancelled at the gate");
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded,
+            because: "cancellation at the gate is a clean abort, not an automation error");
     }
 
     // -----------------------------------------------------------------------
@@ -1640,7 +1646,7 @@ public sealed class PcsProAutomationServiceTests
     // -----------------------------------------------------------------------
 
     [TestMethod]
-    public async Task ChangeMatchAsync_WhenAlreadyCancelled_ThrowsOCEAndTransitionsToError()
+    public async Task ChangeMatchAsync_WhenAlreadyCancelled_ThrowsOCE()
     {
         var (svc, _) = await CreateServiceAtMatchLoadedAsync();
         using var cts = new CancellationTokenSource();
@@ -1649,7 +1655,8 @@ public sealed class PcsProAutomationServiceTests
         await svc.Invoking(_ => _.ChangeMatchAsync(cts.Token))
             .Should().ThrowAsync<OperationCanceledException>();
 
-        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded,
+            because: "cancellation at the gate is a clean abort, not an automation error");
     }
 
     // -----------------------------------------------------------------------
@@ -1688,21 +1695,24 @@ public sealed class PcsProAutomationServiceTests
     // -----------------------------------------------------------------------
 
     [TestMethod]
-    public async Task CaptureScoreboardImageAsync_WhenRefreshInProgress_ThrowsInvalidOperationException()
+    public async Task CaptureScoreboardImageAsync_WhenRefreshInProgress_ReturnsEmpty()
     {
         var (svc, _) = await CreateServiceAtMatchLoadedAsync();
 
-        // Set the shared _isMatchLoadedOperationInProgress flag to simulate RefreshScoreboardAsync
-        // holding it. FlaUI calls are synchronous so a real concurrent call would deadlock.
+        // Acquire the SemaphoreSlim gate to simulate RefreshScoreboardAsync holding it.
         var field = typeof(PcsProAutomationService)
-            .GetField("_isMatchLoadedOperationInProgress", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        field.SetValue(svc, 1);
+            .GetField("_matchLoadedGate", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var gate = (SemaphoreSlim)field.GetValue(svc)!;
+        gate.Wait(0); // drain the semaphore
 
-        // CaptureScoreboardImageAsync must be rejected by the SAME shared flag.
-        await svc.Invoking(_ => _.CaptureScoreboardImageAsync())
-            .Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*already in progress*",
-                because: "the shared _isMatchLoadedOperationInProgress flag must block cross-method calls");
+        // CaptureScoreboardImageAsync should return empty when the gate times out,
+        // not throw InvalidOperationException.
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        var result = await svc.CaptureScoreboardImageAsync(cts.Token);
+        result.Should().BeEmpty(
+            because: "capture gracefully returns empty when the gate is held");
+
+        gate.Release(); // clean up
     }
 
     // -----------------------------------------------------------------------
@@ -2103,12 +2113,13 @@ public sealed class PcsProAutomationServiceTests
         var firstCall = Task.Run(() => svc.UseCurrentMatchAsync());
         await slowTeams.Started.WaitAsync(); // ensure first call has acquired the guard
 
-        // Act: second concurrent call.
-        var act = () => svc.UseCurrentMatchAsync();
+        // Act: second concurrent call with a short timeout so we don't wait 30 s.
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        var act = () => svc.UseCurrentMatchAsync(cts.Token);
 
-        // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*already in progress*");
+        // Assert — SemaphoreSlim gate times out (via CTS cancellation).
+        await act.Should().ThrowAsync<OperationCanceledException>(
+            because: "the gate is held and the token cancels before the 30 s timeout");
 
         // Cleanup
         slowTeams.Release();
