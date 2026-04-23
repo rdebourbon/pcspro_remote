@@ -39,12 +39,36 @@
                       Type="raw" Bitness="always32" />
     </Property>
 
-    <Property Id="PCSPRO_EXEPATH" Value="C:\Program Files (x86)\PCS Pro\cricket.exe" Secure="yes" />
-    <Property Id="PCSPRO_PASSWORD" Hidden="yes" Secure="yes" />
-    <Property Id="HTTP_PORT" Value="5000" Secure="yes" />
-    <Property Id="YOUTUBE_CLIENTID" Secure="yes" />
-    <Property Id="YOUTUBE_CLIENTSECRET" Hidden="yes" Secure="yes" />
-    <Property Id="YOUTUBE_LIVESTREAMID" Secure="yes" />
+    <Property Id="PCSPRO_EXEPATH" Value="C:\Program Files (x86)\PCS Pro\cricket.exe" Secure="yes">
+      <RegistrySearch Id="PrevExePath" Root="HKLM"
+                      Key="SOFTWARE\PcsRemote\Install" Name="ExePath"
+                      Type="raw" Bitness="always32" />
+    </Property>
+    <Property Id="PCSPRO_PASSWORD" Hidden="yes" Secure="yes">
+      <RegistrySearch Id="PrevPassword" Root="HKLM"
+                      Key="SOFTWARE\PcsRemote\Install" Name="Password"
+                      Type="raw" Bitness="always32" />
+    </Property>
+    <Property Id="HTTP_PORT" Value="5000" Secure="yes">
+      <RegistrySearch Id="PrevPort" Root="HKLM"
+                      Key="SOFTWARE\PcsRemote\Install" Name="Port"
+                      Type="raw" Bitness="always32" />
+    </Property>
+    <Property Id="YOUTUBE_CLIENTID" Secure="yes">
+      <RegistrySearch Id="PrevClientId" Root="HKLM"
+                      Key="SOFTWARE\PcsRemote\Install" Name="ClientId"
+                      Type="raw" Bitness="always32" />
+    </Property>
+    <Property Id="YOUTUBE_CLIENTSECRET" Hidden="yes" Secure="yes">
+      <RegistrySearch Id="PrevClientSecret" Root="HKLM"
+                      Key="SOFTWARE\PcsRemote\Install" Name="ClientSecret"
+                      Type="raw" Bitness="always32" />
+    </Property>
+    <Property Id="YOUTUBE_LIVESTREAMID" Secure="yes">
+      <RegistrySearch Id="PrevLiveStreamId" Root="HKLM"
+                      Key="SOFTWARE\PcsRemote\Install" Name="LiveStreamId"
+                      Type="raw" Bitness="always32" />
+    </Property>
 
     <!-- ============================================================
          Directory structure and file installation
@@ -86,7 +110,7 @@
                 Source="InstallEnvVar.ps1"
                 KeyPath="yes" />
         </Component>
-        <Component Id="ConfigTransportComponent" Guid="*">
+        <Component Id="ConfigTransportComponent" Guid="*" Permanent="yes">
           <RegistryValue Root="HKLM" Key="SOFTWARE\PcsRemote\Install"
                          Name="InstallFolder" Value="[INSTALLFOLDER]"
                          Type="string" KeyPath="yes" />
