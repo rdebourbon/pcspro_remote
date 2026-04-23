@@ -395,6 +395,7 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
     {
         await _automationService.StartStreamingAsync(ct).ConfigureAwait(false);
         await PollStreamReadyAsync(ct).ConfigureAwait(false);
+        await PollBroadcastTestingAsync(broadcastId, ct).ConfigureAwait(false);
         await TransitionToLiveAsync(broadcastId, ct).ConfigureAwait(false);
 
         StreamStateSnapshot? pendingEvent = null;
@@ -701,7 +702,7 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
             },
             ContentDetails = new LiveBroadcastContentDetails
             {
-                EnableAutoStart = false,
+                EnableAutoStart = true,
                 EnableAutoStop = false
             }
         };
@@ -764,6 +765,50 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
             $"PCS Pro is not streaming. Waited {_options.StreamReadyTimeoutSeconds}s for " +
             $"stream '{_options.LiveStreamId}' to become active. " +
             "Check that PCS Pro is running and streaming to YouTube.");
+    }
+
+    /// <summary>
+    /// Polls until YouTube auto-transitions the broadcast from "created" to "testing"
+    /// (triggered by enableAutoStart when stream ingestion begins).
+    /// Must reach "testing" before the broadcast can transition to "live".
+    /// </summary>
+    private async Task PollBroadcastTestingAsync(string broadcastId, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(_options.StreamReadyTimeoutSeconds);
+        var pollInterval = TimeSpan.FromSeconds(_options.StreamPollIntervalSeconds);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var request = _youTubeService!.LiveBroadcasts.List("id,status");
+            request.Id = broadcastId;
+
+            var response = await request.ExecuteAsync(ct).ConfigureAwait(false);
+
+            if (response.Items is { Count: > 0 })
+            {
+                var lifecycleStatus = response.Items[0].Status?.LifeCycleStatus;
+                if (string.Equals(lifecycleStatus, "testing", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(lifecycleStatus, "live", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogInformation(
+                        "Broadcast {BroadcastId} reached {Status} — ready for live transition",
+                        broadcastId, lifecycleStatus);
+                    return;
+                }
+
+                _logger.LogDebug(
+                    "Broadcast {BroadcastId} lifecycle: {Status} — waiting for testing",
+                    broadcastId, lifecycleStatus);
+            }
+
+            await Task.Delay(pollInterval, ct).ConfigureAwait(false);
+        }
+
+        throw new YouTubeStreamException(
+            $"Broadcast '{broadcastId}' did not reach testing state within " +
+            $"{_options.StreamReadyTimeoutSeconds}s. YouTube may not have detected the incoming stream.");
     }
 
     private async Task TransitionToLiveAsync(string broadcastId, CancellationToken ct)

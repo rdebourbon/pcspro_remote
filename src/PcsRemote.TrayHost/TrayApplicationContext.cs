@@ -171,9 +171,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void UpdateYouTubeSetupEnabled()
     {
-        var status = _youTubeService.CurrentStatus;
-        _youTubeSetupItem.Enabled = !_setupInProgress
-            && status == LiveStreamStatus.Idle;
+        _youTubeSetupItem.Enabled = !_setupInProgress;
     }
 
     private void OnOpenBrowserClicked(object? sender, EventArgs e)
