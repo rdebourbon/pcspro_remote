@@ -34,12 +34,20 @@ body {
 /* ---- Radzen layout tinting ---- */
 .rz-layout  { background-color: var(--pcs-bg)      !important; }
 .rz-header  { background-color: var(--pcs-surface)  !important;
-               border-bottom: 1px solid var(--pcs-border) !important; }
+               border-bottom: 1px solid var(--pcs-border) !important;
+               width: 100% !important; }
 
-/* Header stack: full-width, single row */
-.rz-header .rz-stack {
-    width: 100%;
-    flex-wrap: nowrap;
+/* Header stack: full-width, single row — flex children shrink gracefully */
+.rz-header .rz-stack > * {
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+/* Title truncates gracefully when viewport is narrow */
+.rz-header .rz-stack .rz-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .rz-body    { background-color: var(--pcs-bg)      !important; }
 
