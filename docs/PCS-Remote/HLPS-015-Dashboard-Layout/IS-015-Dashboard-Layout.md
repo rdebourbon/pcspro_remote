@@ -1,7 +1,7 @@
 # IS-015 — Dashboard Layout Redesign
 
-**Status:** APPROVED  
-**Version:** 0.2  
+**Status:** DELIVERED  
+**Version:** 0.3
 **Governing Document:** HLPS-015-Dashboard-Layout.md (APPROVED)  
 **Created:** 2026-04-23
 
