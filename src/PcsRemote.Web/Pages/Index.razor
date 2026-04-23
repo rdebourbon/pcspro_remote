@@ -105,12 +105,20 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
         _manualModeActive = ManualModeService.IsManualModeActive;
         _operationInProgress = CoordinatorService.IsOperationInProgress;
 
+        Logger.LogInformation(
+            "Index.OnInitializedAsync — State={State} ManualMode={ManualMode} OpInProgress={OpInProgress}",
+            _currentState, _manualModeActive, _operationInProgress);
+
         if (_currentState == PcsProState.MatchSelectionReady)
             await FetchMatchesAsync();
     }
 
     private async void OnStateChanged(object? sender, PcsProState newState)
     {
+        Logger.LogInformation(
+            "Index.OnStateChanged — {OldState} → {NewState}, Matches={MatchCount}, LoadedMatch={HasLoadedMatch}",
+            _currentState, newState, _matches?.Count, _loadedMatch is not null);
+
         // Dispatch ALL field access to the Blazor sync context to prevent
         // TOCTOU races between the background event thread and the renderer.
         await InvokeAsync(async () =>
@@ -160,6 +168,10 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
 
     private async Task FetchMatchesAsync()
     {
+        Logger.LogInformation(
+            "Index.FetchMatchesAsync — State={State} OpInProgress={OpInProgress}",
+            _currentState, _operationInProgress);
+
         _fetchInProgress = true;
         _operationInProgress = true;
         _matches = null;
@@ -169,6 +181,7 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
         {
             var results = await AutomationService.GetTodaysMatchesAsync();
             _matches = results;
+            Logger.LogInformation("Index.FetchMatchesAsync — got {MatchCount} matches", results.Count);
 
             // R-8: auto-select the only match so the user doesn't need to click when there is no choice.
             if ((_currentState == PcsProState.MatchSelection || _currentState == PcsProState.MatchSelectionReady)
@@ -177,8 +190,13 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
                 var match = _matches[0];
                 _loadedMatch = match;
                 _matches = null; // Prevent re-trigger if OnStateChanged fires MatchSelection again
+                Logger.LogInformation("Index.FetchMatchesAsync — auto-selecting single match {MatchId}", match.MatchId);
                 await AutomationService.LoadMatchAsync(match);
             }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogError(ex, "Index.FetchMatchesAsync — failed");
         }
         finally
         {
@@ -190,6 +208,10 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
 
     private async Task SelectMatchAsync(MatchInfo match)
     {
+        Logger.LogInformation(
+            "Index.SelectMatchAsync — MatchId={MatchId} State={State} OpInProgress={OpInProgress}",
+            match.MatchId, _currentState, _operationInProgress);
+
         if (_operationInProgress)
             return;
 
@@ -208,8 +230,15 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
 
     private async Task UseCurrentMatchAsync()
     {
+        Logger.LogInformation(
+            "Index.UseCurrentMatchAsync — State={State} OpInProgress={OpInProgress} ManualMode={ManualMode}",
+            _currentState, _operationInProgress, _manualModeActive);
+
         if (_operationInProgress)
+        {
+            Logger.LogWarning("Index.UseCurrentMatchAsync — blocked by _operationInProgress");
             return;
+        }
 
         if (ManualModeService.IsManualModeActive)
         {
@@ -224,15 +253,18 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
         {
             var teams = await AutomationService.UseCurrentMatchAsync();
             _loadedMatch = new MatchInfo("current", teams.Home.TeamName, teams.Away.TeamName, "Current Match", DateOnly.FromDateTime(DateTime.Today));
+            Logger.LogInformation(
+                "Index.UseCurrentMatchAsync — attached: Home={Home} Away={Away}",
+                teams.Home.TeamName, teams.Away.TeamName);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Logger.LogError(ex, "UseCurrentMatchAsync failed");
+            Logger.LogError(ex, "Index.UseCurrentMatchAsync — failed");
             NotificationService.Notify(NotificationSeverity.Error, "Failed to attach to current match");
         }
         finally
         {
-            _operationInProgress = false;
+            _operationInProgress = CoordinatorService.IsOperationInProgress;
             StateHasChanged();
         }
     }
@@ -246,6 +278,10 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
 
     private async Task RestartAutomationAsync()
     {
+        Logger.LogInformation(
+            "Index.RestartAutomationAsync — State={State} OpInProgress={OpInProgress}",
+            _currentState, _operationInProgress);
+
         if (_operationInProgress)
             return;
 
@@ -260,12 +296,15 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
         {
             acquired = CoordinatorService.BeginOperation("Starting automation\u2026");
             if (!acquired)
+            {
+                Logger.LogWarning("Index.RestartAutomationAsync — BeginOperation returned false");
                 return;
+            }
             await AutomationService.LaunchAndLoginAsync();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Logger.LogError(ex, "Start automation failed");
+            Logger.LogError(ex, "Index.RestartAutomationAsync — failed");
             NotificationService.Notify(NotificationSeverity.Error, "Start automation failed");
         }
         finally

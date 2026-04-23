@@ -83,10 +83,12 @@ public sealed class ScoreboardPollingService : BackgroundService
     {
         if (newState == PcsProState.MatchLoaded)
         {
+            _logger.LogInformation("ScoreboardPollingService: MatchLoaded — starting capture loop");
             StartLoop();
         }
         else
         {
+            _logger.LogInformation("ScoreboardPollingService: {State} — stopping capture loop", newState);
             var stopTask = StopLoopAsync();
             _ = stopTask.ContinueWith(
                 t => _logger.LogError(t.Exception, "ScoreboardPollingService: StopLoopAsync faulted unexpectedly"),
@@ -180,7 +182,10 @@ public sealed class ScoreboardPollingService : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "ScoreboardPollingService: capture failed on tick — loop will continue");
+                    _logger.LogError(
+                        ex,
+                        "ScoreboardPollingService: capture failed on tick — {ExType}: {ExMessage} — loop will continue",
+                        ex.GetType().Name, ex.Message);
                 }
             }
         }

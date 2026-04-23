@@ -1,8 +1,10 @@
 @using PcsRemote.Core
+@using Microsoft.Extensions.Logging
 @implements IDisposable
 @inject IYouTubeLiveStreamService StreamService
 @inject IOperationCoordinatorService CoordinatorService
 @inject IConfirmDialogService ConfirmDialogService
+@inject ILogger<StreamingControls> Logger
 
 <div class="streaming-controls">
     <div class="streaming-controls__header">
@@ -108,10 +110,18 @@
 
     private async Task OnStartClickedAsync()
     {
+        Logger.LogInformation(
+            "StreamingControls.OnStartClicked — Status={Status} OpInProgress={OpInProgress} IsStartEnabled={IsStartEnabled}",
+            _currentStatus, _operationInProgress, IsStartEnabled);
+
         if (_operationInProgress) return;
 
         var acquired = CoordinatorService.BeginOperation("Starting stream\u2026");
-        if (!acquired) return;
+        if (!acquired)
+        {
+            Logger.LogWarning("StreamingControls.OnStartClicked — BeginOperation returned false");
+            return;
+        }
 
         try
         {
@@ -130,6 +140,7 @@
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            Logger.LogError(ex, "StreamingControls.OnStartClicked — stream start failed");
             _currentStatus = LiveStreamStatus.Error;
             _errorMessage = ex.Message;
             StateHasChanged();
@@ -142,6 +153,10 @@
 
     private async Task OnStopClickedAsync()
     {
+        Logger.LogInformation(
+            "StreamingControls.OnStopClicked — Status={Status} OpInProgress={OpInProgress}",
+            _currentStatus, _operationInProgress);
+
         if (_operationInProgress) return;
 
         var acquired = false;

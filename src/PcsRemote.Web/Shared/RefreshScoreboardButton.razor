@@ -40,6 +40,10 @@
 
     private async Task OnRefreshClickedAsync()
     {
+        Logger.LogInformation(
+            "RefreshScoreboardButton.OnRefreshClicked — State={State} OpInProgress={OpInProgress} ManualMode={ManualMode} IsEnabled={IsEnabled}",
+            _currentState, _operationInProgress, _manualModeActive, IsEnabled);
+
         if (_operationInProgress)
             return;
 
@@ -56,12 +60,16 @@
             // Only proceed — and only release — when this call wins the CAS.
             acquired = CoordinatorService.BeginOperation("Refreshing scoreboard\u2026");
             if (!acquired)
+            {
+                Logger.LogWarning("RefreshScoreboardButton.OnRefreshClicked — BeginOperation returned false");
                 return;
+            }
             await ScoreboardService.ForceRefreshAsync();
+            Logger.LogInformation("RefreshScoreboardButton.OnRefreshClicked — completed successfully");
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Forced scoreboard refresh failed");
+            Logger.LogError(ex, "RefreshScoreboardButton.OnRefreshClicked — failed");
             NotificationService.Notify(NotificationSeverity.Error, "Refresh failed");
         }
         finally

@@ -38,6 +38,10 @@
 
     private async Task OnChangeMatchClickedAsync()
     {
+        Logger.LogInformation(
+            "ChangeMatchButton.OnChangeMatchClicked — State={State} OpInProgress={OpInProgress} ManualMode={ManualMode} IsEnabled={IsEnabled}",
+            _currentState, _operationInProgress, _manualModeActive, IsEnabled);
+
         if (_operationInProgress)
             return;
 
@@ -63,7 +67,10 @@
         {
             acquired = CoordinatorService.BeginOperation("Changing match\u2026");
             if (!acquired)
+            {
+                Logger.LogWarning("ChangeMatchButton.OnChangeMatchClicked — BeginOperation returned false");
                 return;
+            }
 
             if (streamActive)
             {
