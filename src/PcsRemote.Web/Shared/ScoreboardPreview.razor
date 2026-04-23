@@ -36,7 +36,8 @@ else
     private async void OnScoreboardUpdated(object? sender, byte[] image)
     {
         _currentImage = image;
-        await InvokeAsync(StateHasChanged);
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
     }
 
     private async void OnStateChanged(object? sender, PcsProState newState)
@@ -59,7 +60,8 @@ else
             _currentImage = null;
         }
 
-        await InvokeAsync(StateHasChanged);
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
     }
 
     public void Dispose()

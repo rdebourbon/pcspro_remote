@@ -70,6 +70,21 @@ else if (_currentState == PcsProState.Error)
 {
     <ErrorDisplay />
 }
+else if (_currentState is PcsProState.NotRunning)
+{
+    <div class="not-running-prompt">
+        <p class="not-running-prompt__text">PCS Pro is not running.</p>
+        <button class="load-matches-button"
+                disabled="@(_operationInProgress || _manualModeActive)"
+                @onclick="RestartAutomationAsync">
+            &#x27F3; Start Automation
+        </button>
+    </div>
+}
+else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
+{
+    <div class="match-loading">Starting PCS Pro&hellip;</div>
+}
 
 @code {
     private PcsProState _currentState;
@@ -106,6 +121,13 @@ else if (_currentState == PcsProState.Error)
             {
                 // Clear stale cards so the "Load Matches" button appears on re-entry.
                 _matches = null;
+                StateHasChanged();
+            }
+            else if (newState == PcsProState.NotRunning)
+            {
+                // Clear all stale data when automation stops.
+                _matches = null;
+                _loadedMatch = null;
                 StateHasChanged();
             }
             else if (newState == PcsProState.MatchSelectionReady)
@@ -218,13 +240,46 @@ else if (_currentState == PcsProState.Error)
     private async void OnManualModeChanged(object? sender, bool isActive)
     {
         _manualModeActive = isActive;
-        await InvokeAsync(StateHasChanged);
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task RestartAutomationAsync()
+    {
+        if (_operationInProgress)
+            return;
+
+        if (ManualModeService.IsManualModeActive)
+        {
+            NotificationService.Notify(NotificationSeverity.Warning, "Automation is paused — disable manual mode first");
+            return;
+        }
+
+        bool acquired = false;
+        try
+        {
+            acquired = CoordinatorService.BeginOperation("Starting automation\u2026");
+            if (!acquired)
+                return;
+            await AutomationService.LaunchAndLoginAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogError(ex, "Start automation failed");
+            NotificationService.Notify(NotificationSeverity.Error, "Start automation failed");
+        }
+        finally
+        {
+            if (acquired)
+                CoordinatorService.MarkComplete();
+        }
     }
 
     private async void OnOperationInProgressChanged(object? sender, bool isInProgress)
     {
         _operationInProgress = isInProgress;
-        await InvokeAsync(StateHasChanged);
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
     }
 
     public void Dispose()

@@ -100,7 +100,11 @@
         _currentState = newState;
         if (!_disposed)
         {
-            await InvokeAsync(StateHasChanged);
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException) { }
         }
     }
 
