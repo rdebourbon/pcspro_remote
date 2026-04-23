@@ -51,8 +51,8 @@ body {
 }
 .rz-body    { background-color: var(--pcs-bg)      !important; }
 
-/* Body content area: centred, sensible max-width, padded for mobile */
-.rz-body > * {
+/* Body content area: centred, sensible max-width, padded for mobile (pre-match states only) */
+.rz-body > *:not(.dashboard-grid) {
     max-width: 600px;
     margin: 0 auto;
     padding: 1.25rem 1rem;
@@ -185,6 +185,26 @@ body {
     text-align: right;
 }
 
+/* ---- Dashboard grid (MatchLoaded two-panel layout) ---- */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1.25rem 1rem;
+}
+
+@media (max-width: 767px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.dashboard-panel .streaming-controls {
+    margin-top: 0;
+}
+
 /* ---- Loaded match header ---- */
 .match-loaded {
     display: flex;
@@ -198,6 +218,14 @@ body {
     gap: 0.75rem;
 }
 
+.match-loaded__teams {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    flex: 1;
+}
+
 .match-loaded__home,
 .match-loaded__away {
     font-weight: 700;
@@ -205,11 +233,17 @@ body {
     color: var(--pcs-text);
 }
 
+.match-loaded__vs {
+    font-size: 0.85rem;
+    color: var(--pcs-text-muted);
+    font-weight: 400;
+}
+
 /* ---- Scoreboard ---- */
 .scoreboard-image {
     display: block;
     width: 100%;
-    max-width: 600px;
+    max-width: 100%;
     border-radius: var(--pcs-radius);
     border: 1px solid var(--pcs-border);
     margin-bottom: 1rem;

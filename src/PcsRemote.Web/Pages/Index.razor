@@ -44,17 +44,26 @@ else if (_currentState == PcsProState.MatchSelection)
 
 else if (_currentState == PcsProState.MatchLoaded)
 {
-    @if (_loadedMatch is not null)
-    {
-        <div class="match-loaded">
-            <span class="match-loaded__home">@_loadedMatch.HomeTeam</span>
-            <span class="match-loaded__away">@_loadedMatch.AwayTeam</span>
+    <div class="dashboard-grid">
+        <div class="dashboard-panel dashboard-panel--match">
+            @if (_loadedMatch is not null)
+            {
+                <div class="match-loaded">
+                    <div class="match-loaded__teams">
+                        <span class="match-loaded__home">@_loadedMatch.HomeTeam</span>
+                        <span class="match-loaded__vs">vs</span>
+                        <span class="match-loaded__away">@_loadedMatch.AwayTeam</span>
+                    </div>
+                    <ChangeMatchButton />
+                </div>
+            }
+            <ScoreboardPreview />
+            <RefreshScoreboardButton />
         </div>
-    }
-    <ScoreboardPreview />
-    <RefreshScoreboardButton />
-    <ChangeMatchButton />
-    <StreamingControls />
+        <div class="dashboard-panel dashboard-panel--streaming">
+            <StreamingControls />
+        </div>
+    </div>
 }
 
 else if (_currentState == PcsProState.Error)
