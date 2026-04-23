@@ -377,6 +377,8 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
         textBox.Click();
         Thread.Sleep(KeyboardPauseMs);
 
+        UIAutomationHelpers.BringToForeground(dialog, _logger);
+
         Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_A);
         string dateText = DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime).ToString("dd/MM/yyyy");
         Keyboard.Type(dateText);

@@ -67,6 +67,8 @@ internal sealed class FlaUiLoginAutomation : ILoginAutomation
         var window = _locator.FindMainWindow()
             ?? throw new InvalidOperationException("PCS Pro main window not found.");
 
+        UIAutomationHelpers.BringToForeground(window, _logger);
+
         var cf = _locator.Automation.ConditionFactory;
         var pwField = UIAutomationHelpers.FindDescendant(
             window,
@@ -239,6 +241,8 @@ internal sealed class FlaUiLoginAutomation : ILoginAutomation
     {
         var window = _locator.FindMainWindow()
             ?? throw new InvalidOperationException("PCS Pro main window not found.");
+
+        UIAutomationHelpers.BringToForeground(window, _logger);
 
         var cf = _locator.Automation.ConditionFactory;
         var usernameField = UIAutomationHelpers.FindDescendant(

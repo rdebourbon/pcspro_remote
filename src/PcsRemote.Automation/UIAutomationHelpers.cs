@@ -454,4 +454,51 @@ internal static class UIAutomationHelpers
             return false;
         }
     }
+
+    // ─── Win32 foreground window ────────────────────────────────────────
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    private const int SW_RESTORE = 9;
+
+    /// <summary>
+    /// Brings a window to the foreground so that <see cref="FlaUI.Core.Input.Keyboard"/>
+    /// input is delivered to it. Must be called before any <c>Keyboard.Type()</c> or
+    /// <c>Keyboard.TypeSimultaneously()</c> call.
+    /// </summary>
+    /// <remarks>
+    /// Uses <c>ShowWindow(SW_RESTORE)</c> followed by <c>SetForegroundWindow</c>.
+    /// The restore step handles minimised windows; the foreground call activates it.
+    /// Never throws — returns <c>false</c> on failure.
+    /// </remarks>
+    internal static bool BringToForeground(AutomationElement window, ILogger? logger = null)
+    {
+        try
+        {
+            var handle = window.Properties.NativeWindowHandle.ValueOrDefault;
+            if (handle == IntPtr.Zero)
+            {
+                logger?.LogWarning("BringToForeground: NativeWindowHandle is zero");
+                return false;
+            }
+
+            ShowWindow(handle, SW_RESTORE);
+            var result = SetForegroundWindow(handle);
+            if (!result)
+            {
+                logger?.LogDebug("SetForegroundWindow returned false — window may already be foreground");
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "BringToForeground failed");
+            return false;
+        }
+    }
 }

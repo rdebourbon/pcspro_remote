@@ -15,7 +15,7 @@
 {
     <div class="match-loading">Loading matches&hellip;</div>
 }
-else if (_currentState == PcsProState.MatchSelection)
+else if (_currentState == PcsProState.MatchSelection || _currentState == PcsProState.MatchSelectionReady)
 {
     @if (_matches is { Count: 0 })
     {
@@ -149,7 +149,8 @@ else if (_currentState == PcsProState.Error)
             _matches = results;
 
             // R-8: auto-select the only match so the user doesn't need to click when there is no choice.
-            if (_currentState == PcsProState.MatchSelection && _matches?.Count == 1)
+            if ((_currentState == PcsProState.MatchSelection || _currentState == PcsProState.MatchSelectionReady)
+                && _matches?.Count == 1)
             {
                 var match = _matches[0];
                 _loadedMatch = match;
