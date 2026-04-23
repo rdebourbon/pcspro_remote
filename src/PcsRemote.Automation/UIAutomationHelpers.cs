@@ -475,14 +475,13 @@ internal static class UIAutomationHelpers
     /// The restore step handles minimised windows; the foreground call activates it.
     /// Never throws — returns <c>false</c> on failure.
     /// </remarks>
-    internal static bool BringToForeground(AutomationElement window, ILogger? logger = null)
+    internal static bool BringToForeground(IntPtr handle, ILogger? logger = null)
     {
         try
         {
-            var handle = window.Properties.NativeWindowHandle.ValueOrDefault;
             if (handle == IntPtr.Zero)
             {
-                logger?.LogWarning("BringToForeground: NativeWindowHandle is zero");
+                logger?.LogWarning("BringToForeground: handle is zero");
                 return false;
             }
 
@@ -500,5 +499,11 @@ internal static class UIAutomationHelpers
             logger?.LogWarning(ex, "BringToForeground failed");
             return false;
         }
+    }
+
+    internal static bool BringToForeground(AutomationElement window, ILogger? logger = null)
+    {
+        var handle = window.Properties.NativeWindowHandle.ValueOrDefault;
+        return BringToForeground(handle, logger);
     }
 }

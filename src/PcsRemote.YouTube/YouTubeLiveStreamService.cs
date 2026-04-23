@@ -818,10 +818,20 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
             broadcastId,
             "status");
 
-        await request.ExecuteAsync(ct).ConfigureAwait(false);
-
-        _logger.LogInformation(
-            "Broadcast {BroadcastId} transitioned to Live", broadcastId);
+        try
+        {
+            await request.ExecuteAsync(ct).ConfigureAwait(false);
+            _logger.LogInformation(
+                "Broadcast {BroadcastId} transitioned to Live", broadcastId);
+        }
+        catch (Google.GoogleApiException ex) when (
+            ex.Error?.Errors?.Any(e =>
+                string.Equals(e.Reason, "redundantTransition", StringComparison.OrdinalIgnoreCase)) == true)
+        {
+            _logger.LogInformation(
+                "Broadcast {BroadcastId} is already Live (auto-started) — skipping transition",
+                broadcastId);
+        }
     }
 
     /// <summary>

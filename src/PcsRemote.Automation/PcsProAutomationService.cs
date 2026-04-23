@@ -170,6 +170,12 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         if (!await PollForMainWindowAsync(process, ct).ConfigureAwait(false))
             return; // Error state already set.
 
+        // Bring PCS Pro to the foreground so the user can see login progress.
+        if (process.TryGetMainWindow() is IntPtr hwnd && hwnd != IntPtr.Zero)
+        {
+            UIAutomationHelpers.BringToForeground(hwnd, _logger);
+        }
+
         // Fire LoginDetected (Launching → LoginScreen) (AC-19).
         await FireUnderLockAsync(PcsProTrigger.LoginDetected).ConfigureAwait(false);
 

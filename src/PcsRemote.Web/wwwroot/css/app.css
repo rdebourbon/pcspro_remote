@@ -1,24 +1,24 @@
 /* =============================================================
    PCS Remote — Application Stylesheet
-   Cricket scorer remote controller — dark cricket-green theme
+   Cricket scorer remote controller — dark maroon theme
    ============================================================= */
 
 /* ---- Design tokens ---- */
 :root {
-    --pcs-bg:           #0f1e14;
-    --pcs-surface:      #162619;
-    --pcs-card:         #1c3324;
-    --pcs-card-hover:   #24402e;
-    --pcs-border:       #2a4834;
+    --pcs-bg:           #170810;
+    --pcs-surface:      #260D18;
+    --pcs-card:         #31101F;
+    --pcs-card-hover:   #3E1528;
+    --pcs-border:       #561B38;
     --pcs-green:        #52c07a;
     --pcs-green-dim:    #2d6b45;
     --pcs-yellow:       #f4c842;
     --pcs-red:          #e05252;
-    --pcs-grey:         #7a9a82;
-    --pcs-text:         #e8f0ea;
-    --pcs-text-muted:   #8aab90;
+    --pcs-grey:         #B89298;
+    --pcs-text:         #F5EDE8;
+    --pcs-text-muted:   #B89298;
     --pcs-radius:       10px;
-    --pcs-shadow:       0 2px 12px rgba(0,0,0,.45);
+    --pcs-shadow:       0 2px 12px rgba(0,0,0,.65);
 }
 
 /* ---- Base ---- */
