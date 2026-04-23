@@ -45,9 +45,20 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
 
         var cf = _locator.Automation.ConditionFactory;
 
-        NavigateToOpenMatchDialog(window, cf);
+        // Check if the match selection dialog is already open (e.g. after ChangeMatch).
+        var dialog = UIAutomationHelpers.FindDescendant(
+            window,
+            cf.ByName(KnownElements.MatchSelectionDialogName));
 
-        var dialog = WaitForMatchSelectionDialog(window, cf);
+        if (dialog != null)
+        {
+            _logger.LogDebug("Match selection dialog already open — skipping menu navigation");
+        }
+        else
+        {
+            NavigateToOpenMatchDialog(window, cf);
+            dialog = WaitForMatchSelectionDialog(window, cf);
+        }
 
         ClickClearFilters(dialog, cf);
 
