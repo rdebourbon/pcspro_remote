@@ -463,16 +463,53 @@ internal static class UIAutomationHelpers
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
     private const int SW_RESTORE = 9;
+    private const byte VK_MENU = 0x12;
+    private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+    private const uint KEYEVENTF_KEYUP = 0x0002;
+    private const uint GW_ENABLEDPOPUP = 6;
 
     /// <summary>
-    /// Brings a window to the foreground so that <see cref="FlaUI.Core.Input.Keyboard"/>
-    /// input is delivered to it. Must be called before any <c>Keyboard.Type()</c> or
-    /// <c>Keyboard.TypeSimultaneously()</c> call.
+    /// Aggressively brings a window to the foreground so that
+    /// <see cref="FlaUI.Core.Input.Keyboard"/> input is delivered to it.
     /// </summary>
     /// <remarks>
-    /// Uses <c>ShowWindow(SW_RESTORE)</c> followed by <c>SetForegroundWindow</c>.
-    /// The restore step handles minimised windows; the foreground call activates it.
+    /// Strategy:
+    /// <list type="number">
+    /// <item>Simulate an Alt keypress to satisfy Windows' "last input" check.</item>
+    /// <item>Attach our thread input to the foreground thread.</item>
+    /// <item>Restore the window and bring it to top.</item>
+    /// <item>If the window has an active modal popup, focus that instead.</item>
+    /// </list>
     /// Never throws — returns <c>false</c> on failure.
     /// </remarks>
     internal static bool BringToForeground(IntPtr handle, ILogger? logger = null)
@@ -485,14 +522,63 @@ internal static class UIAutomationHelpers
                 return false;
             }
 
-            ShowWindow(handle, SW_RESTORE);
-            var result = SetForegroundWindow(handle);
-            if (!result)
+            logger?.LogInformation("BringToForeground: activating window {Handle}", handle);
+
+            // Step 1: Simulate Alt key press/release. Windows only allows
+            // SetForegroundWindow from the thread that received the last input
+            // event. A synthetic Alt keypress satisfies that check.
+            keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY, UIntPtr.Zero);
+            keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, UIntPtr.Zero);
+
+            // Step 2: Attach to the current foreground thread (if different)
+            // so our SetForegroundWindow call is honoured.
+            var foreground = GetForegroundWindow();
+            uint foregroundThread = 0;
+            uint currentThread = GetCurrentThreadId();
+            bool attached = false;
+
+            if (foreground != IntPtr.Zero)
             {
-                logger?.LogDebug("SetForegroundWindow returned false — window may already be foreground");
+                foregroundThread = GetWindowThreadProcessId(foreground, out _);
+                if (foregroundThread != currentThread)
+                {
+                    attached = AttachThreadInput(currentThread, foregroundThread, true);
+                }
             }
 
-            return result;
+            try
+            {
+                ShowWindow(handle, SW_RESTORE);
+
+                // Step 3: Check for an enabled popup (modal dialog) owned by
+                // this window. If one exists, that's the window we need to
+                // bring to the foreground — not the parent behind it.
+                IntPtr targetHandle = handle;
+                IntPtr popup = GetWindow(handle, GW_ENABLEDPOPUP);
+                if (popup != IntPtr.Zero && popup != handle && IsWindowVisible(popup))
+                {
+                    logger?.LogInformation(
+                        "BringToForeground: found modal popup {PopupHandle} — focusing that instead",
+                        popup);
+                    targetHandle = popup;
+                    ShowWindow(targetHandle, SW_RESTORE);
+                }
+
+                BringWindowToTop(targetHandle);
+                var result = SetForegroundWindow(targetHandle);
+
+                logger?.LogInformation(
+                    "BringToForeground: target={TargetHandle} attached={Attached} result={Result}",
+                    targetHandle, attached, result);
+                return result;
+            }
+            finally
+            {
+                if (attached)
+                {
+                    AttachThreadInput(currentThread, foregroundThread, false);
+                }
+            }
         }
         catch (Exception ex)
         {

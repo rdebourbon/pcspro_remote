@@ -10,6 +10,8 @@
     --pcs-card:         #31101F;
     --pcs-card-hover:   #3E1528;
     --pcs-border:       #561B38;
+    --pcs-accent:       #C8A84B;
+    --pcs-accent-dim:   #8B7535;
     --pcs-green:        #52c07a;
     --pcs-green-dim:    #2d6b45;
     --pcs-yellow:       #f4c842;
@@ -129,7 +131,7 @@ body {
 
 .match-card:hover {
     background: var(--pcs-card-hover);
-    border-color: var(--pcs-green-dim);
+    border-color: var(--pcs-accent-dim);
     transform: translateY(-1px);
     box-shadow: 0 4px 18px rgba(0,0,0,.5);
 }
@@ -172,7 +174,7 @@ body {
 .match-card-type {
     grid-column: 1; grid-row: 2;
     font-size: 0.75rem;
-    color: var(--pcs-green);
+    color: var(--pcs-accent);
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -211,7 +213,7 @@ body {
     justify-content: space-between;
     align-items: center;
     background: var(--pcs-card);
-    border: 1px solid var(--pcs-green-dim);
+    border: 1px solid var(--pcs-accent-dim);
     border-radius: var(--pcs-radius);
     padding: 0.9rem 1.25rem;
     margin-bottom: 1rem;
@@ -243,7 +245,9 @@ body {
 .scoreboard-image {
     display: block;
     width: 100%;
-    max-width: 100%;
+    max-width: 500px;
+    max-height: 320px;
+    object-fit: contain;
     border-radius: var(--pcs-radius);
     border: 1px solid var(--pcs-border);
     margin-bottom: 1rem;
@@ -276,12 +280,12 @@ body {
 }
 
 .refresh-scoreboard-button {
-    background: var(--pcs-green-dim);
+    background: var(--pcs-accent-dim);
     color: var(--pcs-text);
 }
 
 .refresh-scoreboard-button:hover:not(:disabled) {
-    background: var(--pcs-green);
+    background: var(--pcs-accent);
     color: var(--pcs-bg);
 }
 
@@ -484,13 +488,13 @@ body {
 }
 
 .streaming-controls__btn--start {
-    background: var(--pcs-green);
+    background: var(--pcs-accent);
     color: #170810;
-    border-color: var(--pcs-green);
+    border-color: var(--pcs-accent);
 }
 .streaming-controls__btn--start:hover:not(:disabled) {
-    background: var(--pcs-green-dim);
-    border-color: var(--pcs-green-dim);
+    background: var(--pcs-accent-dim);
+    border-color: var(--pcs-accent-dim);
 }
 
 .streaming-controls__btn--stop {
@@ -526,7 +530,7 @@ body {
     margin-top: 0.5rem;
 }
 .streaming-controls__watch-link {
-    color: var(--pcs-green);
+    color: var(--pcs-accent);
     text-decoration: none;
     font-weight: 500;
 }
@@ -570,14 +574,14 @@ body {
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-    background: var(--pcs-green);
+    background: var(--pcs-accent);
     color: var(--pcs-bg);
     transition: background .15s, opacity .15s;
     -webkit-tap-highlight-color: transparent;
 }
 
 .load-matches-button:hover:not(:disabled) {
-    background: var(--pcs-green-dim);
+    background: var(--pcs-accent-dim);
     color: var(--pcs-text);
 }
 
@@ -694,9 +698,9 @@ body {
 
 /* ---- Operation status banner (header bar) ---- */
 .operation-status-banner {
-    background: rgba(82,192,122,.1);
-    border-bottom: 2px solid var(--pcs-green);
-    color: var(--pcs-green);
+    background: rgba(200,168,75,.1);
+    border-bottom: 2px solid var(--pcs-accent);
+    color: var(--pcs-accent);
     text-align: center;
     padding: 8px 16px;
     font-size: 0.85rem;
