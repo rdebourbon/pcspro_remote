@@ -1,7 +1,7 @@
 using FluentAssertions;
-using PcsRemote.Web.Services;
+using PcsRemote.Core;
 
-namespace PcsRemote.Web.Tests;
+namespace PcsRemote.Core.Tests;
 
 [TestClass]
 public sealed class ManualModeServiceTests

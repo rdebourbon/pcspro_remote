@@ -76,4 +76,18 @@ public sealed class IManualModeServiceTests
         ev.Should().NotBeNull();
         ev!.EventHandlerType.Should().Be(typeof(EventHandler<bool>));
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // TC-6  Toggle — no-param, void
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void GetMethod_Toggle_ReturnsVoidWithNoParameters()
+    {
+        var method = _sut.GetMethod("Toggle");
+
+        method.Should().NotBeNull();
+        method!.ReturnType.Should().Be(typeof(void));
+        method.GetParameters().Should().BeEmpty();
+    }
 }

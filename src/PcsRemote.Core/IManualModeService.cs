@@ -31,9 +31,17 @@ public interface IManualModeService
     void Disable();
 
     /// <summary>
-    /// Raised after <see cref="Enable"/> or <see cref="Disable"/> transitions the
-    /// active flag. The event argument is the new value of <see cref="IsManualModeActive"/>.
-    /// Not raised on no-op calls.
+    /// Raised after <see cref="Enable"/>, <see cref="Disable"/>, or <see cref="Toggle"/>
+    /// transitions the active flag. The event argument is the new value of
+    /// <see cref="IsManualModeActive"/>. Not raised on no-op calls.
     /// </summary>
     event EventHandler<bool> ManualModeChanged;
+
+    /// <summary>
+    /// Atomically toggles manual mode: if inactive, activates it; if active, deactivates it.
+    /// The toggle retries internally when a concurrent caller wins the same transition,
+    /// ensuring every call completes exactly one state flip and raises
+    /// <see cref="ManualModeChanged"/> exactly once with the new value.
+    /// </summary>
+    void Toggle();
 }

@@ -1,6 +1,4 @@
-using PcsRemote.Core;
-
-namespace PcsRemote.Web.Services;
+namespace PcsRemote.Core;
 
 /// <summary>
 /// Thread-safe singleton implementation of <see cref="IManualModeService"/>.
@@ -34,5 +32,23 @@ public sealed class ManualModeService : IManualModeService
         // Transition 1 → 0. If the field was already 0 the exchange returns 0 meaning no-op.
         if (Interlocked.CompareExchange(ref _active, 0, 1) == 1)
             ManualModeChanged?.Invoke(this, false);
+    }
+
+    /// <inheritdoc/>
+    public void Toggle()
+    {
+        // Retry loop: read current value, attempt to flip it. If another thread
+        // wins the same transition, the CAS fails and we retry with the new value.
+        while (true)
+        {
+            var current = Volatile.Read(ref _active);
+            var desired = current == 0 ? 1 : 0;
+
+            if (Interlocked.CompareExchange(ref _active, desired, current) == current)
+            {
+                ManualModeChanged?.Invoke(this, desired == 1);
+                return;
+            }
+        }
     }
 }
