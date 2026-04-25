@@ -485,6 +485,9 @@ internal static class UIAutomationHelpers
     private static extern bool IsWindowVisible(IntPtr hWnd);
 
     [DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
     private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
 
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
@@ -548,7 +551,13 @@ internal static class UIAutomationHelpers
 
             try
             {
-                ShowWindow(handle, SW_RESTORE);
+                // Only restore if the window is minimised — SW_RESTORE
+                // would un-maximise a maximised window, shrinking the
+                // scoreboard capture area (IS-016 S-005).
+                if (IsIconic(handle))
+                {
+                    ShowWindow(handle, SW_RESTORE);
+                }
 
                 // Step 3: Check for an enabled popup (modal dialog) owned by
                 // this window. If one exists, that's the window we need to
