@@ -7,8 +7,8 @@
 | **Version** | 0.1 |
 | **Date** | 2026-04-24 |
 | **Step ID** | S-003 |
-| **Governing HLPS** | HLPS-016-Operator-Mode-And-Resilience.md (DRAFT v0.1) |
-| **Governing IS** | IS-016-Operator-Mode-And-Resilience.md (DRAFT v0.1) |
+| **Governing HLPS** | HLPS-016-Operator-Mode-And-Resilience.md (APPROVED v0.4) |
+| **Governing IS** | IS-016-Operator-Mode-And-Resilience.md (APPROVED v0.5) |
 | **Branch** | `feature/016-S-003-dialog-detection-hardening` |
 
 ---
