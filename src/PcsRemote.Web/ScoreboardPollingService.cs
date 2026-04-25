@@ -30,13 +30,13 @@ public sealed class ScoreboardPollingService : BackgroundService
         _automationService = automationService;
         _logger = logger;
 
-        var seconds = configuration.GetValue("Scoreboard:CaptureIntervalSeconds", defaultValue: 2);
+        var seconds = configuration.GetValue("Scoreboard:CaptureIntervalSeconds", defaultValue: 10);
         if (seconds <= 0)
         {
             _logger.LogWarning(
-                "ScoreboardPollingService: Scoreboard:CaptureIntervalSeconds={Seconds} is invalid — falling back to 2s default",
+                "ScoreboardPollingService: Scoreboard:CaptureIntervalSeconds={Seconds} is invalid — falling back to 10s default",
                 seconds);
-            seconds = 2;
+            seconds = 10;
         }
 
         _timerFactory = () => new RealPeriodicTimer(TimeSpan.FromSeconds(seconds));
