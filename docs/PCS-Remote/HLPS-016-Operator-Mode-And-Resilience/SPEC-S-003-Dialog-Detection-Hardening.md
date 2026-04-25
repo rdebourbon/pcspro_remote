@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | SPEC-S-003-Dialog-Detection-Hardening.md |
 | **Status** | DRAFT |
-| **Version** | 0.1 |
+| **Version** | 0.5 |
 | **Date** | 2026-04-24 |
 | **Step ID** | S-003 |
 | **Governing HLPS** | HLPS-016-Operator-Mode-And-Resilience.md (APPROVED v0.4) |
@@ -44,10 +44,7 @@ After S-002 demotes unexpected-dialog detections from fatal to warning, S-003 pr
 **Requirements:**
 
 - R5: Before the `IsKnownDialog` check in the `HasUnexpectedDialog` loop, each child window's `ClassName` is inspected. If it matches a WPF popup-host pattern, the child window is skipped (treated as invisible infrastructure, not a dialog).
-- R6: The popup-host patterns to match are:
-  - Exact match: `"Popup"`, `"PopupHost"`
-  - Contains match: `"Popup"` within a `HwndWrapper` class name (e.g., `"HwndWrapper[PcsProApp;;Popup]"`)
-  - The matching logic should be a single substring check for `"Popup"` in the `ClassName` — this covers all three patterns. If a child window's `ClassName` contains the substring `"Popup"` (ordinal, case-sensitive — WPF class names are PascalCase), it is excluded.
+- R6: The popup-host patterns to exclude are WPF framework elements that expose `ControlType.Window` but are not user-facing dialogs — e.g., `"Popup"`, `"PopupHost"`, and `HwndWrapper` class names containing `"Popup"`. The matching strategy is a delivery-phase decision.
 - R7: `ClassName` access must be wrapped in a try-catch (may throw on stale elements). On exception, do not exclude the element (fail open — let `IsKnownDialog` decide).
 - R8: The existing `IsOffscreenOrInvisible` filter remains as the first check (before the `ClassName` filter). The pipeline order is: offscreen check → ClassName popup filter → `IsKnownDialog` check.
 
@@ -55,14 +52,14 @@ After S-002 demotes unexpected-dialog detections from fatal to warning, S-003 pr
 
 **Requirements:**
 
-- R9: Introduce a mechanism so that `HasUnexpectedDialog` only returns `true` when a non-known, non-popup, visible dialog has been observed on **two consecutive calls** from the same call site. A single sighting returns `false` (suppressed).
-- R10: The hysteresis counter resets to zero when a probe finds no non-known dialog (clean tick). It does not reset on finding a known dialog — only a completely clean probe (no non-known dialogs at all) resets the counter.
-- R11: The counter must be per-call-site, not global. Each `FlaUi*Automation` instance that calls `HasUnexpectedDialog` (or equivalent probing logic) maintains its own counter. This prevents a transient popup in one probe site from priming the counter for a different site.
-- R12: The implementation approach for per-call-site state is a design decision resolved during delivery. Options include:
-  - (a) Each `FlaUi*Automation` instance holds a `_dialogHysteresisCount` field and passes it by ref to the helper.
-  - (b) `HasUnexpectedDialog` gains a `ref int consecutiveCount` parameter.
-  - (c) A lightweight `DialogProbe` struct/class encapsulates the state and the probing logic.
-  - The delivery phase selects the approach that best balances simplicity and testability.
+- R9: **Looped probes** (polling loops in `GetTodaysMatchesAsync`, `LoadMatchAsync`): `HasUnexpectedDialog` only returns `true` when a non-known, non-popup, visible dialog has been observed on **two consecutive calls** from the same probe context. A single sighting returns `false` (suppressed).
+- R9b: **Single-shot probes** (one check per operation invocation — `RefreshScoreboardAsync`, `CaptureScoreboardImageAsync`, `ChangeMatchAsync`, team-name entry checks): the detector returns `true` immediately on first qualifying detection (no two-tick wait). These sites only execute once per operation, so hysteresis is not applicable.
+- R10: The hysteresis counter resets to zero when:
+  - A probe tick yields **zero qualifying unexpected dialogs** after classification (known dialogs or popup-filtered windows do not count — only truly unexpected dialogs maintain the counter). A tick containing only known dialogs is a clean tick.
+  - A different unexpected dialog is observed on the second tick (dialog identity changed — prevents two unrelated transient dialogs from triggering a false confirmation).
+  - After a two-tick confirmation (detector returns `true`), the counter resets. If the same dialog persists, the detector returns `false` on tick 3 (new cycle), `true` on tick 4, and so on. This means the detector alternates between suppressed and confirmed states for persistent dialogs — callers see `true` once per two-tick cycle.
+- R11: Hysteresis state must be per-probe-context, not global. A transient popup in one probe site must not prime the counter for a different site. The same automation instance may be used across multiple probe sites, so per-instance state is insufficient — state must be scoped to the specific probe context for that operation/probe path.
+- R12: The implementation approach for per-probe-context state is a delivery-phase decision. Delivery may extract pure classification and state-transition logic into testable helpers.
 - R13: The hysteresis threshold is `2` (hardcoded). Configurability is not needed.
 
 ### 2.4 Out of Scope
@@ -93,10 +90,15 @@ After S-002 demotes unexpected-dialog detections from fatal to warning, S-003 pr
 
 ### 3.3 Hysteresis Tests
 
-- **T11 — First sighting suppressed:** First call to the hysteresis-aware probe with a non-known dialog present returns `false`.
-- **T12 — Second consecutive sighting fires:** Second consecutive call (same call site, non-known dialog still present) returns `true`.
+- **T11 — First sighting suppressed (looped):** First call to a looped probe with a non-known dialog present returns `false`.
+- **T12 — Second consecutive sighting fires (looped):** Second consecutive call (same probe context, same non-known dialog still present) returns `true`.
 - **T13 — Clean tick resets counter:** Non-known dialog on tick 1 → clean tick 2 → non-known dialog on tick 3 → returns `false` (counter was reset).
-- **T14 — Per-instance isolation:** Two separate probe instances. One sees a non-known dialog; the other does not. The first instance's counter does not affect the second.
+- **T14 — Per-context isolation:** Two separate probe contexts. One sees a non-known dialog; the other does not. The first context's counter does not affect the second.
+- **T15 — Single-shot immediate detection:** A single-shot probe returns `true` immediately on first qualifying detection (no two-tick wait).
+- **T16 — Different dialog resets counter:** Non-known dialog A on tick 1 → different non-known dialog B on tick 2 → returns `false` (identity changed, counter reset).
+- **T17 — Post-confirm reset:** After two-tick confirmation (detector returns `true` on tick 2), counter resets. Same persistent dialog on tick 3 → detector returns `false` (new cycle starts).
+- **T18 — Persistent dialog cadence:** Dialog persists across ticks 1–4. Detector returns `false, true, false, true` (alternating per two-tick cycle).
+- **T19 — Known-dialog-only tick is clean:** Unknown dialog A on tick 1 → known-dialog-only tick 2 → unknown dialog A on tick 3 → returns `false` (counter was reset by clean tick).
 
 ---
 
@@ -108,10 +110,13 @@ After S-002 demotes unexpected-dialog detections from fatal to warning, S-003 pr
 | AC-2 | Existing `IsKnownDialog` matches (exact) are unchanged | T4 |
 | AC-3 | `HasUnexpectedDialog` excludes WPF popup ClassName patterns | T6–T8 |
 | AC-4 | ClassName filter fails open on stale element | T10 |
-| AC-5 | Hysteresis requires two consecutive sightings | T11–T12 |
-| AC-6 | Clean tick resets hysteresis counter | T13 |
-| AC-7 | Hysteresis is per-call-site, not global | T14 |
-| AC-8 | No test regressions | Full test run |
+| AC-5 | Looped probes: hysteresis requires two consecutive sightings of the same dialog | T11–T12 |
+| AC-6 | Single-shot probes: detector returns `true` immediately on first qualifying detection (no hysteresis) | T15 |
+| AC-7 | Clean tick resets hysteresis counter | T13 |
+| AC-8 | Different dialog identity resets counter | T16 |
+| AC-9 | Post-confirmation reset: detector returns `true` once per two-tick cycle for persistent dialog | T17–T18 |
+| AC-10 | Hysteresis is per-probe-context, not global | T14 |
+| AC-11 | No test regressions | Full test run |
 
 ---
 

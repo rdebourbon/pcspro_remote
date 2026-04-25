@@ -109,7 +109,7 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
     }
 
     /// <inheritdoc/>
-    public bool IsUnexpectedDialogPresent()
+    public bool IsUnexpectedDialogPresent(DialogProbeContext? probeContext = null)
     {
         try
         {
@@ -119,7 +119,9 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
                 return false;
             }
 
-            return UIAutomationHelpers.HasUnexpectedDialog(window, _locator.Automation.ConditionFactory);
+            return probeContext != null
+                ? UIAutomationHelpers.HasUnexpectedDialog(window, _locator.Automation.ConditionFactory, probeContext)
+                : UIAutomationHelpers.HasUnexpectedDialog(window, _locator.Automation.ConditionFactory);
         }
         catch (Exception ex)
         {

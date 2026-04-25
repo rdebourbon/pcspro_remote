@@ -29,9 +29,11 @@ internal interface IMatchSelectionAutomation
 
     /// <summary>
     /// Returns <see langword="true"/> when a dialog other than the expected match selection
-    /// dialog is present. Does not throw.
+    /// dialog is present. When a <see cref="DialogProbeContext"/> is provided, applies two-tick
+    /// hysteresis (for looped probes). Without a context, returns immediately (single-shot).
+    /// Does not throw.
     /// </summary>
-    bool IsUnexpectedDialogPresent();
+    bool IsUnexpectedDialogPresent(DialogProbeContext? probeContext = null);
 
     /// <summary>
     /// Attempts to dismiss the unexpected dialog. Best-effort: does not throw if close fails

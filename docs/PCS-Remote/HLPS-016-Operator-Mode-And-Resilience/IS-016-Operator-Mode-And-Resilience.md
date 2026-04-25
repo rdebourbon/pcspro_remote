@@ -100,7 +100,7 @@ Step IDs are stable. Deferred steps leave gaps; IDs are never renumbered.
 
 2. **WPF popup filter:** The unexpected-dialog check filters out child windows whose class name matches WPF popup-host patterns before reaching the known-dialog check.
 
-3. **Two-tick hysteresis:** A per-call-site counter ensures a non-known dialog must be seen on two consecutive probe ticks before being confirmed. Counter state lives on each automation instance. **Single-shot probe sites** (one check per operation invocation) are exempt from hysteresis and log immediately on detection. Counter implementation strategy (shared abstraction vs. per-class field) is resolved in `SPEC-S-003`.
+3. **Two-tick hysteresis:** A per-probe-context counter ensures a non-known dialog must be seen on two consecutive probe ticks before being confirmed. State must be scoped per-probe-context (not per-automation-instance, since the same instance may serve multiple probe sites). **Single-shot probe sites** (one check per operation invocation) are exempt from hysteresis; the detector returns `true` immediately on detection. Counter implementation strategy is resolved in `SPEC-S-003`.
 
 **Why:** HLPS-016 §2.2. These three changes work together to virtually eliminate false-positive dialog detections. S-002 makes false positives non-fatal; S-003 prevents them from occurring in the first place. Addresses AC-6 (popup filter), AC-7 (hysteresis with single-shot exemption).
 
@@ -108,15 +108,15 @@ Step IDs are stable. Deferred steps leave gaps; IDs are never renumbered.
 
 **Files affected:**
 - `src/PcsRemote.Automation/UIAutomationHelpers.cs` (known-dialog check, unexpected-dialog check)
-- `src/PcsRemote.Automation/FlaUi*Automation.cs` classes (hysteresis counter state)
+- `src/PcsRemote.Automation/FlaUi*Automation.cs` classes (per-probe-context hysteresis state)
 - Test files: new tests for whitelist, popup filter, hysteresis counter
 
 **Acceptance criteria:**
 - `IsKnownDialog` returns `true` for windows named "Video Consent — [match]", "Match Centre — [match]", "Add Live Stream to [match]".
 - `HasUnexpectedDialog` returns `false` for child windows with `ClassName` matching WPF popup patterns.
 - Hysteresis (looped probes): first non-known sighting returns `false`; second consecutive sighting returns `true`; clean tick resets counter; different dialog on second tick resets counter.
-- Hysteresis (persistent dialog): after the two-tick confirmation fires (warning logged), the counter resets. A dialog persisting across subsequent ticks logs once per two-tick cycle, not every tick.
-- Hysteresis (single-shot probes): non-known dialog is reported immediately (no two-tick wait).
+- Hysteresis (persistent dialog): after the two-tick confirmation (detector returns `true`), the counter resets. The detector alternates `false, true` for each subsequent two-tick cycle of the same persistent dialog.
+- Hysteresis (single-shot probes): detector returns `true` immediately on first qualifying detection (no two-tick wait).
 - Existing `IsKnownDialog` tests pass (no regressions in current whitelist).
 
 **Verification intent:** Unit tests. Manual verification deferred to garage PC (AC-6, AC-7 observed via absence of false positives in logs).

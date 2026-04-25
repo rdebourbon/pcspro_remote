@@ -2975,7 +2975,7 @@ internal sealed class SpinnerDropsAfterNCallsFake : IMatchSelectionAutomation
 
     public void OpenMatchDialogAndSearch() { }
     public bool IsSpinnerVisible() => ++_callCount <= _dropsAfterCalls;
-    public bool IsUnexpectedDialogPresent() => false;
+    public bool IsUnexpectedDialogPresent(DialogProbeContext? probeContext = null) => false;
     public void TryCloseUnexpectedDialog() { }
     public IReadOnlyList<string> ReadDataGridRowTexts() => [];
     public void SelectAndOpenMatch(PcsRemote.Core.MatchInfo match) { }
@@ -2991,7 +2991,7 @@ internal sealed class ReadDataGridThrowsFake : IMatchSelectionAutomation
 {
     public void OpenMatchDialogAndSearch() { }
     public bool IsSpinnerVisible() => false;
-    public bool IsUnexpectedDialogPresent() => false;
+    public bool IsUnexpectedDialogPresent(DialogProbeContext? probeContext = null) => false;
     public void TryCloseUnexpectedDialog() { }
     public IReadOnlyList<string> ReadDataGridRowTexts() =>
         throw new InvalidOperationException("ReadDataGridThrowsFake: element not found");

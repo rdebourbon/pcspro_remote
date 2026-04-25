@@ -326,7 +326,8 @@ internal static class UIAutomationHelpers
 
     /// <summary>
     /// Returns <c>true</c> if the element's <c>Name</c> matches any of the provided known dialog names
-    /// (using ordinal comparison) or if it contains a password field (login dialog detection).
+    /// (using ordinal comparison), starts with a known pattern prefix (case-insensitive ordinal),
+    /// or if it contains a password field (login dialog detection).
     /// Must not throw — probe semantics.
     /// </summary>
     internal static bool IsKnownDialog(AutomationElement childWindow, ConditionFactory cf)
@@ -334,8 +335,7 @@ internal static class UIAutomationHelpers
         try
         {
             var name = childWindow.Name;
-            if (string.Equals(name, KnownElements.MatchSelectionDialogName, StringComparison.Ordinal) ||
-                string.Equals(name, KnownElements.MatchDetailsDialogName, StringComparison.Ordinal))
+            if (IsKnownDialogByName(name))
             {
                 return true;
             }
@@ -356,6 +356,28 @@ internal static class UIAutomationHelpers
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Pure name-matching logic for known dialog classification.
+    /// Returns <c>true</c> if the name matches an exact known dialog or starts with a known pattern prefix.
+    /// </summary>
+    internal static bool IsKnownDialogByName(string? name)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return false;
+        }
+
+        if (string.Equals(name, KnownElements.MatchSelectionDialogName, StringComparison.Ordinal) ||
+            string.Equals(name, KnownElements.MatchDetailsDialogName, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return name.StartsWith(KnownElements.VideoConsentDialogNamePattern, StringComparison.OrdinalIgnoreCase) ||
+               name.StartsWith(KnownElements.MatchCentreDialogNamePattern, StringComparison.OrdinalIgnoreCase) ||
+               name.StartsWith(KnownElements.MatchCentreDialogFallbackPattern, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -402,13 +424,41 @@ internal static class UIAutomationHelpers
     }
 
     /// <summary>
-    /// Returns <c>true</c> if any non-known, visible dialog is present as a child window.
-    /// Filters out offscreen/invisible WPF internal elements (adorner layers, popup hosts)
-    /// that expose <c>ControlType.Window</c> but are not user-facing dialogs.
+    /// Returns <c>true</c> if any non-known, non-popup, visible dialog is present as a child window.
+    /// This is the <b>single-shot</b> variant — returns immediately on first detection (no hysteresis).
+    /// Use the overload accepting <see cref="DialogProbeContext"/> for looped probes.
     /// Must not throw — probe semantics.
     /// </summary>
     internal static bool HasUnexpectedDialog(AutomationElement window, ConditionFactory cf)
     {
+        return HasUnexpectedDialog(window, cf, out _);
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> if any non-known, non-popup, visible dialog is present as a child window,
+    /// applying <b>two-tick hysteresis</b> via the provided <see cref="DialogProbeContext"/>.
+    /// For looped probes — a dialog must be seen on two consecutive ticks (same identity) to confirm.
+    /// Must not throw — probe semantics.
+    /// </summary>
+    internal static bool HasUnexpectedDialog(
+        AutomationElement window,
+        ConditionFactory cf,
+        DialogProbeContext context)
+    {
+        bool raw = HasUnexpectedDialog(window, cf, out string? dialogIdentity);
+        return context.Evaluate(raw, dialogIdentity);
+    }
+
+    /// <summary>
+    /// Core classification: returns <c>true</c> if any non-known, non-popup, visible dialog is present.
+    /// Outputs the identity (Name) of the first unexpected dialog found, for hysteresis tracking.
+    /// </summary>
+    private static bool HasUnexpectedDialog(
+        AutomationElement window,
+        ConditionFactory cf,
+        out string? dialogIdentity)
+    {
+        dialogIdentity = null;
         try
         {
             var childWindows = FindAllDescendants(window, cf.ByControlType(ControlType.Window));
@@ -418,8 +468,12 @@ internal static class UIAutomationHelpers
                 if (IsOffscreenOrInvisible(childWindow))
                     continue;
 
+                if (IsPopupClassName(childWindow))
+                    continue;
+
                 if (!IsKnownDialog(childWindow, cf))
                 {
+                    dialogIdentity = SafeGetName(childWindow);
                     return true;
                 }
             }
@@ -430,6 +484,37 @@ internal static class UIAutomationHelpers
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> if the element's <c>ClassName</c> matches a WPF popup-host pattern.
+    /// These elements expose <c>ControlType.Window</c> but are not user-facing dialogs.
+    /// Fails open on exception (returns <c>false</c> — element proceeds to <c>IsKnownDialog</c>).
+    /// </summary>
+    private static bool IsPopupClassName(AutomationElement element)
+    {
+        try
+        {
+            return IsPopupByClassName(element.ClassName);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Pure ClassName-matching logic for WPF popup-host classification.
+    /// Returns <c>true</c> if the class name contains <c>"Popup"</c> (ordinal, case-sensitive).
+    /// </summary>
+    internal static bool IsPopupByClassName(string? className)
+    {
+        if (string.IsNullOrEmpty(className))
+        {
+            return false;
+        }
+
+        return className.Contains("Popup", StringComparison.Ordinal);
     }
 
     /// <summary>

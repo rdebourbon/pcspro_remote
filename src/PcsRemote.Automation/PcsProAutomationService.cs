@@ -1070,13 +1070,14 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     {
         const int PollIntervalMs = 200;
         var dialogWarned = false;
+        var dialogProbe = new DialogProbeContext();
 
         while (true)
         {
             if (_stateMachine.CurrentState is PcsProState.Error or PcsProState.NotRunning)
                 return [];
 
-            if (!dialogWarned && _matchSelectionAutomation.IsUnexpectedDialogPresent())
+            if (!dialogWarned && _matchSelectionAutomation.IsUnexpectedDialogPresent(dialogProbe))
             {
                 _logger.LogWarning("Unexpected dialog detected during {Operation}, continuing without interaction", "GetTodaysMatchesAsync");
                 dialogWarned = true;
@@ -1215,13 +1216,14 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     {
         const int PollIntervalMs = 200;
         var dialogWarned = false;
+        var dialogProbe = new DialogProbeContext();
 
         while (true)
         {
             if (_stateMachine.CurrentState is PcsProState.Error or PcsProState.NotRunning)
                 return;
 
-            if (!dialogWarned && _matchSelectionAutomation.IsUnexpectedDialogPresent())
+            if (!dialogWarned && _matchSelectionAutomation.IsUnexpectedDialogPresent(dialogProbe))
             {
                 _logger.LogWarning("Unexpected dialog detected during {Operation}, continuing without interaction", "LoadMatchAsync");
                 dialogWarned = true;

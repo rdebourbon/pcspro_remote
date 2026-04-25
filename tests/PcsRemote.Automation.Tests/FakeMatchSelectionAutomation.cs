@@ -74,7 +74,7 @@ internal sealed class FakeMatchSelectionAutomation : IMatchSelectionAutomation
     public bool IsSpinnerVisible() => SpinnerVisible;
 
     /// <inheritdoc/>
-    public bool IsUnexpectedDialogPresent() => UnexpectedDialogPresent;
+    public bool IsUnexpectedDialogPresent(DialogProbeContext? probeContext = null) => UnexpectedDialogPresent;
 
     /// <inheritdoc/>
     public void TryCloseUnexpectedDialog() => CloseDialogAttempted = true;
