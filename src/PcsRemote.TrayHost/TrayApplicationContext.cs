@@ -23,6 +23,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _youTubeSetupItem;
     private readonly Icon _normalIcon;
     private readonly Icon _manualIcon;
+    private readonly HotkeyWindow _hotkeyWindow;
 
     // Spec R-3 specifies SynchronizationContext.Post as the primary marshaling mechanism,
     // with a Control fallback when the context is null at construction time. We use the
@@ -51,6 +52,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         // BeginInvoke is always safe regardless of whether the message loop has started.
         _invoker = new Control();
         _ = _invoker.Handle;
+
+        _hotkeyWindow = new HotkeyWindow(manualModeService);
 
         _toggleItem = new ToolStripMenuItem();
         _toggleItem.Click += OnToggleClicked;
@@ -109,7 +112,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        _invoker.BeginInvoke(() => UpdateToggleState(isActive));
+        _invoker.BeginInvoke(() =>
+        {
+            UpdateToggleState(isActive);
+            var title = "PCS Remote";
+            var text = isActive
+                ? "Manual Mode ON — automation paused"
+                : "Manual Mode OFF — automation resumed";
+            _notifyIcon.ShowBalloonTip(3000, title, text, ToolTipIcon.Info);
+        });
     }
 
     private void OnToggleClicked(object? sender, EventArgs e)
@@ -254,6 +265,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             // → dispose ContextMenuStrip → dispose invoker.
             _manualModeService.ManualModeChanged -= OnManualModeChanged;
             _youTubeService.StatusChanged -= OnStreamStatusChanged;
+            _hotkeyWindow.Dispose();
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             _contextMenu.Dispose();
