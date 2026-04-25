@@ -30,12 +30,15 @@ public sealed class ScoreboardPollingServiceTests
         ScoreboardPollingService Svc,
         Mock<IScoreboardService> ScoreMock,
         Mock<IPcsProAutomationService> AutoMock,
-        ChannelReader<FakePeriodicTimer> Timers)
-    BuildFake(PcsProState initialState = PcsProState.NotRunning)
+        ChannelReader<FakePeriodicTimer> Timers,
+        ManualModeService ManualMode)
+    BuildFake(PcsProState initialState = PcsProState.NotRunning, ManualModeService? manualMode = null)
     {
         var scoreMock = new Mock<IScoreboardService>();
         var autoMock = new Mock<IPcsProAutomationService>();
         autoMock.Setup(a => a.CurrentState).Returns(initialState);
+
+        manualMode ??= new ManualModeService();
 
         // Thread-safe channel: factory (called on Task.Run thread) writes; test thread reads.
         var timerChannel = Channel.CreateUnbounded<FakePeriodicTimer>(
@@ -43,6 +46,7 @@ public sealed class ScoreboardPollingServiceTests
 
         var svc = new ScoreboardPollingService(
             scoreMock.Object, autoMock.Object,
+            manualMode,
             () =>
             {
                 var t = new FakePeriodicTimer();
@@ -51,7 +55,7 @@ public sealed class ScoreboardPollingServiceTests
             },
             NullLogger<ScoreboardPollingService>.Instance);
 
-        return (svc, scoreMock, autoMock, timerChannel.Reader);
+        return (svc, scoreMock, autoMock, timerChannel.Reader, manualMode);
     }
 
     /// <summary>
@@ -70,7 +74,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StartAsync_StateAlreadyMatchLoaded_StartsPollingImmediately()
     {
-        var (svc, scoreMock, _, timers) = BuildFake(PcsProState.MatchLoaded);
+        var (svc, scoreMock, _, timers, _) = BuildFake(PcsProState.MatchLoaded);
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         scoreMock
@@ -96,7 +100,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StartAsync_StateNotMatchLoaded_DoesNotStartPolling()
     {
-        var (svc, scoreMock, _, timers) = BuildFake(PcsProState.NotRunning);
+        var (svc, scoreMock, _, timers, _) = BuildFake(PcsProState.NotRunning);
 
         await svc.StartAsync(CancellationToken.None);
 
@@ -114,7 +118,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StateChanged_ToMatchLoaded_StartsPolling()
     {
-        var (svc, scoreMock, autoMock, timers) = BuildFake(PcsProState.NotRunning);
+        var (svc, scoreMock, autoMock, timers, _) = BuildFake(PcsProState.NotRunning);
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         scoreMock
@@ -142,7 +146,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StateChanged_AwayFromMatchLoaded_StopsPolling()
     {
-        var (svc, scoreMock, autoMock, timers) = BuildFake(PcsProState.MatchLoaded);
+        var (svc, scoreMock, autoMock, timers, _) = BuildFake(PcsProState.MatchLoaded);
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         scoreMock
@@ -184,7 +188,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task CaptureThrows_ErrorIsLogged_LoopContinues()
     {
-        var (svc, scoreMock, autoMock, timers) = BuildFake(PcsProState.NotRunning);
+        var (svc, scoreMock, autoMock, timers, _) = BuildFake(PcsProState.NotRunning);
         var secondCallTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         int callCount = 0;
 
@@ -228,9 +232,7 @@ public sealed class ScoreboardPollingServiceTests
         autoMock.Setup(a => a.CurrentState).Returns(PcsProState.NotRunning);
 
         var config = BuildConfig(); // no key
-        var svc = new ScoreboardPollingService(scoreMock.Object, autoMock.Object, config, NullLogger<ScoreboardPollingService>.Instance);
-
-        // No exception = default (2s) was used
+        var svc = new ScoreboardPollingService(scoreMock.Object, autoMock.Object, new ManualModeService(), config, NullLogger<ScoreboardPollingService>.Instance);
         svc.Dispose();
     }
 
@@ -253,7 +255,7 @@ public sealed class ScoreboardPollingServiceTests
             .Returns(Task.CompletedTask);
 
         var config = BuildConfig(1); // 1s interval
-        var svc = new ScoreboardPollingService(scoreMock.Object, autoMock.Object, config, NullLogger<ScoreboardPollingService>.Instance);
+        var svc = new ScoreboardPollingService(scoreMock.Object, autoMock.Object, new ManualModeService(), config, NullLogger<ScoreboardPollingService>.Instance);
 
         await svc.StartAsync(CancellationToken.None);
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -269,7 +271,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StopAsync_WhilePolling_ExitsCleanly()
     {
-        var (svc, scoreMock, _, timers) = BuildFake(PcsProState.MatchLoaded);
+        var (svc, scoreMock, _, timers, _) = BuildFake(PcsProState.MatchLoaded);
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         scoreMock
@@ -294,7 +296,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StartLoop_CalledConcurrently_IsIdempotent()
     {
-        var (svc, scoreMock, autoMock, timers) = BuildFake(PcsProState.NotRunning);
+        var (svc, scoreMock, autoMock, timers, _) = BuildFake(PcsProState.NotRunning);
         var captureCount = 0;
 
         scoreMock
@@ -338,7 +340,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StateChanged_AwayFromMatchLoaded_LoopTaskCompletesWithoutException()
     {
-        var (svc, scoreMock, autoMock, timers) = BuildFake(PcsProState.MatchLoaded);
+        var (svc, scoreMock, autoMock, timers, _) = BuildFake(PcsProState.MatchLoaded);
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         scoreMock
@@ -372,7 +374,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task StopAsync_WhileIdle_ExitsCleanly()
     {
-        var (svc, _, _, _) = BuildFake(PcsProState.NotRunning);
+        var (svc, _, _, _, _) = BuildFake(PcsProState.NotRunning);
 
         await svc.StartAsync(CancellationToken.None);
 
@@ -387,7 +389,7 @@ public sealed class ScoreboardPollingServiceTests
     [TestMethod]
     public async Task CaptureAndBroadcastAsync_ReceivesLoopCancellationToken()
     {
-        var (svc, scoreMock, autoMock, timers) = BuildFake(PcsProState.NotRunning);
+        var (svc, scoreMock, autoMock, timers, _) = BuildFake(PcsProState.NotRunning);
         CancellationToken capturedToken = default;
         var captureTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -419,6 +421,188 @@ public sealed class ScoreboardPollingServiceTests
 
         // Do NOT check capturedToken.IsCancellationRequested — CTS is disposed after a clean
         // stop and accessing a token property on a disposed source is undefined behaviour.
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── TC-13: Manual mode active → tick skipped ─────────────────────────────
+
+    [TestMethod]
+    public async Task ManualModeActive_TickSkipped_CaptureNotCalled()
+    {
+        var manualMode = new ManualModeService();
+        manualMode.Enable();
+        var (svc, scoreMock, _, timers, _) = BuildFake(PcsProState.MatchLoaded, manualMode);
+
+        scoreMock
+            .Setup(s => s.CaptureAndBroadcastAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+
+        // Trigger 3 ticks while manual mode is active — all should be skipped.
+        for (int i = 0; i < 3; i++)
+        {
+            await timer.WaitingForTickAsync();
+            timer.TriggerTick();
+        }
+        // Wait for the loop to process tick 3 and go back to waiting.
+        await timer.WaitingForTickAsync();
+
+        scoreMock.Verify(
+            s => s.CaptureAndBroadcastAsync(It.IsAny<CancellationToken>()),
+            Times.Never,
+            "capture must not be called when manual mode is active");
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── TC-14: Manual mode deactivated → immediate resume capture ────────────
+
+    [TestMethod]
+    public async Task ManualModeDeactivated_ImmediateResumeCaptureFires()
+    {
+        var manualMode = new ManualModeService();
+        manualMode.Enable();
+        var (svc, scoreMock, _, timers, _) = BuildFake(PcsProState.MatchLoaded, manualMode);
+
+        var captureTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        scoreMock
+            .Setup(s => s.CaptureAndBroadcastAsync(It.IsAny<CancellationToken>()))
+            .Callback<CancellationToken>(_ => captureTcs.TrySetResult(true))
+            .Returns(Task.CompletedTask);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+
+        // One tick while manual mode is active — skipped.
+        await timer.WaitingForTickAsync();
+        timer.TriggerTick();
+        await timer.WaitingForTickAsync(); // loop processed tick, back to WhenAny
+
+        scoreMock.Verify(
+            s => s.CaptureAndBroadcastAsync(It.IsAny<CancellationToken>()), Times.Never);
+
+        // Deactivate manual mode — resume signal fires, loop captures immediately.
+        manualMode.Disable();
+
+        // The resume path does the capture, then blocks waiting for the pending tick.
+        await captureTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        scoreMock.Verify(
+            s => s.CaptureAndBroadcastAsync(It.IsAny<CancellationToken>()),
+            Times.Once,
+            "resume capture must fire exactly once after manual mode deactivation");
+
+        // Unblock the pending tick so the loop can continue (needed for clean stop).
+        timer.TriggerTick();
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── TC-15: Resume guard — no capture when loop not running ────────────────
+
+    [TestMethod]
+    public async Task ManualModeDeactivated_LoopNotRunning_NoCaptureOccurs()
+    {
+        var manualMode = new ManualModeService();
+        manualMode.Enable();
+        // Loop not started because state is NotRunning (not MatchLoaded).
+        var (svc, scoreMock, _, _, _) = BuildFake(PcsProState.NotRunning, manualMode);
+
+        await svc.StartAsync(CancellationToken.None);
+
+        // Deactivate manual mode — no loop running, so OnManualModeChanged should not signal.
+        manualMode.Disable();
+
+        // Give a moment for any erroneous async work to settle.
+        await Task.Delay(100);
+
+        scoreMock.Verify(
+            s => s.CaptureAndBroadcastAsync(It.IsAny<CancellationToken>()),
+            Times.Never,
+            "capture must not fire when loop is not running");
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── TC-16: Resume capture failure logged, loop continues ─────────────────
+
+    [TestMethod]
+    public async Task ManualModeDeactivated_CaptureThrows_WarningLoggedLoopContinues()
+    {
+        var manualMode = new ManualModeService();
+        manualMode.Enable();
+        var (svc, scoreMock, _, timers, _) = BuildFake(PcsProState.MatchLoaded, manualMode);
+
+        int callCount = 0;
+        var secondCaptureTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        scoreMock
+            .Setup(s => s.CaptureAndBroadcastAsync(It.IsAny<CancellationToken>()))
+            .Returns<CancellationToken>(_ =>
+            {
+                callCount++;
+                if (callCount == 1)
+                    throw new InvalidOperationException("resume capture boom");
+                secondCaptureTcs.TrySetResult(true);
+                return Task.CompletedTask;
+            });
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+
+        // Tick 1 — skipped (manual mode active).
+        await timer.WaitingForTickAsync();
+        timer.TriggerTick();
+        await timer.WaitingForTickAsync();
+
+        // Deactivate → resume capture fires and throws.
+        manualMode.Disable();
+
+        // The resume path catches the exception and continues.
+        // It then waits for the pending tick. Trigger it.
+        timer.TriggerTick();
+
+        // Next tick — manual mode is now inactive, so normal capture fires (callCount 2).
+        await timer.WaitingForTickAsync();
+        timer.TriggerTick();
+
+        await secondCaptureTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        callCount.Should().BeGreaterThanOrEqualTo(2, "loop must continue after resume capture failure");
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── TC-17: Normal flow unaffected by inactive manual mode ─────────────────
+
+    [TestMethod]
+    public async Task ManualModeInactive_NormalCaptureFiresOnTick()
+    {
+        // Manual mode inactive (default) — captures should fire normally.
+        var (svc, scoreMock, _, timers, _) = BuildFake(PcsProState.MatchLoaded);
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        scoreMock
+            .Setup(s => s.CaptureAndBroadcastAsync(It.IsAny<CancellationToken>()))
+            .Callback<CancellationToken>(_ => tcs.TrySetResult(true))
+            .Returns(Task.CompletedTask);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        timer.TriggerTick();
+
+        await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        scoreMock.Verify(
+            s => s.CaptureAndBroadcastAsync(It.IsAny<CancellationToken>()), Times.AtLeastOnce);
 
         await svc.StopAsync(CancellationToken.None);
         svc.Dispose();

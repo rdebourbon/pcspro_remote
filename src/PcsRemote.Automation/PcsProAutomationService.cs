@@ -29,6 +29,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     private readonly IHealthCheckAutomation _healthCheckAutomation;
     private readonly IAutomationLogService _logService;
     private readonly PcsProStateMachine _stateMachine;
+    private readonly IManualModeService _manualModeService;
 
     /// <summary>
     /// Guards <c>_stateMachine.Fire()</c> and <c>_lastErrorReason</c> writes.
@@ -93,13 +94,15 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         IProcessManager processManager,
         TimeProvider timeProvider,
         AutomationDependencies automationDependencies,
-        IAutomationLogService logService)
+        IAutomationLogService logService,
+        IManualModeService manualModeService)
     {
         _options = options.Value;
         _logger = logger;
         _processManager = processManager;
         _timeProvider = timeProvider;
         _logService = logService;
+        _manualModeService = manualModeService;
         _loginAutomation = automationDependencies.LoginAutomation;
         _matchSelectionAutomation = automationDependencies.MatchSelectionAutomation;
         _teamNamesAutomation = automationDependencies.TeamNamesAutomation;
@@ -565,6 +568,12 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             {
                 await Task.Delay(interval, _timeProvider, ct).ConfigureAwait(false);
 
+                if (_manualModeService.IsManualModeActive)
+                {
+                    _logger.LogDebug("Health poll skipped — manual mode active");
+                    continue;
+                }
+
                 var result = TryReadHealthProbe();
                 if (result is null)
                     continue;
@@ -993,6 +1002,13 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// <inheritdoc/>
     public async Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default)
     {
+        if (_manualModeService.IsManualModeActive)
+        {
+            _logger.LogDebug("{Operation} skipped — manual mode active, state={State}",
+                nameof(GetTodaysMatchesAsync), _stateMachine.CurrentState);
+            return [];
+        }
+
         _logger.LogInformation("GetTodaysMatchesAsync starting; current state {State}", CurrentState);
 
         if (Interlocked.CompareExchange(ref _isMatchSelectionOperationInProgress, 1, 0) != 0)
@@ -1149,6 +1165,13 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// <inheritdoc/>
     public async Task LoadMatchAsync(MatchInfo match, CancellationToken ct = default)
     {
+        if (_manualModeService.IsManualModeActive)
+        {
+            _logger.LogDebug("{Operation} skipped — manual mode active, state={State}",
+                nameof(LoadMatchAsync), _stateMachine.CurrentState);
+            return;
+        }
+
         _logger.LogInformation(
             "LoadMatchAsync starting; MatchId={MatchId}, current state {State}",
             match.MatchId, CurrentState);
@@ -1246,6 +1269,15 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// <inheritdoc/>
     public async Task<MatchTeams> GetTeamNamesAsync(CancellationToken ct = default)
     {
+        if (_manualModeService.IsManualModeActive)
+        {
+            _logger.LogDebug("{Operation} skipped — manual mode active, state={State}",
+                nameof(GetTeamNamesAsync), _stateMachine.CurrentState);
+            return new MatchTeams(
+                new TeamNameInfo(string.Empty, string.Empty),
+                new TeamNameInfo(string.Empty, string.Empty));
+        }
+
         _logger.LogInformation("GetTeamNamesAsync starting; current state {State}", CurrentState);
 
         if (Interlocked.CompareExchange(ref _isTeamNamesOperationInProgress, 1, 0) != 0)
@@ -1344,6 +1376,13 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// <inheritdoc/>
     public async Task RefreshScoreboardAsync(CancellationToken ct = default)
     {
+        if (_manualModeService.IsManualModeActive)
+        {
+            _logger.LogDebug("{Operation} skipped — manual mode active, state={State}",
+                nameof(RefreshScoreboardAsync), _stateMachine.CurrentState);
+            return;
+        }
+
         _logger.LogInformation("RefreshScoreboardAsync starting; current state {State}", CurrentState);
 
         if (!await _matchLoadedGate.WaitAsync(MatchLoadedGateTimeout, ct).ConfigureAwait(false))
@@ -1414,6 +1453,13 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// <inheritdoc/>
     public async Task<byte[]> CaptureScoreboardImageAsync(CancellationToken ct = default)
     {
+        if (_manualModeService.IsManualModeActive)
+        {
+            _logger.LogDebug("{Operation} skipped — manual mode active, state={State}",
+                nameof(CaptureScoreboardImageAsync), _stateMachine.CurrentState);
+            return Array.Empty<byte>();
+        }
+
         _logger.LogInformation("CaptureScoreboardImageAsync starting; current state {State}", CurrentState);
 
         bool acquired;
@@ -1487,6 +1533,13 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// <inheritdoc/>
     public async Task ChangeMatchAsync(CancellationToken ct = default)
     {
+        if (_manualModeService.IsManualModeActive)
+        {
+            _logger.LogDebug("{Operation} skipped — manual mode active, state={State}",
+                nameof(ChangeMatchAsync), _stateMachine.CurrentState);
+            return;
+        }
+
         _logger.LogInformation("ChangeMatchAsync starting; current state {State}", CurrentState);
         _logService.AddEntry("Changing match\u2026", AutomationLogOutcome.Info);
 
@@ -1678,6 +1731,13 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// <inheritdoc/>
     public async Task StartStreamingAsync(CancellationToken ct = default)
     {
+        if (_manualModeService.IsManualModeActive)
+        {
+            _logger.LogDebug("{Operation} skipped — manual mode active, state={State}",
+                nameof(StartStreamingAsync), _stateMachine.CurrentState);
+            return;
+        }
+
         _logger.LogInformation("StartStreamingAsync starting; current state {State}", CurrentState);
         _logService.AddEntry("Starting streaming\u2026", AutomationLogOutcome.Info);
 
@@ -1734,6 +1794,13 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// <inheritdoc/>
     public async Task StopStreamingAsync(CancellationToken ct = default)
     {
+        if (_manualModeService.IsManualModeActive)
+        {
+            _logger.LogDebug("{Operation} skipped — manual mode active, state={State}",
+                nameof(StopStreamingAsync), _stateMachine.CurrentState);
+            return;
+        }
+
         _logger.LogInformation("StopStreamingAsync starting; current state {State}", CurrentState);
         _logService.AddEntry("Stopping streaming\u2026", AutomationLogOutcome.Info);
 
@@ -1788,6 +1855,15 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     /// <inheritdoc/>
     public async Task<MatchTeams> UseCurrentMatchAsync(CancellationToken ct = default)
     {
+        if (_manualModeService.IsManualModeActive)
+        {
+            _logger.LogDebug("{Operation} skipped — manual mode active, state={State}",
+                nameof(UseCurrentMatchAsync), _stateMachine.CurrentState);
+            return new MatchTeams(
+                new TeamNameInfo(string.Empty, string.Empty),
+                new TeamNameInfo(string.Empty, string.Empty));
+        }
+
         _logger.LogInformation("UseCurrentMatchAsync starting; current state {State}", CurrentState);
         _logService.AddEntry("Attaching to current match\u2026", AutomationLogOutcome.Info);
 

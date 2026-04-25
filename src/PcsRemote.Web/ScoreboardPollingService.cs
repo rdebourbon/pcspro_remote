@@ -12,6 +12,7 @@ public sealed class ScoreboardPollingService : BackgroundService
 {
     private readonly IScoreboardService _scoreboardService;
     private readonly IPcsProAutomationService _automationService;
+    private readonly IManualModeService _manualModeService;
     private readonly Func<IPeriodicTimer> _timerFactory;
     private readonly ILogger<ScoreboardPollingService> _logger;
 
@@ -20,14 +21,22 @@ public sealed class ScoreboardPollingService : BackgroundService
     private CancellationTokenSource? _loopCts;
     private Task _loopTask = Task.CompletedTask;
 
+    /// <summary>
+    /// Signalled when manual mode is deactivated to trigger an immediate capture.
+    /// Reset after each resume so the signal is reusable.
+    /// </summary>
+    private TaskCompletionSource<bool> _resumeSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public ScoreboardPollingService(
         IScoreboardService scoreboardService,
         IPcsProAutomationService automationService,
+        IManualModeService manualModeService,
         IConfiguration configuration,
         ILogger<ScoreboardPollingService> logger)
     {
         _scoreboardService = scoreboardService;
         _automationService = automationService;
+        _manualModeService = manualModeService;
         _logger = logger;
 
         var seconds = configuration.GetValue("Scoreboard:CaptureIntervalSeconds", defaultValue: 10);
@@ -49,11 +58,13 @@ public sealed class ScoreboardPollingService : BackgroundService
     internal ScoreboardPollingService(
         IScoreboardService scoreboardService,
         IPcsProAutomationService automationService,
+        IManualModeService manualModeService,
         Func<IPeriodicTimer> timerFactory,
         ILogger<ScoreboardPollingService> logger)
     {
         _scoreboardService = scoreboardService;
         _automationService = automationService;
+        _manualModeService = manualModeService;
         _logger = logger;
         _timerFactory = timerFactory;
     }
@@ -62,6 +73,7 @@ public sealed class ScoreboardPollingService : BackgroundService
     {
         // Subscribe BEFORE reading current state (closes cold-start race window).
         _automationService.StateChanged += OnStateChanged;
+        _manualModeService.ManualModeChanged += OnManualModeChanged;
 
         if (_automationService.CurrentState == PcsProState.MatchLoaded)
             StartLoop();
@@ -73,6 +85,7 @@ public sealed class ScoreboardPollingService : BackgroundService
     {
         // Unsubscribe FIRST to prevent a racing StateChanged from starting a new loop.
         _automationService.StateChanged -= OnStateChanged;
+        _manualModeService.ManualModeChanged -= OnManualModeChanged;
 
         await StopLoopAsync();
 
@@ -94,6 +107,19 @@ public sealed class ScoreboardPollingService : BackgroundService
                 t => _logger.LogError(t.Exception, "ScoreboardPollingService: StopLoopAsync faulted unexpectedly"),
                 TaskContinuationOptions.OnlyOnFaulted);
         }
+    }
+
+    private void OnManualModeChanged(object? sender, bool isActive)
+    {
+        if (isActive)
+            return; // Only act on deactivation — signal the loop to fire an immediate capture.
+
+        // Guard: only signal if the loop is actually running.
+        if (Volatile.Read(ref _loopActive) != 1)
+            return;
+
+        _logger.LogInformation("ScoreboardPollingService: manual mode deactivated — signalling immediate capture");
+        _resumeSignal.TrySetResult(true);
     }
 
     private void StartLoop()
@@ -169,8 +195,53 @@ public sealed class ScoreboardPollingService : BackgroundService
 
         try
         {
-            while (await timer.WaitForNextTickAsync(loopToken).ConfigureAwait(false))
+            while (true)
             {
+                var tickTask = timer.WaitForNextTickAsync(loopToken).AsTask();
+                var resumeTask = _resumeSignal.Task;
+
+                var completed = await Task.WhenAny(tickTask, resumeTask).ConfigureAwait(false);
+
+                if (completed == resumeTask)
+                {
+                    // Resume signal fired — manual mode was deactivated.
+                    // Reset the signal for next use.
+                    _resumeSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                    if (!_manualModeService.IsManualModeActive && !loopToken.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            await _scoreboardService.CaptureAndBroadcastAsync(loopToken).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (loopToken.IsCancellationRequested)
+                        {
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(
+                                ex,
+                                "ScoreboardPollingService: resume capture failed — loop will continue");
+                        }
+                    }
+
+                    // Must consume the pending tick before calling WaitForNextTickAsync again.
+                    if (!await tickTask.ConfigureAwait(false))
+                        break;
+                    continue;
+                }
+
+                // Timer tick completed.
+                if (!await tickTask.ConfigureAwait(false))
+                    break;
+
+                if (_manualModeService.IsManualModeActive)
+                {
+                    _logger.LogDebug("ScoreboardPollingService: manual mode active — skipping tick");
+                    continue;
+                }
+
                 try
                 {
                     await _scoreboardService.CaptureAndBroadcastAsync(loopToken).ConfigureAwait(false);
