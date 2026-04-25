@@ -70,23 +70,19 @@ public sealed class PcsProStateMachine
         _machine.Configure(PcsProState.MatchSelection)
             .Permit(PcsProTrigger.SearchTriggered, PcsProState.MatchSelectionSearching)
             .Permit(PcsProTrigger.AttachToMatch, PcsProState.MatchLoaded)
-            .Permit(PcsProTrigger.UnexpectedDialog, PcsProState.Error)
             .Permit(PcsProTrigger.Timeout, PcsProState.Error);
 
         _machine.Configure(PcsProState.MatchSelectionSearching)
             .Permit(PcsProTrigger.SpinnerGone, PcsProState.MatchSelectionReady)
-            .Permit(PcsProTrigger.UnexpectedDialog, PcsProState.Error)
             .Permit(PcsProTrigger.Timeout, PcsProState.Error);
 
         _machine.Configure(PcsProState.MatchSelectionReady)
             .Permit(PcsProTrigger.MatchOpened, PcsProState.MatchLoaded)
-            .Permit(PcsProTrigger.UnexpectedDialog, PcsProState.Error)
             .Permit(PcsProTrigger.Timeout, PcsProState.Error);
 
         _machine.Configure(PcsProState.MatchLoaded)
             .Permit(PcsProTrigger.ChangeMatch, PcsProState.MatchSelection)
             .Permit(PcsProTrigger.Stop, PcsProState.NotRunning)
-            .Permit(PcsProTrigger.UnexpectedDialog, PcsProState.Error)
             .Permit(PcsProTrigger.Timeout, PcsProState.Error);
 
         _machine.Configure(PcsProState.Error)

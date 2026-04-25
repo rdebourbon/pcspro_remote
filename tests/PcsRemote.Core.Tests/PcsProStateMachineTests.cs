@@ -43,8 +43,8 @@ public sealed class PcsProStateMachineTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // §4.2  Wildcard transitions — UnexpectedDialog and Timeout → Error
-    //       from all 6 applicable states
+    // §4.2  UnexpectedDialog → Error on login states,
+    //       Timeout → Error on all applicable states
     // ──────────────────────────────────────────────────────────────────────
 
     [TestMethod]
@@ -52,13 +52,9 @@ public sealed class PcsProStateMachineTests
     [DataRow(PcsProState.Launching,               PcsProTrigger.Timeout,          DisplayName = "Launching + Timeout → Error")]
     [DataRow(PcsProState.LoginScreen,             PcsProTrigger.UnexpectedDialog, DisplayName = "LoginScreen + UnexpectedDialog → Error")]
     [DataRow(PcsProState.LoginScreen,             PcsProTrigger.Timeout,          DisplayName = "LoginScreen + Timeout → Error")]
-    [DataRow(PcsProState.MatchSelection,          PcsProTrigger.UnexpectedDialog, DisplayName = "MatchSelection + UnexpectedDialog → Error")]
     [DataRow(PcsProState.MatchSelection,          PcsProTrigger.Timeout,          DisplayName = "MatchSelection + Timeout → Error")]
-    [DataRow(PcsProState.MatchSelectionSearching, PcsProTrigger.UnexpectedDialog, DisplayName = "MatchSelectionSearching + UnexpectedDialog → Error")]
     [DataRow(PcsProState.MatchSelectionSearching, PcsProTrigger.Timeout,          DisplayName = "MatchSelectionSearching + Timeout → Error")]
-    [DataRow(PcsProState.MatchSelectionReady,     PcsProTrigger.UnexpectedDialog, DisplayName = "MatchSelectionReady + UnexpectedDialog → Error")]
     [DataRow(PcsProState.MatchSelectionReady,     PcsProTrigger.Timeout,          DisplayName = "MatchSelectionReady + Timeout → Error")]
-    [DataRow(PcsProState.MatchLoaded,             PcsProTrigger.UnexpectedDialog, DisplayName = "MatchLoaded + UnexpectedDialog → Error")]
     [DataRow(PcsProState.MatchLoaded,             PcsProTrigger.Timeout,          DisplayName = "MatchLoaded + Timeout → Error")]
     public void WildcardTrigger_FromApplicableState_TransitionsToError(
         PcsProState from, PcsProTrigger trigger)
@@ -66,6 +62,23 @@ public sealed class PcsProStateMachineTests
         var sut = BuildMachineAt(from);
         sut.Fire(trigger);
         sut.CurrentState.Should().Be(PcsProState.Error);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // §4.2b  UnexpectedDialog is NOT permitted on runtime states
+    //        (demoted to warning in S-002)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    [DataRow(PcsProState.MatchSelection,          DisplayName = "MatchSelection + UnexpectedDialog → throws")]
+    [DataRow(PcsProState.MatchSelectionSearching, DisplayName = "MatchSelectionSearching + UnexpectedDialog → throws")]
+    [DataRow(PcsProState.MatchSelectionReady,     DisplayName = "MatchSelectionReady + UnexpectedDialog → throws")]
+    [DataRow(PcsProState.MatchLoaded,             DisplayName = "MatchLoaded + UnexpectedDialog → throws")]
+    public void UnexpectedDialog_FromRuntimeState_ThrowsInvalidOperationException(PcsProState from)
+    {
+        var sut = BuildMachineAt(from);
+        var act = () => sut.Fire(PcsProTrigger.UnexpectedDialog);
+        act.Should().Throw<InvalidOperationException>();
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -177,10 +190,10 @@ public sealed class PcsProStateMachineTests
         sm.Fire(PcsProTrigger.CredentialsEntered);
         if (target == PcsProState.MatchSelection) return sm;
 
-        // Error is reachable from MatchSelection via UnexpectedDialog
+        // Error is reachable from MatchSelection via Timeout
         if (target == PcsProState.Error)
         {
-            sm.Fire(PcsProTrigger.UnexpectedDialog);
+            sm.Fire(PcsProTrigger.Timeout);
             return sm;
         }
 

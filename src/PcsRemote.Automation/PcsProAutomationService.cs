@@ -1053,20 +1053,17 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         CancellationToken ct)
     {
         const int PollIntervalMs = 200;
+        var dialogWarned = false;
 
         while (true)
         {
             if (_stateMachine.CurrentState is PcsProState.Error or PcsProState.NotRunning)
                 return [];
 
-            if (_matchSelectionAutomation.IsUnexpectedDialogPresent())
+            if (!dialogWarned && _matchSelectionAutomation.IsUnexpectedDialogPresent())
             {
-                _logger.LogWarning("GetTodaysMatchesAsync: unexpected dialog during spinner wait");
-                _matchSelectionAutomation.TryCloseUnexpectedDialog();
-                await FireErrorUnderLockAsync(
-                    PcsProTrigger.UnexpectedDialog,
-                    "An unexpected dialog appeared during match search").ConfigureAwait(false);
-                return [];
+                _logger.LogWarning("Unexpected dialog detected during {Operation}, continuing without interaction", "GetTodaysMatchesAsync");
+                dialogWarned = true;
             }
 
             if (!_matchSelectionAutomation.IsSpinnerVisible())
@@ -1194,20 +1191,17 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     private async Task PollForMatchLoadedAsync(long startTimestamp, CancellationToken ct)
     {
         const int PollIntervalMs = 200;
+        var dialogWarned = false;
 
         while (true)
         {
             if (_stateMachine.CurrentState is PcsProState.Error or PcsProState.NotRunning)
                 return;
 
-            if (_matchSelectionAutomation.IsUnexpectedDialogPresent())
+            if (!dialogWarned && _matchSelectionAutomation.IsUnexpectedDialogPresent())
             {
-                _logger.LogWarning("LoadMatchAsync: unexpected dialog during open wait");
-                _matchSelectionAutomation.TryCloseUnexpectedDialog();
-                await FireErrorUnderLockAsync(
-                    PcsProTrigger.UnexpectedDialog,
-                    "An unexpected dialog appeared while opening match").ConfigureAwait(false);
-                return;
+                _logger.LogWarning("Unexpected dialog detected during {Operation}, continuing without interaction", "LoadMatchAsync");
+                dialogWarned = true;
             }
 
             if (_matchSelectionAutomation.IsMatchLoaded())
@@ -1299,13 +1293,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             // §4.3 — Check for an unexpected dialog before reading.
             if (_teamNamesAutomation.IsUnexpectedDialogPresent())
             {
-                _logger.LogWarning("GetTeamNamesAsync: unexpected dialog detected after opening teams dialog");
-                _teamNamesAutomation.TryCloseUnexpectedDialog();
-                _teamNamesAutomation.TryCloseTeamsDialog();
-                await FireErrorUnderLockAsync(PcsProTrigger.UnexpectedDialog, "Unexpected dialog blocked team name extraction").ConfigureAwait(false);
-                return new MatchTeams(
-                    new TeamNameInfo(string.Empty, string.Empty),
-                    new TeamNameInfo(string.Empty, string.Empty));
+                _logger.LogWarning("Unexpected dialog detected during {Operation}, continuing without interaction", "GetTeamNamesAsync");
             }
 
             // §4.4 — Read home and away team names.
@@ -1384,10 +1372,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             // §4.1.1 — Entry unexpected-dialog check.
             if (_scoreboardAutomation.IsUnexpectedDialogPresent())
             {
-                _logger.LogWarning("RefreshScoreboardAsync: unexpected dialog detected at entry");
-                _scoreboardAutomation.TryCloseUnexpectedDialog();
-                await FireErrorUnderLockAsync(PcsProTrigger.UnexpectedDialog, "Unexpected dialog blocked scoreboard refresh").ConfigureAwait(false);
-                return;
+                _logger.LogWarning("Unexpected dialog detected during {Operation}, continuing without interaction", "RefreshScoreboardAsync");
             }
 
             ct.ThrowIfCancellationRequested();
@@ -1470,10 +1455,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             // §4.2.1 — Entry unexpected-dialog check.
             if (_scoreboardAutomation.IsUnexpectedDialogPresent())
             {
-                _logger.LogWarning("CaptureScoreboardImageAsync: unexpected dialog detected at entry");
-                _scoreboardAutomation.TryCloseUnexpectedDialog();
-                await FireErrorUnderLockAsync(PcsProTrigger.UnexpectedDialog, "Unexpected dialog blocked scoreboard capture").ConfigureAwait(false);
-                return Array.Empty<byte>();
+                _logger.LogWarning("Unexpected dialog detected during {Operation}, continuing without interaction", "CaptureScoreboardImageAsync");
             }
 
             ct.ThrowIfCancellationRequested();
@@ -1534,10 +1516,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             // §4.3.1 — Entry unexpected-dialog check.
             if (_changeMatchAutomation.IsUnexpectedDialogPresent())
             {
-                _logger.LogWarning("ChangeMatchAsync: unexpected dialog detected at entry");
-                _changeMatchAutomation.TryCloseUnexpectedDialog();
-                await FireErrorUnderLockAsync(PcsProTrigger.UnexpectedDialog, "Unexpected dialog blocked match change").ConfigureAwait(false);
-                return;
+                _logger.LogWarning("Unexpected dialog detected during {Operation}, continuing without interaction", "ChangeMatchAsync");
             }
 
             ct.ThrowIfCancellationRequested();
@@ -1744,9 +1723,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         catch (Exception ex)
         {
             _logger.LogError(ex, "StartStreamingAsync failed during FlaUI automation");
-            await FireErrorUnderLockAsync(
-                PcsProTrigger.UnexpectedDialog,
-                $"Streaming start failed: {ex.Message}").ConfigureAwait(false);
+            _logService.AddEntry("Streaming start failed: " + ex.Message, AutomationLogOutcome.Failure);
             return;
         }
 
@@ -1800,9 +1777,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         catch (Exception ex)
         {
             _logger.LogError(ex, "StopStreamingAsync failed during FlaUI automation");
-            await FireErrorUnderLockAsync(
-                PcsProTrigger.UnexpectedDialog,
-                $"Streaming stop failed: {ex.Message}").ConfigureAwait(false);
+            _logService.AddEntry("Streaming stop failed: " + ex.Message, AutomationLogOutcome.Failure);
             return;
         }
 
@@ -1885,13 +1860,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
 
             if (_teamNamesAutomation.IsUnexpectedDialogPresent())
             {
-                _logger.LogWarning("UseCurrentMatchAsync: unexpected dialog detected after opening teams dialog");
-                _teamNamesAutomation.TryCloseUnexpectedDialog();
-                _teamNamesAutomation.TryCloseTeamsDialog();
-                await FireErrorUnderLockAsync(PcsProTrigger.UnexpectedDialog, "Unexpected dialog blocked team name extraction after attach").ConfigureAwait(false);
-                return new MatchTeams(
-                    new TeamNameInfo(string.Empty, string.Empty),
-                    new TeamNameInfo(string.Empty, string.Empty));
+                _logger.LogWarning("Unexpected dialog detected during {Operation}, continuing without interaction", "UseCurrentMatchAsync");
             }
 
             TeamNameInfo homeTeam;

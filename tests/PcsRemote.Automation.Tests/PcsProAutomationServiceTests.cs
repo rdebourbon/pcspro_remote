@@ -902,23 +902,26 @@ public sealed class PcsProAutomationServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // AC-7 — Unexpected dialog during spinner wait → Error via UnexpectedDialog trigger
+    // AC-7 — Unexpected dialog during spinner wait → warning logged, operation continues
     // -----------------------------------------------------------------------
 
     [TestMethod]
-    public async Task GetTodaysMatchesAsync_WhenUnexpectedDialogDuringSpinnerWait_TransitionsToError()
+    public async Task GetTodaysMatchesAsync_WhenUnexpectedDialogDuringSpinnerWait_LogsWarningAndContinues()
     {
         var fakeMatchSel = new FakeMatchSelectionAutomation
         {
-            SpinnerVisible = true,
-            UnexpectedDialogPresent = true,
+            SpinnerVisible = false,          // spinner already gone — parse immediately
+            UnexpectedDialogPresent = true,  // dialog present on same tick
         };
         var (svc, _) = await CreateServiceAtMatchSelectionAsync(matchSelectionAutomation: fakeMatchSel);
 
         await svc.GetTodaysMatchesAsync();
 
-        svc.CurrentState.Should().Be(PcsProState.Error);
-        fakeMatchSel.CloseDialogAttempted.Should().BeTrue();
+        // Dialog was detected but operation continued past the check (no close, no trigger).
+        fakeMatchSel.CloseDialogAttempted.Should().BeFalse(
+            "unexpected dialog must NOT be closed — demoted to warning-only");
+        fakeMatchSel.SearchTriggered.Should().BeTrue(
+            "search must still be triggered despite dialog presence");
     }
 
     // -----------------------------------------------------------------------
@@ -1078,23 +1081,25 @@ public sealed class PcsProAutomationServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // AC-20 — Unexpected dialog during open wait → Error via UnexpectedDialog trigger
+    // AC-20 — Unexpected dialog during open wait → warning logged, operation continues
     // -----------------------------------------------------------------------
 
     [TestMethod]
-    public async Task LoadMatchAsync_WhenUnexpectedDialogDuringOpenWait_TransitionsToError()
+    public async Task LoadMatchAsync_WhenUnexpectedDialogDuringOpenWait_LogsWarningAndContinues()
     {
         var fakeMatchSel = new FakeMatchSelectionAutomation
         {
-            MatchLoaded = false,
-            UnexpectedDialogPresent = true,
+            MatchLoaded = true,              // match loads on same tick
+            UnexpectedDialogPresent = true,  // dialog present on same tick
         };
         var (svc, _, testMatch) = await CreateServiceAtMatchSelectionReadyAsync(fakeMatchSel);
 
         await svc.LoadMatchAsync(testMatch);
 
-        svc.CurrentState.Should().Be(PcsProState.Error);
-        fakeMatchSel.CloseDialogAttempted.Should().BeTrue();
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded,
+            "match must load normally despite dialog presence");
+        fakeMatchSel.CloseDialogAttempted.Should().BeFalse(
+            "unexpected dialog must NOT be closed — demoted to warning-only");
     }
 
     // -----------------------------------------------------------------------
@@ -1290,24 +1295,25 @@ public sealed class PcsProAutomationServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // AC-6 — Unexpected dialog detected → sentinel returned, Error via UnexpectedDialog trigger
+    // AC-6 — Unexpected dialog detected → warning logged, continues to read team names
     // -----------------------------------------------------------------------
 
     [TestMethod]
-    public async Task GetTeamNamesAsync_WhenUnexpectedDialogPresent_ReturnsSentinelAndTransitionsToError()
+    public async Task GetTeamNamesAsync_WhenUnexpectedDialogPresent_LogsWarningAndReturnsTeamNames()
     {
         var fake = new FakeTeamNamesAutomation { UnexpectedDialogPresent = true };
         var (svc, _) = await CreateServiceAtMatchLoadedAsync(fake);
 
         var result = await svc.GetTeamNamesAsync();
 
-        result.Home.TeamName.Should().BeEmpty();
-        result.Away.TeamName.Should().BeEmpty();
-        result.Home.ClubName.Should().BeEmpty();
-        result.Away.ClubName.Should().BeEmpty();
-        svc.CurrentState.Should().Be(PcsProState.Error);
-        fake.CloseUnexpectedDialogAttempted.Should().BeTrue();
-        fake.CloseTeamsDialogAttempted.Should().BeTrue("TryCloseTeamsDialog must be called on all error paths");
+        result.Home.ClubName.Should().Be("Home CC");
+        result.Home.TeamName.Should().Be("Home XI");
+        result.Away.ClubName.Should().Be("Away CC");
+        result.Away.TeamName.Should().Be("Away XI");
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded,
+            "state must remain MatchLoaded — dialog is warning-only");
+        fake.CloseUnexpectedDialogAttempted.Should().BeFalse(
+            "unexpected dialog must NOT be closed — demoted to warning-only");
     }
 
     // -----------------------------------------------------------------------
@@ -1442,20 +1448,23 @@ public sealed class PcsProAutomationServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // AC-5 — Unexpected dialog at entry → TryCloseUnexpectedDialog + UnexpectedDialog trigger + Error
+    // AC-5 — Unexpected dialog at entry → warning logged, operation continues
     // -----------------------------------------------------------------------
 
     [TestMethod]
-    public async Task RefreshScoreboardAsync_WhenUnexpectedDialogPresent_ClosesAndFiresError()
+    public async Task RefreshScoreboardAsync_WhenUnexpectedDialogPresent_LogsWarningAndContinues()
     {
         var fake = new FakeScoreboardAutomation { UnexpectedDialogPresent = true };
         var (svc, _) = await CreateServiceAtMatchLoadedAsync(scoreboardAutomation: fake);
 
         await svc.RefreshScoreboardAsync();
 
-        fake.CloseUnexpectedDialogAttempted.Should().BeTrue("TryCloseUnexpectedDialog must be called");
-        fake.ClickCogAttempted.Should().BeFalse("cog must NOT be clicked when dialog is present");
-        svc.CurrentState.Should().Be(PcsProState.Error);
+        fake.CloseUnexpectedDialogAttempted.Should().BeFalse(
+            "unexpected dialog must NOT be closed — demoted to warning-only");
+        fake.ClickCogAttempted.Should().BeTrue(
+            "cog must be clicked — operation continues despite dialog");
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded,
+            "state must remain MatchLoaded — dialog is warning-only");
     }
 
     // -----------------------------------------------------------------------
@@ -1528,21 +1537,24 @@ public sealed class PcsProAutomationServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // AC-10 — Unexpected dialog at entry → sentinel returned + Error via UnexpectedDialog
+    // AC-10 — Unexpected dialog at entry → warning logged, capture continues
     // -----------------------------------------------------------------------
 
     [TestMethod]
-    public async Task CaptureScoreboardImageAsync_WhenUnexpectedDialogPresent_ReturnsSentinelAndTransitionsToError()
+    public async Task CaptureScoreboardImageAsync_WhenUnexpectedDialogPresent_LogsWarningAndReturnsCapture()
     {
         var fake = new FakeScoreboardAutomation { UnexpectedDialogPresent = true };
         var (svc, _) = await CreateServiceAtMatchLoadedAsync(scoreboardAutomation: fake);
 
         var result = await svc.CaptureScoreboardImageAsync();
 
-        result.Should().BeEmpty("sentinel must be returned when unexpected dialog is present");
-        fake.CloseUnexpectedDialogAttempted.Should().BeTrue("TryCloseUnexpectedDialog must be called");
-        fake.CaptureAttempted.Should().BeFalse("capture must NOT be attempted when dialog is present");
-        svc.CurrentState.Should().Be(PcsProState.Error);
+        result.Should().NotBeEmpty("actual capture must be returned despite dialog presence");
+        fake.CloseUnexpectedDialogAttempted.Should().BeFalse(
+            "unexpected dialog must NOT be closed — demoted to warning-only");
+        fake.CaptureAttempted.Should().BeTrue(
+            "capture must be attempted — operation continues despite dialog");
+        svc.CurrentState.Should().Be(PcsProState.MatchLoaded,
+            "state must remain MatchLoaded — dialog is warning-only");
     }
 
     // -----------------------------------------------------------------------
@@ -1611,20 +1623,23 @@ public sealed class PcsProAutomationServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // AC-15 — Unexpected dialog at entry → TryCloseUnexpectedDialog + UnexpectedDialog trigger + Error
+    // AC-15 — Unexpected dialog at entry → warning logged, operation continues
     // -----------------------------------------------------------------------
 
     [TestMethod]
-    public async Task ChangeMatchAsync_WhenUnexpectedDialogPresent_ClosesAndFiresError()
+    public async Task ChangeMatchAsync_WhenUnexpectedDialogPresent_LogsWarningAndContinues()
     {
         var fake = new FakeChangeMatchAutomation { UnexpectedDialogPresent = true };
         var (svc, _) = await CreateServiceAtMatchLoadedAsync(changeMatchAutomation: fake);
 
         await svc.ChangeMatchAsync();
 
-        fake.CloseUnexpectedDialogAttempted.Should().BeTrue("TryCloseUnexpectedDialog must be called");
-        fake.ExecuteChangeMatchAttempted.Should().BeFalse("sequence must NOT execute when dialog is present");
-        svc.CurrentState.Should().Be(PcsProState.Error);
+        fake.CloseUnexpectedDialogAttempted.Should().BeFalse(
+            "unexpected dialog must NOT be closed — demoted to warning-only");
+        fake.ExecuteChangeMatchAttempted.Should().BeTrue(
+            "change-match sequence must execute — operation continues despite dialog");
+        svc.CurrentState.Should().Be(PcsProState.MatchSelection,
+            "state must transition to MatchSelection after successful change-match");
     }
 
     // -----------------------------------------------------------------------
