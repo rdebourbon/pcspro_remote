@@ -3,6 +3,7 @@
 @implements IDisposable
 @inject IYouTubeLiveStreamService StreamService
 @inject IOperationCoordinatorService CoordinatorService
+@inject IManualModeService ManualModeService
 @inject IConfirmDialogService ConfirmDialogService
 @inject ILogger<StreamingControls> Logger
 
@@ -63,19 +64,22 @@
     private LiveBroadcastInfo? _currentBroadcast;
     private string? _errorMessage;
     private bool _operationInProgress;
+    private bool _manualModeActive;
     private bool _disposed;
     private CancellationTokenSource? _startCts;
 
-    private bool IsStartEnabled => _currentStatus == LiveStreamStatus.Idle && !_operationInProgress;
-    private bool IsStopEnabled => _currentStatus == LiveStreamStatus.Live && !_operationInProgress;
+    private bool IsStartEnabled => _currentStatus == LiveStreamStatus.Idle && !_operationInProgress && !_manualModeActive;
+    private bool IsStopEnabled => _currentStatus == LiveStreamStatus.Live && !_operationInProgress && !_manualModeActive;
 
     protected override void OnInitialized()
     {
         StreamService.StatusChanged += OnStatusChanged;
         CoordinatorService.OperationInProgressChanged += OnOperationInProgressChanged;
+        ManualModeService.ManualModeChanged += OnManualModeChanged;
         _currentStatus = StreamService.CurrentStatus;
         _currentBroadcast = StreamService.CurrentBroadcast;
         _operationInProgress = CoordinatorService.IsOperationInProgress;
+        _manualModeActive = ManualModeService.IsManualModeActive;
     }
 
     private async void OnStatusChanged(object? sender, StreamStateSnapshot snapshot)
@@ -102,6 +106,20 @@
             await InvokeAsync(() =>
             {
                 _operationInProgress = isInProgress;
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async void OnManualModeChanged(object? sender, bool isActive)
+    {
+        if (_disposed) return;
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                _manualModeActive = isActive;
                 StateHasChanged();
             });
         }
@@ -210,6 +228,7 @@
         _disposed = true;
         StreamService.StatusChanged -= OnStatusChanged;
         CoordinatorService.OperationInProgressChanged -= OnOperationInProgressChanged;
+        ManualModeService.ManualModeChanged -= OnManualModeChanged;
         _startCts?.Dispose();
     }
 }

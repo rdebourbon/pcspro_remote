@@ -48,6 +48,7 @@ public class StreamingControlsTests
         ctx.Services.AddSingleton(streamMock.Object);
         ctx.Services.AddSingleton(coordinatorMock.Object);
         ctx.Services.AddSingleton(dialogMock.Object);
+        ctx.Services.AddSingleton<IManualModeService>(new ManualModeService());
 
         var cut = ctx.Render<StreamingControls>();
         return (cut, streamMock, coordinatorMock, dialogMock, ctx);
@@ -184,6 +185,7 @@ public class StreamingControlsTests
         ctx.Services.AddSingleton(streamMock.Object);
         ctx.Services.AddSingleton(coordinatorMock.Object);
         ctx.Services.AddSingleton(dialogMock.Object);
+        ctx.Services.AddSingleton<IManualModeService>(new ManualModeService());
 
         using (ctx)
         {
@@ -219,6 +221,7 @@ public class StreamingControlsTests
         ctx.Services.AddSingleton(streamMock.Object);
         ctx.Services.AddSingleton(coordinatorMock.Object);
         ctx.Services.AddSingleton(dialogMock.Object);
+        ctx.Services.AddSingleton<IManualModeService>(new ManualModeService());
 
         using (ctx)
         {
@@ -546,6 +549,7 @@ public class StreamingControlsTests
         ctx.Services.AddSingleton(streamMock.Object);
         ctx.Services.AddSingleton(coordinatorMock.Object);
         ctx.Services.AddSingleton(dialogMock.Object);
+        ctx.Services.AddSingleton<IManualModeService>(new ManualModeService());
 
         using (ctx)
         {
