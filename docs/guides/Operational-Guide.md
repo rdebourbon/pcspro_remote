@@ -58,17 +58,28 @@ Click the **"Change Match"** button on the control panel, then click the correct
 
 Manual mode blocks new remote commands and pauses automation so you can operate PCS Pro directly without interference (for example, to correct an error in the scorer).
 
+**What pauses in manual mode:**
+- Scoreboard screen captures stop
+- All automation commands (refresh scoreboard, load match, change match, team name entry) are skipped
+- Health-check polls are skipped
+
+**What continues in manual mode:**
+- PCS Pro launch, stop, retry, and dismiss lifecycle operations
+- The web control panel remains accessible (but Start/Stop streaming buttons are disabled)
+
 > **Note on timing:** If an automation action is already running when you switch to manual mode, it will finish before remote commands are blocked — wait for the current status to settle before taking over PCS Pro directly.
 
-**To enable manual mode:**  
-Right-click the tray icon on the garage PC → click **"Switch to Manual Mode"**  
-The web control panel displays: *"Manual mode — automation paused by local operator"*
+**To enable manual mode (keyboard shortcut — recommended):**
+Press **Ctrl+Alt+P** on the garage PC. A tray balloon notification confirms the mode change, and the web control panel displays: *"Manual mode — automation paused by local operator — press Ctrl+Alt+P to resume"*
 
-**To disable manual mode:**  
-Right-click the tray icon → click **"Resume Automation"**  
-The banner disappears and automation resumes.
+**To enable manual mode (tray icon):**
+Right-click the tray icon on the garage PC → click **"Switch to Manual Mode"**
 
-> **Note:** Manual mode can only be toggled from the garage PC (tray icon). It cannot be enabled from the web control panel.
+**To disable manual mode:**
+Press **Ctrl+Alt+P** again, or right-click the tray icon → click **"Resume Automation"**
+The banner disappears, scoreboard captures resume immediately, and automation resumes.
+
+> **Note:** Manual mode can only be toggled from the garage PC (tray icon or Ctrl+Alt+P hotkey). It cannot be enabled from the web control panel.
 
 ---
 

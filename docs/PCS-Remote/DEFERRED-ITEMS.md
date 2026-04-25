@@ -2,7 +2,7 @@
 
 This document tracks all deferred functionality, accepted risks, and future work items identified during development. Items are sourced from HLPS/IS/Spec reviews, adversarial code reviews, and feature gap discovery during diagnostic testing.
 
-**Last updated:** 2026-04-22 (HLPS-013 COMPLETE)
+**Last updated:** 2026-04-25 (HLPS-016 COMPLETE)
 
 ---
 
@@ -37,6 +37,7 @@ Items identified during adversarial reviews that were accepted but deferred to l
 | DEF-003 | FlaUI stub implementations pending garage PC | IS-006 S-006 code review | S-006 delivery | Garage PC visit | `FlaUiScoreboardAutomation` and `FlaUiChangeMatchAutomation` have implementation stubs for methods that need garage PC testing (I-U-5, I-U-6). |
 | DEF-004 | Web UI club name display | S-010 spec | SPEC-S-010 | Future HLPS | Club names will be available in `MatchTeams` after S-010 but the Web UI won't display them separately. Requires UI design. |
 | DEF-005 | Live stream status health signal | S-012 spec R1 (Opus + GPT) | SPEC-S-012 | Future HLPS | HLPS-010 §2.9 lists live stream status (button child text in `LiveStreamingControls`) as a monitored signal. Requires heavier FlaUI reads in the poll. Deferred to keep S-012 poll lightweight. |
+| DEF-006 | Per-operation hysteresis wiring for login-phase dialogs | S-003 code review (GPT 5.4) | SPEC-S-003 §2.4 | Future HLPS | `FlaUiLoginAutomation.GetUnexpectedDialogName()` and `TryCloseFirstUnexpectedDialog()` do not apply the popup ClassName filter. Login phase is out of scope for S-003 but could benefit from the same classification pipeline. |
 
 ---
 

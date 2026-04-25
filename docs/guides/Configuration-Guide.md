@@ -143,6 +143,7 @@ All production-relevant configuration keys are described below.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
+| `Scoreboard:CaptureIntervalSeconds` | integer | `10` | How often the scoreboard is screen-captured (in seconds). The default of 10 seconds balances update frequency with machine usability. Lower values increase CPU/disk load and may make the garage PC sluggish during automation. |
 | `Scoreboard:JpegQuality` | integer | `85` | JPEG compression quality for scoreboard images (1–100). Default 85 is suitable for LAN use; lower values reduce image size at the cost of quality. |
 
 ### Logging settings
