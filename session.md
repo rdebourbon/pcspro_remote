@@ -42,5 +42,53 @@ All 9 steps delivered and merged to `master`:
 | `docs/guides/Operational-Guide.md` | Operator guide (updated S-009) |
 | `docs/guides/Configuration-Guide.md` | Configuration reference (updated S-009) |
 
+## Brainstorming: HLPS-017 — Streaming Lifecycle & Live Dashboard
+
+**Status:** Brainstorming (not yet formalized into HLPS)
+
+### Core Idea
+Decompose the current monolithic "Start Live Stream" into a proper broadcast lifecycle:
+
+```
+[Create Broadcast] → upcoming → [Start Stream] → live → [Stop Stream] → stopped → [Close Broadcast] → complete
+```
+
+### Proposed Features
+
+| Feature | Priority | Notes |
+|---------|----------|-------|
+| **Create Broadcast** (upcoming state) | Core | YouTube API only, no PCS Pro automation |
+| **Start Stream** (manual trigger) | Core | PCS Pro RTMP + YouTube transition to live |
+| **Stop Stream** | Core | PCS Pro RTMP stop (broadcast stays open) |
+| **Close Broadcast** | Core | YouTube transition to complete |
+| **Live dashboard** (viewers, likes, status) | Core | Single `videos.list` call while live |
+| **Match Centre embed** (GAP-019) | Optional | FlaUI menu automation, operator-triggered |
+| **Autostart on match transition** | Deferred | Needs PlayCricket API or other signal |
+| **VOD chapters** (GAP-018) | Deferred | Needs PCS Pro CSV format verification |
+
+### Key Design Decisions (Pending)
+- Decomposed lifecycle gives operator full control — works for both local/friendly and league matches
+- `EnableAutoStart: false` on create → manual transition to live when operator clicks Start Stream
+- Autostart-on-match-transition deferred (U1 dropped from Blocking to Deferred) — manual Start Stream covers all cases
+- Live dashboard: `videos.list` with `part=liveStreamingDetails,statistics` returns concurrent viewers, likes, lifecycle status
+- Match Centre embed: via PCS Pro menu option (not the startup dialog) — avoids sequencing issues
+
+### Unknowns Register (Draft)
+| ID | Description | Owner | Blocking |
+|---|---|---|---|
+| U1 | Match "in progress" detection — PlayCricket API, scoreboard inference, or manual? | User | **No** (deferred — manual Start Stream covers all cases) |
+| U2 | Does PCS Pro need YouTube broadcast to exist before RTMP starts? | User | Yes (verify on garage PC) |
+| U3 | YouTube "upcoming" broadcast — does it show a waiting room for viewers? | Agent | No (research task) |
+
+### YouTube API Data Available During Livestream
+| Data | Source | Usefulness |
+|---|---|---|
+| Concurrent viewers | `liveStreamingDetails.concurrentViewers` | High — live count while broadcasting |
+| Total view count | `statistics.viewCount` | High — cumulative |
+| Like count | `statistics.likeCount` | Medium — real-time |
+| Lifecycle status | `liveBroadcasts.status.lifeCycleStatus` | High — independent health signal |
+| Live chat ID | `liveStreamingDetails.activeLiveChatId` | Low (future) |
+| Embeddable | `status.embeddable` | Low — guard for GAP-019 |
+
 ## Immediate Next Action
-No work in progress. Ready for next HLPS or production feedback cycle.
+Resume brainstorming for HLPS-017, then formalize when user is ready.
