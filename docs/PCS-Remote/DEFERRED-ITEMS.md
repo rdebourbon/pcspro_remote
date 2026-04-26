@@ -92,6 +92,15 @@ These were explicitly scoped out of earlier HLPS and remain unassigned:
 
 ---
 
+## Future Feature Ideas (User-Requested 2026-04-26)
+
+| ID | Title | Description | Target HLPS | Status |
+|---|---|---|---|---|
+| GAP-018 | YouTube VOD Chapter Markers | After a stream ends, parse PCS Pro CSV export for wicket events (with detailed dismissal info) and use `videos.update` to prepend chapter timestamps to the VOD description. Triggered manually via a web UI button. **Blocking unknown:** PCS Pro CSV export format — user to verify fields and timestamp format on garage PC. | Unassigned | ❌ Not started |
+| GAP-019 | Match Center Stream Embed | After the YouTube broadcast is live and the video ID is known, use FlaUI to navigate PCS Pro's menu option for setting the Match Center embed URL. Constructs the `<iframe>` from the broadcast video ID and pastes it automatically. Triggered manually via a web UI button ("Embed in Match Center"). No sequencing risk — video ID is available before the menu interaction. | Unassigned | ❌ Not started |
+
+---
+
 ## How to Use This Document
 
 - **When creating a new HLPS:** Review this register to identify items that should be included.
