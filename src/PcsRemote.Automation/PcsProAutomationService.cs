@@ -1903,75 +1903,76 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
 
         ct.ThrowIfCancellationRequested();
 
-        // Step 4: Fire AttachToMatch (NotRunning → MatchLoaded).
-        // _pendingLoadedMatch is intentionally NOT set — LoadedMatch remains null (AC-8).
-        await FireUnderLockAsync(PcsProTrigger.AttachToMatch).ConfigureAwait(false);
-
-        _logger.LogInformation(
-            "UseCurrentMatchAsync attached — state {State}, reading team names", CurrentState);
-
-        // Step 5: Read team names using existing flow.
-        return await ReadTeamNamesAfterAttachAsync(ct).ConfigureAwait(false);
-    }
-
-    private async Task<MatchTeams> ReadTeamNamesAfterAttachAsync(CancellationToken ct)
-    {
+        // Step 4: Read team names BEFORE firing AttachToMatch (HLPS-018 S-001).
+        // This ensures LoadedMatch is populated when StateChanged(MatchLoaded) fires.
+        MatchTeams teams;
         try
         {
-            ct.ThrowIfCancellationRequested();
-
-            try
-            {
-                _teamNamesAutomation.OpenTeamsDialog();
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogError(ex, "UseCurrentMatchAsync: failed to open teams dialog");
-                _teamNamesAutomation.TryCloseTeamsDialog();
-                await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "Teams dialog failed to open after attach").ConfigureAwait(false);
-                return new MatchTeams(
-                    new TeamNameInfo(string.Empty, string.Empty),
-                    new TeamNameInfo(string.Empty, string.Empty));
-            }
-
-            ct.ThrowIfCancellationRequested();
-
-            if (_teamNamesAutomation.IsUnexpectedDialogPresent())
-            {
-                _logger.LogWarning("Unexpected dialog detected during {Operation}, continuing without interaction", "UseCurrentMatchAsync");
-            }
-
-            TeamNameInfo homeTeam;
-            TeamNameInfo awayTeam;
-            try
-            {
-                homeTeam = _teamNamesAutomation.ReadHomeTeamName();
-                awayTeam = _teamNamesAutomation.ReadAwayTeamName();
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogError(ex, "UseCurrentMatchAsync: failed to read team names after attach");
-                _teamNamesAutomation.TryCloseTeamsDialog();
-                await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "Team names could not be read after attach").ConfigureAwait(false);
-                return new MatchTeams(
-                    new TeamNameInfo(string.Empty, string.Empty),
-                    new TeamNameInfo(string.Empty, string.Empty));
-            }
-
+            teams = await ReadTeamNamesBeforeAttachAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "UseCurrentMatchAsync: team name read failed before attach");
             _teamNamesAutomation.TryCloseTeamsDialog();
-            _logService.AddEntry("Attached to current match", AutomationLogOutcome.Success);
-            _logger.LogInformation(
-                "UseCurrentMatchAsync succeeded — Home={HomeClub}/{HomeTeam} Away={AwayClub}/{AwayTeam}",
-                homeTeam.ClubName, homeTeam.TeamName, awayTeam.ClubName, awayTeam.TeamName);
-            return new MatchTeams(homeTeam, awayTeam);
+            throw;
         }
         catch (OperationCanceledException)
         {
-            _logger.LogWarning("UseCurrentMatchAsync cancelled during team name read");
+            _logger.LogWarning("UseCurrentMatchAsync cancelled during pre-attach team name read");
             _teamNamesAutomation.TryCloseTeamsDialog();
-            await FireErrorUnderLockAsync(PcsProTrigger.Timeout, "UseCurrentMatchAsync was cancelled").ConfigureAwait(false);
             throw;
         }
+
+        // Step 5: Construct MatchInfo from team names and apply title formatting.
+        var matchId = $"current_{teams.Home.TeamName}_{teams.Away.TeamName}";
+        var matchInfo = new MatchInfo(
+            MatchId: matchId,
+            HomeTeam: teams.Home.TeamName,
+            AwayTeam: teams.Away.TeamName,
+            HomeClub: teams.Home.ClubName,
+            AwayClub: teams.Away.ClubName);
+
+        _pendingLoadedMatch = FormatMatchForTitle(matchInfo);
+
+        // Step 6: Fire AttachToMatch (NotRunning → MatchLoaded).
+        await FireUnderLockAsync(PcsProTrigger.AttachToMatch).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "UseCurrentMatchAsync attached — state {State}, LoadedMatch {LoadedMatch}",
+            CurrentState, _loadedMatch?.MatchId);
+
+        _logService.AddEntry("Attached to current match", AutomationLogOutcome.Success);
+        return teams;
+    }
+
+    /// <summary>
+    /// Reads team names from PCS Pro BEFORE firing AttachToMatch (HLPS-018 S-001).
+    /// On failure, throws without firing any state-machine triggers.
+    /// Caller is responsible for best-effort dialog cleanup on exception.
+    /// </summary>
+    private Task<MatchTeams> ReadTeamNamesBeforeAttachAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        _teamNamesAutomation.OpenTeamsDialog();
+
+        ct.ThrowIfCancellationRequested();
+
+        if (_teamNamesAutomation.IsUnexpectedDialogPresent())
+        {
+            _logger.LogWarning("Unexpected dialog detected during {Operation}, continuing without interaction", "UseCurrentMatchAsync");
+        }
+
+        var homeTeam = _teamNamesAutomation.ReadHomeTeamName();
+        var awayTeam = _teamNamesAutomation.ReadAwayTeamName();
+
+        _teamNamesAutomation.TryCloseTeamsDialog();
+
+        _logger.LogInformation(
+            "UseCurrentMatchAsync pre-attach read — Home={HomeClub}/{HomeTeam} Away={AwayClub}/{AwayTeam}",
+            homeTeam.ClubName, homeTeam.TeamName, awayTeam.ClubName, awayTeam.TeamName);
+
+        return Task.FromResult(new MatchTeams(homeTeam, awayTeam));
     }
 
     private MatchInfo FormatMatchForTitle(MatchInfo match)

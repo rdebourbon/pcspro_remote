@@ -2049,9 +2049,9 @@ public sealed class PcsProAutomationServiceTests
     }
 
     [TestMethod]
-    public async Task UseCurrentMatchAsync_HappyPath_LoadedMatchIsNull()
+    public async Task UseCurrentMatchAsync_HappyPath_LoadedMatchIsPopulated()
     {
-        // Arrange (AC-8)
+        // Arrange (HLPS-018 S-001: LoadedMatch is populated after attach)
         var fakeMatchSel = new FakeMatchSelectionAutomation { MainWindowPresent = true, MatchLoaded = true };
         var handle = new FakeProcessHandle { MainWindowVisible = true };
         var pm = new FakeProcessManager { StartedHandle = handle };
@@ -2062,7 +2062,42 @@ public sealed class PcsProAutomationServiceTests
         await svc.UseCurrentMatchAsync();
 
         // Assert
-        svc.LoadedMatch.Should().BeNull(because: "attach flow has no MatchInfo");
+        svc.LoadedMatch.Should().NotBeNull(because: "HLPS-018 S-001 requires LoadedMatch populated after attach");
+        svc.LoadedMatch!.HomeTeam.Should().Be("Home XI");
+        svc.LoadedMatch.AwayTeam.Should().Be("Away XI");
+        svc.LoadedMatch.HomeClub.Should().Be("Home CC");
+        svc.LoadedMatch.AwayClub.Should().Be("Away CC");
+        svc.LoadedMatch.MatchId.Should().StartWith("current_", because: "attach flow uses synthesized MatchId");
+    }
+
+    [TestMethod]
+    public async Task UseCurrentMatchAsync_HappyPath_LoadedMatchPopulatedBeforeStateChanged()
+    {
+        // Arrange (HLPS-018 S-001 AC-2/R7): LoadedMatch must be non-null
+        // at the instant StateChanged(MatchLoaded) fires.
+        var fakeMatchSel = new FakeMatchSelectionAutomation { MainWindowPresent = true, MatchLoaded = true };
+        var handle = new FakeProcessHandle { MainWindowVisible = true };
+        var pm = new FakeProcessManager { StartedHandle = handle };
+        var tp = new FakeTimeProvider();
+        var svc = CreateService(pm, tp, matchSelectionAutomation: fakeMatchSel);
+
+        MatchInfo? capturedAtEventTime = null;
+        svc.StateChanged += (_, state) =>
+        {
+            if (state == PcsProState.MatchLoaded)
+            {
+                capturedAtEventTime = svc.LoadedMatch;
+            }
+        };
+
+        // Act
+        await svc.UseCurrentMatchAsync();
+
+        // Assert: LoadedMatch was non-null when StateChanged(MatchLoaded) fired.
+        capturedAtEventTime.Should().NotBeNull(
+            because: "LoadedMatch must be populated before StateChanged(MatchLoaded) fires (before-trigger ordering invariant)");
+        capturedAtEventTime!.HomeTeam.Should().Be("Home XI");
+        capturedAtEventTime.AwayTeam.Should().Be("Away XI");
     }
 
     [TestMethod]
@@ -2146,25 +2181,28 @@ public sealed class PcsProAutomationServiceTests
     }
 
     [TestMethod]
-    public async Task UseCurrentMatchAsync_TeamNameReadFails_TransitionsToErrorAndReturnsSentinel()
+    public async Task UseCurrentMatchAsync_TeamNameReadFails_ThrowsAndStateUnchanged()
     {
-        // Arrange (AC-12): team names throw after successful attach.
+        // Arrange (HLPS-018 S-001 AC-10): team name read fails before attach.
         var fakeMatchSel = new FakeMatchSelectionAutomation { MainWindowPresent = true, MatchLoaded = true };
         var fakeTeams = new FakeTeamNamesAutomation { ThrowOnReadHomeTeamName = true };
         var handle = new FakeProcessHandle { MainWindowVisible = true };
         var pm = new FakeProcessManager { StartedHandle = handle };
         var tp = new FakeTimeProvider();
         var svc = CreateService(pm, tp, matchSelectionAutomation: fakeMatchSel, teamNamesAutomation: fakeTeams);
+        var initialState = svc.CurrentState;
+
+        var stateChanges = new List<PcsProState>();
+        svc.StateChanged += (_, s) => stateChanges.Add(s);
 
         // Act
-        var result = await svc.UseCurrentMatchAsync();
+        var act = () => svc.UseCurrentMatchAsync();
 
-        // Assert: state transitions to Error, sentinel MatchTeams returned.
-        svc.CurrentState.Should().Be(PcsProState.Error);
-        result.Home.TeamName.Should().BeEmpty();
-        result.Away.TeamName.Should().BeEmpty();
-        result.Home.ClubName.Should().BeEmpty();
-        result.Away.ClubName.Should().BeEmpty();
+        // Assert: exception propagates, state unchanged, LoadedMatch null, no StateChanged fired.
+        await act.Should().ThrowAsync<Exception>();
+        svc.CurrentState.Should().Be(initialState, because: "state must not change on pre-attach failure");
+        svc.LoadedMatch.Should().BeNull(because: "LoadedMatch must remain null on failure");
+        stateChanges.Should().BeEmpty(because: "no state transitions should occur on pre-attach failure");
     }
 
     // -----------------------------------------------------------------------
@@ -2765,7 +2803,7 @@ public sealed class PcsProAutomationServiceTests
     // -----------------------------------------------------------------------
 
     [TestMethod]
-    public async Task GetTeamNamesAsync_AfterUseCurrentMatch_LoadedMatchRemainsNull()
+    public async Task GetTeamNamesAsync_AfterUseCurrentMatch_EnrichesLoadedMatchClubNames()
     {
         var (svc, _) = await CreateServiceAtMatchSelectionAsync();
 
@@ -2775,9 +2813,7 @@ public sealed class PcsProAutomationServiceTests
         machine.Fire(PcsProTrigger.SearchTriggered);
         machine.Fire(PcsProTrigger.SpinnerGone);
 
-        // UseCurrentMatchAsync goes NotRunning → MatchLoaded with LoadedMatch = null
-        // But we're in MatchSelectionReady, not NotRunning. Drive to NotRunning first is wrong.
-        // Actually UseCurrentMatchAsync requires NotRunning state. Let me use a fresh service.
+        // UseCurrentMatchAsync requires NotRunning state — use a fresh service.
         var freshHandle = new FakeProcessHandle { MainWindowVisible = true };
         var freshPm = new FakeProcessManager { StartedHandle = freshHandle };
         var freshSvc = CreateService(freshPm, new FakeTimeProvider());
@@ -2785,16 +2821,21 @@ public sealed class PcsProAutomationServiceTests
         // UseCurrentMatchAsync is called from NotRunning
         await freshSvc.UseCurrentMatchAsync();
 
-        // Now in MatchLoaded with LoadedMatch = null (AC-8)
-        freshSvc.LoadedMatch.Should().BeNull("UseCurrentMatchAsync does not set LoadedMatch");
+        // Now in MatchLoaded with LoadedMatch populated (HLPS-018 S-001)
+        freshSvc.LoadedMatch.Should().NotBeNull("HLPS-018 S-001 populates LoadedMatch after attach");
+        freshSvc.LoadedMatch!.HomeTeam.Should().Be("Home XI");
+        freshSvc.LoadedMatch.AwayTeam.Should().Be("Away XI");
 
-        // GetTeamNamesAsync should succeed and not throw
+        // GetTeamNamesAsync should succeed and enrich club names
         var teams = await freshSvc.GetTeamNamesAsync();
         teams.Should().NotBeNull();
 
-        // LoadedMatch should STILL be null — enrichment was skipped
-        freshSvc.LoadedMatch.Should().BeNull(
-            "enrichment should be skipped when LoadedMatch is null");
+        // LoadedMatch should be enriched with club names (mirrors TC-14 pattern)
+        freshSvc.LoadedMatch.Should().NotBeNull();
+        freshSvc.LoadedMatch!.HomeClub.Should().Be("Home CC",
+            because: "enrichment should populate HomeClub from GetTeamNamesAsync read");
+        freshSvc.LoadedMatch.AwayClub.Should().Be("Away CC",
+            because: "enrichment should populate AwayClub from GetTeamNamesAsync read");
     }
 
     // -----------------------------------------------------------------------

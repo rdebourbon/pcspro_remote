@@ -20,9 +20,10 @@ public interface IPcsProAutomationService
 
     /// <summary>
     /// Gets the currently loaded match when state is <see cref="PcsProState.MatchLoaded"/>,
-    /// or <see langword="null"/> otherwise. Also <see langword="null"/> after
-    /// <see cref="UseCurrentMatchAsync"/> (attach flow provides no <see cref="MatchInfo"/>).
-    /// Cleared on any state transition away from <see cref="PcsProState.MatchLoaded"/>.
+    /// or <see langword="null"/> otherwise. After <see cref="UseCurrentMatchAsync"/> (attach flow),
+    /// populated with title-formatted team names and sentinel identity fields (synthesized MatchId,
+    /// default MatchType/MatchDate). Cleared on any state transition away from
+    /// <see cref="PcsProState.MatchLoaded"/>.
     /// </summary>
     MatchInfo? LoadedMatch { get; }
 
@@ -125,7 +126,8 @@ public interface IPcsProAutomationService
     /// trigger, then reads and returns team names.
     /// Throws <see cref="InvalidOperationException"/> if PCS Pro is not running, no match is loaded,
     /// or the current state is not <see cref="PcsProState.NotRunning"/>.
-    /// <see cref="LoadedMatch"/> remains <see langword="null"/> after a successful attach.
+    /// <see cref="LoadedMatch"/> is populated with title-formatted team names and sentinel identity
+    /// fields after a successful attach (HLPS-018 S-001 supersedes original AC-8).
     /// Accepts an optional <paramref name="ct"/> to cancel the operation.
     /// </summary>
     Task<MatchTeams> UseCurrentMatchAsync(CancellationToken ct = default);

@@ -50,9 +50,14 @@ If team name reading fails after the state transition, the existing error handli
 
 ### 2.3 LoadedMatch Property
 
-After a successful attach, `LoadedMatch` is `null` because no `MatchInfo` is available (the match was not selected from the grid — there is no `MatchId`, `MatchType`, or `MatchDate`). This is a known limitation documented in the HLPS: "Match identity verification is deferred — the operator's assertion is trusted."
+> **⚠ SUPERSEDED by HLPS-018 S-001 (SPEC-S-001-Populate-LoadedMatch.md).**
+> `LoadedMatch` is now populated with title-formatted team names and sentinel identity fields
+> after a successful attach. The original null-after-attach behaviour caused the ChangeMatch
+> button to vanish on Blazor circuit reconnect (P1 in HLPS-018).
 
-The existing `OnTransitioned` callback in `PcsProAutomationService` sets `_loadedMatch = _pendingLoadedMatch` on entry to `MatchLoaded`. Since `UseCurrentMatchAsync` does not set `_pendingLoadedMatch` (there is no `MatchInfo` to set), `_loadedMatch` remains `null` by design.
+~~After a successful attach, `LoadedMatch` is `null` because no `MatchInfo` is available (the match was not selected from the grid — there is no `MatchId`, `MatchType`, or `MatchDate`). This is a known limitation documented in the HLPS: "Match identity verification is deferred — the operator's assertion is trusted."~~
+
+~~The existing `OnTransitioned` callback in `PcsProAutomationService` sets `_loadedMatch = _pendingLoadedMatch` on entry to `MatchLoaded`. Since `UseCurrentMatchAsync` does not set `_pendingLoadedMatch` (there is no `MatchInfo` to set), `_loadedMatch` remains `null` by design.~~
 
 > **Implementation note:** The xmldoc on `IPcsProAutomationService.LoadedMatch` should be updated during implementation to clarify that `LoadedMatch` may be `null` in `MatchLoaded` state after an attach (vs. always populated after `LoadMatchAsync`).
 
@@ -114,11 +119,11 @@ The following existing components are reused without modification:
 | AC-5 | When PCS Pro is not running (main window not found), `UseCurrentMatchAsync` throws `InvalidOperationException`. State remains `NotRunning`. |
 | AC-6 | When PCS Pro is running but no match is loaded (detection signal absent), `UseCurrentMatchAsync` throws `InvalidOperationException`. State remains `NotRunning`. |
 | AC-7 | When called from a state other than `NotRunning`, `UseCurrentMatchAsync` throws `InvalidOperationException`. |
-| AC-8 | `LoadedMatch` is `null` after a successful attach (no `MatchInfo` available). |
+| AC-8 | ~~`LoadedMatch` is `null` after a successful attach (no `MatchInfo` available).~~ **SUPERSEDED by HLPS-018 S-001:** `LoadedMatch` is now populated with title-formatted team names and sentinel identity fields. |
 | AC-9 | `MockPcsProAutomationService.UseCurrentMatchAsync` transitions to `MatchLoaded` and returns mock team data. |
 | AC-10 | All existing tests pass with 0 warnings, 0 errors. |
 | AC-11 | When another automation operation is in progress (semaphore held), `UseCurrentMatchAsync` throws `InvalidOperationException`. |
-| AC-12 | When team name reading fails after a successful attach, the state transitions to `Error` and the method returns sentinel `MatchTeams` with empty `TeamNameInfo` values. |
+| AC-12 | ~~When team name reading fails after a successful attach, the state transitions to `Error` and the method returns sentinel `MatchTeams` with empty `TeamNameInfo` values.~~ **SUPERSEDED by HLPS-018 S-001:** Team reading now occurs before `AttachToMatch`; on failure the method throws and aborts (no state transition, `LoadedMatch` remains null). See SPEC-S-001 AC-10. |
 
 ---
 

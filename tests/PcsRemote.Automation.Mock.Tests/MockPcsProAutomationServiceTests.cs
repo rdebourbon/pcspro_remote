@@ -1217,6 +1217,29 @@ public sealed class MockPcsProAutomationServiceTests
         sut.LoadedMatch!.HomeClub.Should().Be("Home CC");
         sut.LoadedMatch!.AwayClub.Should().Be("Away CC");
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-001 — UseCurrentMatchAsync populates LoadedMatch (HLPS-018)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task UseCurrentMatchAsync_HappyPath_LoadedMatchIsPopulated()
+    {
+        // Arrange (HLPS-018 S-001 AC-8: mock service populates LoadedMatch)
+        var sut = CreateSut();
+
+        // Act
+        await sut.UseCurrentMatchAsync();
+
+        // Assert
+        sut.CurrentState.Should().Be(PcsProState.MatchLoaded);
+        sut.LoadedMatch.Should().NotBeNull(because: "HLPS-018 S-001 requires LoadedMatch populated after attach");
+        sut.LoadedMatch!.HomeTeam.Should().Be("Home XI");
+        sut.LoadedMatch.AwayTeam.Should().Be("Away XI");
+        sut.LoadedMatch.HomeClub.Should().Be("Home CC");
+        sut.LoadedMatch.AwayClub.Should().Be("Away CC");
+        sut.LoadedMatch.MatchId.Should().StartWith("current_", because: "attach flow uses synthesized MatchId");
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────

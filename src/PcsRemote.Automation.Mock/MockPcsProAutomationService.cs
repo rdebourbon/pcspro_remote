@@ -355,7 +355,14 @@ public class MockPcsProAutomationService : IPcsProAutomationService
                 throw new InvalidOperationException(
                     $"UseCurrentMatchAsync requires NotRunning state; current state is {_currentState}.");
 
-            // Mock: transition directly to MatchLoaded. LoadedMatch remains null (AC-8).
+            // Mock: populate LoadedMatch with team names and sentinel identity fields (HLPS-018 S-001).
+            var matchInfo = new MatchInfo(
+                MatchId: "current_Home XI_Away XI",
+                HomeTeam: "Home XI",
+                AwayTeam: "Away XI",
+                HomeClub: "Home CC",
+                AwayClub: "Away CC");
+            _loadedMatch = matchInfo;
             Transition(PcsProState.MatchLoaded);
             _logService.AddEntry("Attached to current match", AutomationLogOutcome.Success);
             _logger.LogInformation("UseCurrentMatchAsync complete — reached {State}", PcsProState.MatchLoaded);
