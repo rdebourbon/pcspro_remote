@@ -129,10 +129,12 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
             "Index.OnStateChanged — {OldState} → {NewState}, Matches={MatchCount}, LoadedMatch={HasLoadedMatch}",
             _currentState, newState, _matches?.Count, _loadedMatch is not null);
 
-        // Dispatch ALL field access to the Blazor sync context to prevent
-        // TOCTOU races between the background event thread and the renderer.
-        await InvokeAsync(async () =>
+        try
         {
+            // Dispatch ALL field access to the Blazor sync context to prevent
+            // TOCTOU races between the background event thread and the renderer.
+            await InvokeAsync(async () =>
+            {
             _currentState = newState;
 
             if (newState == PcsProState.MatchLoaded)
@@ -182,6 +184,8 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
                 }
             }
         });
+        }
+        catch (ObjectDisposedException) { }
     }
 
     private async Task FetchMatchesAsync()

@@ -59,6 +59,29 @@ try
 
     Log.Information("PCS Remote (TrayHost) starting...");
 
+    // S-006: Supplementary safety nets for unobserved/unhandled exceptions.
+    TaskScheduler.UnobservedTaskException += (_, e) =>
+    {
+        Log.Error(e.Exception, "Unobserved task exception caught by safety-net handler");
+        e.SetObserved();
+    };
+
+    AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+    {
+        if (e.ExceptionObject is Exception ex)
+        {
+            Log.Fatal(ex, "Unhandled AppDomain exception — process will terminate");
+        }
+        else
+        {
+            Log.Fatal(
+                "Unhandled AppDomain exception (non-Exception object: {ExceptionType}) — process will terminate",
+                e.ExceptionObject?.GetType().FullName ?? "null");
+        }
+
+        Log.CloseAndFlush();
+    };
+
     app.UsePcsRemoteMiddleware();
 
     app.Run();
