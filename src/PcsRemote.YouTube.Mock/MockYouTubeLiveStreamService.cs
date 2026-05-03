@@ -46,7 +46,13 @@ public sealed class MockYouTubeLiveStreamService : IYouTubeLiveStreamService
     public LiveBroadcastInfo? CurrentBroadcast => _currentBroadcast;
 
     /// <inheritdoc/>
+    public YouTubeAvailability Availability => YouTubeAvailability.Ready;
+
+    /// <inheritdoc/>
     public event EventHandler<StreamStateSnapshot>? StatusChanged;
+
+    /// <inheritdoc/>
+    public event EventHandler<YouTubeAuthStatusSnapshot>? AuthStatusChanged;
 
     /// <inheritdoc/>
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -72,6 +78,9 @@ public sealed class MockYouTubeLiveStreamService : IYouTubeLiveStreamService
         {
             _gate.Release();
         }
+
+        AuthStatusChanged?.Invoke(this,
+            new YouTubeAuthStatusSnapshot(YouTubeAvailability.Ready, null));
     }
 
     /// <inheritdoc/>
@@ -250,6 +259,8 @@ public sealed class MockYouTubeLiveStreamService : IYouTubeLiveStreamService
     public Task<bool> RunOAuthSetupAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("MockYouTubeLiveStreamService: OAuth setup simulated");
+        AuthStatusChanged?.Invoke(this,
+            new YouTubeAuthStatusSnapshot(YouTubeAvailability.Ready, null));
         return Task.FromResult(true);
     }
 

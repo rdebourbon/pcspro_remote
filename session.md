@@ -72,13 +72,25 @@ Decompose the current monolithic "Start Live Stream" into a proper broadcast lif
 - Autostart-on-match-transition deferred (U1 dropped from Blocking to Deferred) — manual Start Stream covers all cases
 - Live dashboard: `videos.list` with `part=liveStreamingDetails,statistics` returns concurrent viewers, likes, lifecycle status
 - Match Centre embed: via PCS Pro menu option (not the startup dialog) — avoids sequencing issues
+- **Create Broadcast = two API calls, not one.** `liveBroadcasts.insert` does not expose `embeddable` (it lives on the underlying `videos` resource). Follow up with `videos.update` `part=status` to set both:
+  - `status.embeddable: true` — explicit, so GAP-019 Match Centre embed isn't at the mercy of channel default toggles
+  - `status.selfDeclaredMadeForKids: false` — explicit declaration; avoids YouTube defaulting it and disabling features (chat, embeds, notifications) on us
+  - The broadcast `id` returned by `liveBroadcasts.insert` *is* the video id — no `boundStreamId` lookup needed for this update.
+  - Both calls use the same `youtube` OAuth scope already required for the lifecycle.
+
+### Open Design Questions
+| ID | Question | Notes |
+|---|---|---|
+| Q2 | How do we handle the YouTube stop-then-resume timeout window? | PCS Pro's Start/Stop is a single toggling button (already automated). RTMP can be stopped and restarted, but **YouTube imposes its own timeout** — if RTMP is absent for too long YouTube auto-closes the broadcast and the next ingest creates a new video. Implications: (a) "Stop Stream" in our UI is semantically close to "End broadcast" — can't model it as an indefinite pause; (b) need to either nail down the exact timeout from YouTube docs or empirical test, then surface it to the operator (countdown / "you have N seconds to resume before YouTube ends this broadcast"); (c) auto-recovery after a network blip must complete inside that window or we have to issue a fresh `liveBroadcasts.insert`. |
+| Q1 |Commentary/event publishing strategy — chat-only, overlay-only, or both? And where does overlay rendering happen (PCS Pro built-in overlays vs. OBS as an intermediate layer)? | YouTube Live Chat **is** time-coded and replays correctly on the VOD (`liveChatMessages.insert` → server-side timestamp → "Live chat replay" track). Caveats: chat replay panel is collapsed by default on VODs, 2–5s latency, per-minute rate limits, messages post under the channel-owner identity (no "bot" label), and chat is disabled if `selfDeclaredMadeForKids: true` (another reason for our explicit `false`). For marquee events (wickets, 50s, partnerships) chat alone is too easy to miss — likely need both: chat post for searchability + VOD replay archive (every event), plus on-screen overlay for in-the-moment visibility (selective). Overlay options: (a) PCS Pro built-in overlays driven via FlaUI if it supports text injection, or (b) introduce OBS as an intermediate RTMP layer for full ticker/lower-thirds flexibility (much bigger change to the stack). |
 
 ### Unknowns Register (Draft)
 | ID | Description | Owner | Blocking |
 |---|---|---|---|
 | U1 | Match "in progress" detection — PlayCricket API, scoreboard inference, or manual? | User | **No** (deferred — manual Start Stream covers all cases) |
-| U2 | Does PCS Pro need YouTube broadcast to exist before RTMP starts? | User | Yes (verify on garage PC) |
+| U2 | Does PCS Pro need YouTube broadcast to exist before RTMP starts? | User | **Resolved** — Yes. RTMP ingests into a YouTube *stream resource* (stream key), but a *broadcast* must exist and be **bound to that stream** for viewers to see anything. Lifecycle order: Create Broadcast + bind stream → Start RTMP from PCS Pro → Transition broadcast to live. |
 | U3 | YouTube "upcoming" broadcast — does it show a waiting room for viewers? | Agent | No (research task) |
+| U4 | Does PCS Pro detect when YouTube ends the broadcast underneath it? | User | **Resolved** — No. PCS Pro silently keeps pumping RTMP into a dead endpoint. **Implication:** PCS Remote needs a watchdog polling `liveBroadcasts.list` `status.lifeCycleStatus` while we believe we're streaming. If YouTube reports `complete`/`revoked`/`liveStreamingError`, surface a prominent error on the dashboard ("🔴 YouTube ended the broadcast at HH:MM:SS — click Stop in PCS Pro"). **Do not auto-stop** — operator-in-control principle from HLPS-016. Orphaned RTMP costs only bandwidth; surprising the operator with a self-pressing Stop button costs trust. |
 
 ### YouTube API Data Available During Livestream
 | Data | Source | Usefulness |

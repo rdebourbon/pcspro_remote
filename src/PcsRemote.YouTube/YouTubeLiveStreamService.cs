@@ -29,6 +29,7 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
     private LiveBroadcastInfo? _currentBroadcast;
     private YouTubeService? _youTubeService;
     private bool _tokenAvailable;
+    private YouTubeAvailability _availability = YouTubeAvailability.NotConfigured;
     private CancellationTokenSource? _startCts;
 
     public YouTubeLiveStreamService(
@@ -67,9 +68,27 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
     public event EventHandler<StreamStateSnapshot>? StatusChanged;
 
     /// <inheritdoc/>
+    public YouTubeAvailability Availability
+    {
+        get { lock (_stateLock) return _availability; }
+    }
+
+    /// <inheritdoc/>
+    public event EventHandler<YouTubeAuthStatusSnapshot>? AuthStatusChanged;
+
+    /// <inheritdoc/>
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        ValidateConfiguration();
+        try
+        {
+            ValidateConfiguration();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "YouTube configuration is invalid — streaming disabled");
+            SetAvailability(YouTubeAvailability.ConfigError, ex.Message);
+            return;
+        }
 
         var tokenResponse = await _dataStore
             .GetAsync<TokenResponse>(TokenKey)
@@ -80,6 +99,7 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
             _logger.LogInformation(
                 "YouTube not configured. Run --setup-youtube on the garage PC to authorize");
             _tokenAvailable = false;
+            SetAvailability(YouTubeAvailability.NotConfigured, null);
             return;
         }
 
@@ -91,18 +111,42 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
         });
         _tokenAvailable = true;
 
-        await ValidateLiveStreamIdAsync(ct).ConfigureAwait(false);
-
         try
         {
+            await ValidateLiveStreamIdAsync(ct).ConfigureAwait(false);
             await ReconcileActiveBroadcastsAsync(ct).ConfigureAwait(false);
+        }
+        catch (TokenResponseException ex)
+        {
+            _logger.LogError(ex,
+                "YouTube token is invalid ({Error}) — deleting token and disabling streaming",
+                ex.Error?.Error ?? "unknown");
+            _tokenAvailable = false;
+            _youTubeService = null;
+            await DeleteTokenSafelyAsync().ConfigureAwait(false);
+            SetAvailability(YouTubeAvailability.AuthFailed,
+                "YouTube token is invalid. Re-authorise via tray icon → YouTube Setup.");
+            return;
+        }
+        catch (YouTubeStreamException ex)
+        {
+            _logger.LogError(ex,
+                "YouTube configuration error — token preserved, streaming disabled");
+            _tokenAvailable = false;
+            SetAvailability(YouTubeAvailability.ConfigError, ex.Message);
+            return;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex,
-                "Broadcast reconciliation failed — starting in Idle state. " +
-                "If a broadcast is already live, use YouTube Studio to manage it");
+                "YouTube API error during initialisation — token preserved, streaming degraded");
+            _tokenAvailable = false;
+            SetAvailability(YouTubeAvailability.TransientError,
+                "YouTube API temporarily unavailable. Streaming may recover on next attempt.");
+            return;
         }
+
+        SetAvailability(YouTubeAvailability.Ready, null);
     }
 
     /// <inheritdoc/>
@@ -285,15 +329,8 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
 
         // Re-initialise outside the gate — InitializeAsync does not use the gate
         // and may make YouTube API calls that should not block other callers.
-        try
-        {
-            await InitializeAsync(ct).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "Token stored but YouTube configuration incomplete — resolve configuration and restart");
-        }
+        // InitializeAsync now handles its own errors and fires AuthStatusChanged.
+        await InitializeAsync(ct).ConfigureAwait(false);
 
         return true;
     }
@@ -313,8 +350,18 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
     {
         if (!_tokenAvailable || _youTubeService is null)
         {
-            throw new YouTubeStreamException(
-                "YouTube streaming is not configured. Run the setup command first.");
+            var message = _availability switch
+            {
+                YouTubeAvailability.AuthFailed =>
+                    "YouTube token is invalid. Re-authorise via tray icon → YouTube Setup.",
+                YouTubeAvailability.ConfigError =>
+                    "YouTube configuration error. Check LiveStreamId and credentials.",
+                YouTubeAvailability.TransientError =>
+                    "YouTube API is temporarily unavailable. Try again later.",
+                _ =>
+                    "YouTube streaming is not configured. Run the setup command first.",
+            };
+            throw new YouTubeStreamException(message);
         }
     }
 
@@ -484,6 +531,19 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
 
         await TryDeleteBroadcastAsync(broadcastId).ConfigureAwait(false);
 
+        // Detect token failures during streaming operations
+        if (ex is TokenResponseException tokenEx)
+        {
+            _logger.LogError(tokenEx,
+                "YouTube token expired during streaming ({Error}) — deleting token",
+                tokenEx.Error?.Error ?? "unknown");
+            _tokenAvailable = false;
+            _youTubeService = null;
+            await DeleteTokenSafelyAsync().ConfigureAwait(false);
+            SetAvailability(YouTubeAvailability.AuthFailed,
+                "YouTube token expired during streaming. Re-authorise via tray icon → YouTube Setup.");
+        }
+
         StreamStateSnapshot? pendingEvent = null;
 
         await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
@@ -537,6 +597,36 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
         if (snapshot is not null)
         {
             StatusChanged?.Invoke(this, snapshot);
+        }
+    }
+
+    /// <summary>
+    /// Sets the availability state and fires <see cref="AuthStatusChanged"/>.
+    /// Thread-safe for reads via <see cref="_stateLock"/>.
+    /// </summary>
+    private void SetAvailability(YouTubeAvailability availability, string? diagnosticMessage)
+    {
+        lock (_stateLock)
+        {
+            _availability = availability;
+        }
+
+        AuthStatusChanged?.Invoke(this,
+            new YouTubeAuthStatusSnapshot(availability, diagnosticMessage));
+    }
+
+    /// <summary>
+    /// Deletes the stored OAuth token, swallowing any exceptions.
+    /// </summary>
+    private async Task DeleteTokenSafelyAsync()
+    {
+        try
+        {
+            await _dataStore.DeleteAsync<TokenResponse>(TokenKey).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete invalid token — manual cleanup may be required");
         }
     }
 
@@ -864,6 +954,17 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
                 "status");
             await request.ExecuteAsync(ct).ConfigureAwait(false);
         }
+        catch (TokenResponseException tokenEx)
+        {
+            _logger.LogError(tokenEx,
+                "YouTube token expired during broadcast completion ({Error}) — deleting token",
+                tokenEx.Error?.Error ?? "unknown");
+            _tokenAvailable = false;
+            _youTubeService = null;
+            await DeleteTokenSafelyAsync().ConfigureAwait(false);
+            SetAvailability(YouTubeAvailability.AuthFailed,
+                "YouTube token expired. Re-authorise via tray icon → YouTube Setup.");
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(
@@ -883,6 +984,17 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
             var request = _youTubeService.LiveBroadcasts.Delete(broadcastId);
             await request.ExecuteAsync().ConfigureAwait(false);
             _logger.LogInformation("Deleted broadcast {BroadcastId}", broadcastId);
+        }
+        catch (TokenResponseException tokenEx)
+        {
+            _logger.LogError(tokenEx,
+                "YouTube token expired during broadcast delete ({Error}) — deleting token",
+                tokenEx.Error?.Error ?? "unknown");
+            _tokenAvailable = false;
+            _youTubeService = null;
+            await DeleteTokenSafelyAsync().ConfigureAwait(false);
+            SetAvailability(YouTubeAvailability.AuthFailed,
+                "YouTube token expired. Re-authorise via tray icon → YouTube Setup.");
         }
         catch (Exception ex)
         {

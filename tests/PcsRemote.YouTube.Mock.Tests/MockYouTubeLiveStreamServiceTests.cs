@@ -343,4 +343,37 @@ public class MockYouTubeLiveStreamServiceTests
 
         result.Should().BeTrue();
     }
+
+    // S-003 AC-9: Mock always reports Ready
+    [TestMethod]
+    public void Availability_AlwaysReady()
+    {
+        _sut.Availability.Should().Be(YouTubeAvailability.Ready);
+    }
+
+    // S-003 AC-9: InitializeAsync fires AuthStatusChanged with Ready
+    [TestMethod]
+    public async Task InitializeAsync_FiresAuthStatusChanged_Ready()
+    {
+        var snapshots = new List<YouTubeAuthStatusSnapshot>();
+        _sut.AuthStatusChanged += (_, s) => snapshots.Add(s);
+
+        await _sut.InitializeAsync();
+
+        snapshots.Should().ContainSingle()
+            .Which.Availability.Should().Be(YouTubeAvailability.Ready);
+    }
+
+    // S-003 AC-9: RunOAuthSetupAsync fires AuthStatusChanged with Ready
+    [TestMethod]
+    public async Task RunOAuthSetupAsync_FiresAuthStatusChanged_Ready()
+    {
+        var snapshots = new List<YouTubeAuthStatusSnapshot>();
+        _sut.AuthStatusChanged += (_, s) => snapshots.Add(s);
+
+        await _sut.RunOAuthSetupAsync();
+
+        snapshots.Should().ContainSingle()
+            .Which.Availability.Should().Be(YouTubeAvailability.Ready);
+    }
 }

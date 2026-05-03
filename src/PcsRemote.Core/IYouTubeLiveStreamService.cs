@@ -7,6 +7,21 @@ namespace PcsRemote.Core;
 public interface IYouTubeLiveStreamService
 {
     /// <summary>
+    /// Gets the current availability/readiness state of the YouTube service.
+    /// A value of <see cref="YouTubeAvailability.Ready"/> means streaming operations
+    /// can proceed; any other value means YouTube features are degraded or unavailable.
+    /// </summary>
+    YouTubeAvailability Availability { get; }
+
+    /// <summary>
+    /// Raised whenever the service's authentication or availability state changes.
+    /// This is separate from <see cref="StatusChanged"/>, which tracks broadcast lifecycle.
+    /// Fires on initialisation failures and when auth is restored via
+    /// <see cref="RunOAuthSetupAsync"/>.
+    /// </summary>
+    event EventHandler<YouTubeAuthStatusSnapshot> AuthStatusChanged;
+
+    /// <summary>
     /// Gets the current lifecycle status of the live stream.
     /// </summary>
     LiveStreamStatus CurrentStatus { get; }

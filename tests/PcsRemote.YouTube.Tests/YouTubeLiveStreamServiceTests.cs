@@ -49,65 +49,83 @@ public class YouTubeLiveStreamServiceTests
             _loggerMock.Object,
             _dataStoreMock.Object);
 
-    // AC-6b: Config validation BEFORE token check — missing LiveStreamId
+    // S-003 TC-12: Config validation — missing LiveStreamId sets ConfigError, does not throw
     [TestMethod]
-    public async Task InitializeAsync_MissingLiveStreamId_ThrowsImmediately()
+    public async Task InitializeAsync_MissingLiveStreamId_SetsConfigError()
     {
         _options.LiveStreamId = "";
         var sut = CreateService();
 
-        var act = () => sut.InitializeAsync();
+        var snapshots = new List<YouTubeAuthStatusSnapshot>();
+        sut.AuthStatusChanged += (_, s) => snapshots.Add(s);
 
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*LiveStreamId*");
-        VerifyLogLevel(LogLevel.Critical);
+        await sut.InitializeAsync();
+
+        sut.Availability.Should().Be(YouTubeAvailability.ConfigError);
+        snapshots.Should().ContainSingle()
+            .Which.Availability.Should().Be(YouTubeAvailability.ConfigError);
+        VerifyLogLevel(LogLevel.Error, "configuration");
     }
 
+    // S-003 TC-12: Config validation — missing ClientId sets ConfigError
     [TestMethod]
-    public async Task InitializeAsync_MissingClientId_ThrowsImmediately()
+    public async Task InitializeAsync_MissingClientId_SetsConfigError()
     {
         _options.ClientId = "";
         var sut = CreateService();
 
-        var act = () => sut.InitializeAsync();
+        var snapshots = new List<YouTubeAuthStatusSnapshot>();
+        sut.AuthStatusChanged += (_, s) => snapshots.Add(s);
 
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*ClientId*");
+        await sut.InitializeAsync();
+
+        sut.Availability.Should().Be(YouTubeAvailability.ConfigError);
+        snapshots.Should().ContainSingle()
+            .Which.Availability.Should().Be(YouTubeAvailability.ConfigError);
     }
 
+    // S-003 TC-12: Config validation — missing ClientSecret sets ConfigError
     [TestMethod]
-    public async Task InitializeAsync_MissingClientSecret_ThrowsImmediately()
+    public async Task InitializeAsync_MissingClientSecret_SetsConfigError()
     {
         _options.ClientSecret = "";
         var sut = CreateService();
 
-        var act = () => sut.InitializeAsync();
+        var snapshots = new List<YouTubeAuthStatusSnapshot>();
+        sut.AuthStatusChanged += (_, s) => snapshots.Add(s);
 
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*ClientSecret*");
+        await sut.InitializeAsync();
+
+        sut.Availability.Should().Be(YouTubeAvailability.ConfigError);
+        snapshots.Should().ContainSingle()
+            .Which.Availability.Should().Be(YouTubeAvailability.ConfigError);
     }
 
-    // AC-6: No token → logs Information, _tokenAvailable = false
+    // AC-6: No token → logs Information, sets NotConfigured
     [TestMethod]
-    public async Task InitializeAsync_NoToken_SetsTokenUnavailable()
+    public async Task InitializeAsync_NoToken_SetsNotConfigured()
     {
         _dataStoreMock
             .Setup(ds => ds.GetAsync<TokenResponse>(It.IsAny<string>()))
             .Returns(Task.FromResult<TokenResponse>(null!));
 
         var sut = CreateService();
+
+        var snapshots = new List<YouTubeAuthStatusSnapshot>();
+        sut.AuthStatusChanged += (_, s) => snapshots.Add(s);
+
         await sut.InitializeAsync();
 
         sut.CurrentStatus.Should().Be(LiveStreamStatus.Idle);
+        sut.Availability.Should().Be(YouTubeAvailability.NotConfigured);
+        snapshots.Should().ContainSingle()
+            .Which.Availability.Should().Be(YouTubeAvailability.NotConfigured);
         VerifyLogLevel(LogLevel.Information, "not configured");
     }
 
-    // AC-7: StartStreamAsync with no token throws YouTubeStreamException
+    // AC-7: StartStreamAsync with no token throws YouTubeStreamException with context
     [TestMethod]
-    public async Task StartStreamAsync_NoToken_ThrowsYouTubeStreamException()
+    public async Task StartStreamAsync_NoToken_ThrowsWithAvailabilityMessage()
     {
         _dataStoreMock
             .Setup(ds => ds.GetAsync<TokenResponse>(It.IsAny<string>()))
@@ -197,6 +215,7 @@ public class YouTubeLiveStreamServiceTests
         // Bypass InitializeAsync to avoid real YouTube API calls — set internal state
         // as if initialization succeeded with a valid token.
         SetPrivateField(sut, "_tokenAvailable", true);
+        SetPrivateField(sut, "_availability", YouTubeAvailability.Ready);
         SetPrivateField(sut, "_youTubeService", new Google.Apis.YouTube.v3.YouTubeService(
             new Google.Apis.Services.BaseClientService.Initializer
             {
@@ -236,6 +255,32 @@ public class YouTubeLiveStreamServiceTests
 
         // No transitions should have fired during init with no token
         snapshots.Should().BeEmpty();
+    }
+
+    // S-003 TC-2: AuthStatusChanged fires NotConfigured when no token present
+    [TestMethod]
+    public async Task AuthStatusChanged_NoToken_FiresNotConfigured()
+    {
+        _dataStoreMock
+            .Setup(ds => ds.GetAsync<TokenResponse>(It.IsAny<string>()))
+            .Returns(Task.FromResult<TokenResponse>(null!));
+
+        var sut = CreateService();
+        var authSnapshots = new List<YouTubeAuthStatusSnapshot>();
+        sut.AuthStatusChanged += (_, s) => authSnapshots.Add(s);
+
+        await sut.InitializeAsync();
+
+        authSnapshots.Should().ContainSingle()
+            .Which.Availability.Should().Be(YouTubeAvailability.NotConfigured);
+    }
+
+    // S-003: Default Availability before InitializeAsync is NotConfigured
+    [TestMethod]
+    public void Availability_BeforeInit_IsNotConfigured()
+    {
+        var sut = CreateService();
+        sut.Availability.Should().Be(YouTubeAvailability.NotConfigured);
     }
 
     // Helper to verify a log level was called with optional message fragment
