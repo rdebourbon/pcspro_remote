@@ -335,6 +335,7 @@ public class IndexTests
         cut.WaitForAssertion(() =>
             mock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
 
+        mock.Setup(s => s.LoadedMatch).Returns(match);
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchLoaded);
 
         cut.WaitForAssertion(() =>
@@ -381,6 +382,7 @@ public class IndexTests
 
         cut.WaitForAssertion(() => cut.FindAll(".match-card").Should().HaveCount(2));
         cut.FindAll(".match-card")[0].Click();
+        mock.Setup(s => s.LoadedMatch).Returns(match1);
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchLoaded);
 
         cut.WaitForAssertion(() =>
@@ -415,6 +417,7 @@ public class IndexTests
         cut.WaitForAssertion(() =>
             mock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
 
+        mock.Setup(s => s.LoadedMatch).Returns(match);
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchLoaded);
 
         cut.WaitForAssertion(() =>
@@ -448,6 +451,7 @@ public class IndexTests
         cut.WaitForAssertion(() =>
             mock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
 
+        mock.Setup(s => s.LoadedMatch).Returns(match);
         mock.Raise(s => s.StateChanged += null, mock.Object, PcsProState.MatchLoaded);
 
         cut.WaitForAssertion(() =>
@@ -480,6 +484,7 @@ public class IndexTests
         cut.Find(".load-matches-button").Click();
         cut.WaitForAssertion(() =>
             autoMock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
+        autoMock.Setup(s => s.LoadedMatch).Returns(match);
         autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
 
         cut.WaitForAssertion(() =>
@@ -515,6 +520,7 @@ public class IndexTests
         cut.Find(".load-matches-button").Click();
         cut.WaitForAssertion(() =>
             autoMock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
+        autoMock.Setup(s => s.LoadedMatch).Returns(match);
         autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
 
         cut.WaitForAssertion(() =>
@@ -551,6 +557,7 @@ public class IndexTests
         cut.Find(".load-matches-button").Click();
         cut.WaitForAssertion(() =>
             autoMock.Verify(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()), Times.Once));
+        autoMock.Setup(s => s.LoadedMatch).Returns(match);
         autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
 
         cut.WaitForAssertion(() =>
@@ -866,10 +873,12 @@ public class IndexTests
         cut.Find(".load-matches-button").Click();
     }
 
-    private static Mock<IPcsProAutomationService> BuildMock(PcsProState initialState)
+    private static Mock<IPcsProAutomationService> BuildMock(
+        PcsProState initialState, MatchInfo? loadedMatch = null)
     {
         var mock = new Mock<IPcsProAutomationService>();
         mock.Setup(s => s.CurrentState).Returns(initialState);
+        mock.Setup(s => s.LoadedMatch).Returns(loadedMatch);
         // Default LoadMatchAsync completes immediately; tests requiring pending can override.
         mock.Setup(s => s.LoadMatchAsync(It.IsAny<MatchInfo>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -1008,6 +1017,89 @@ public class IndexTests
                         It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
                     Times.Once));
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // S-002: UI match hydration & ChangeMatch resilience
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [TestMethod]
+    public void OnInit_MountedInMatchLoadedState_HydratesLoadedMatch()
+    {
+        var match = TestMatch(42);
+        var autoMock = BuildMock(PcsProState.MatchLoaded, match);
+
+        using var ctx = BuildCtx(autoMock);
+        var cut = ctx.Render<IndexPage>();
+
+        // Team names rendered from hydrated LoadedMatch
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".match-loaded__home").TextContent.Should().Be(match.HomeTeam);
+            cut.Find(".match-loaded__away").TextContent.Should().Be(match.AwayTeam);
+        });
+    }
+
+    [TestMethod]
+    public void OnInit_MountedInMatchLoadedState_NullLoadedMatch_ShowsFallback()
+    {
+        var autoMock = BuildMock(PcsProState.MatchLoaded);
+
+        using var ctx = BuildCtx(autoMock);
+        var cut = ctx.Render<IndexPage>();
+
+        // Fallback label shown when LoadedMatch is null
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".match-loaded__fallback").TextContent.Should().Be("Match loaded");
+            cut.FindAll(".change-match-button").Should().HaveCount(1,
+                "ChangeMatch button must render even without match metadata");
+        });
+    }
+
+    [TestMethod]
+    public void StateChanged_MatchLoaded_HydratesLoadedMatchFromService()
+    {
+        var match = TestMatch(99);
+        var autoMock = BuildMock(PcsProState.NotRunning);
+
+        using var ctx = BuildCtx(autoMock);
+        var cut = ctx.Render<IndexPage>();
+
+        // Now service returns a loaded match
+        autoMock.Setup(s => s.LoadedMatch).Returns(match);
+        autoMock.Setup(s => s.CurrentState).Returns(PcsProState.MatchLoaded);
+        autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchLoaded);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".match-loaded__home").TextContent.Should().Be(match.HomeTeam);
+            cut.Find(".match-loaded__away").TextContent.Should().Be(match.AwayTeam);
+        });
+    }
+
+    [TestMethod]
+    public void StateChanged_MatchSelection_AfterMatchLoaded_ClearsLoadedMatch()
+    {
+        var match = TestMatch(7);
+        var autoMock = BuildMock(PcsProState.MatchLoaded, match);
+
+        using var ctx = BuildCtx(autoMock);
+        var cut = ctx.Render<IndexPage>();
+
+        // Verify match is shown first
+        cut.WaitForAssertion(() => cut.Find(".match-loaded__home"));
+
+        // Transition to MatchSelection
+        autoMock.Setup(s => s.CurrentState).Returns(PcsProState.MatchSelection);
+        autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchSelection);
+
+        // Team names and fallback should no longer be rendered
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".match-loaded__home").Should().BeEmpty();
+            cut.FindAll(".match-loaded__fallback").Should().BeEmpty();
+        });
     }
 }
 

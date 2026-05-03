@@ -57,6 +57,15 @@ else if (_currentState == PcsProState.MatchLoaded)
                     <ChangeMatchButton />
                 </div>
             }
+            else
+            {
+                <div class="match-loaded">
+                    <div class="match-loaded__teams">
+                        <span class="match-loaded__fallback">Match loaded</span>
+                    </div>
+                    <ChangeMatchButton />
+                </div>
+            }
             <ScoreboardPreview />
             <RefreshScoreboardButton />
         </div>
@@ -102,6 +111,7 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
         ManualModeService.ManualModeChanged += OnManualModeChanged;
         CoordinatorService.OperationInProgressChanged += OnOperationInProgressChanged;
         _currentState = AutomationService.CurrentState;
+        _loadedMatch = AutomationService.LoadedMatch;
         _manualModeActive = ManualModeService.IsManualModeActive;
         _operationInProgress = CoordinatorService.IsOperationInProgress;
 
@@ -125,10 +135,18 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
         {
             _currentState = newState;
 
-            if (newState == PcsProState.MatchSelection)
+            if (newState == PcsProState.MatchLoaded)
+            {
+                // R2: Hydrate from singleton — assignment before StateHasChanged()
+                // ensures the renderer sees team names in the same render pass.
+                _loadedMatch = AutomationService.LoadedMatch;
+                StateHasChanged();
+            }
+            else if (newState == PcsProState.MatchSelection)
             {
                 // Clear stale cards so the "Load Matches" button appears on re-entry.
                 _matches = null;
+                _loadedMatch = null;
                 StateHasChanged();
             }
             else if (newState == PcsProState.NotRunning)
@@ -252,7 +270,7 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
         try
         {
             var teams = await AutomationService.UseCurrentMatchAsync();
-            _loadedMatch = new MatchInfo("current", teams.Home.TeamName, teams.Away.TeamName, "Current Match", DateOnly.FromDateTime(DateTime.Today));
+            _loadedMatch = AutomationService.LoadedMatch;
             Logger.LogInformation(
                 "Index.UseCurrentMatchAsync — attached: Home={Home} Away={Away}",
                 teams.Home.TeamName, teams.Away.TeamName);
