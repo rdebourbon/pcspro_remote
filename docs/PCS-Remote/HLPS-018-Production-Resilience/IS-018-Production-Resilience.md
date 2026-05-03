@@ -162,3 +162,19 @@ S-007 depends only on S-005 (Serilog sink for operator visibility during reset).
 | R3 | GPT 5.4, GPT 5.2-Codex, Sonnet 4.6 | APPROVE (1/3) | 9 accepted: S-001 UseCurrentMatch must set LoadedMatch before firing trigger + update AC-8 tests/spec; S-003 clarify dedicated auth event separate from StatusChanged; S-004 add transient degraded verification + note S-005 provides early visibility; S-005 three-arg UseSerilog overload + update enum tests/spec; S-006 forced GC verification approach; S-007 reset is privileged operation bypassing coordinator. 1 rejected: pre-MatchLoaded auth visibility as blocking (already scoped, Serilog sink provides debug panel visibility). |
 | R4 | GPT 5.4, GPT 5.2-Codex, Sonnet 4.6 | REVISE (3/3) | 6 accepted: S-002 cross-tab exit verification (ChangeMatch clears Tab B); S-003 add 403 token-preservation case + verify non-YouTube flows still work in degraded mode; S-004 remove unspecified transient recovery clause; S-006 scope to TrayHost Program.cs; S-007 verify NotRunning intermediate state. 1 rejected: SC9 boundary try-catch false negative (OnStateChanged is sync void, not async void; SC9 targets async void). |
 | R5 | GPT 5.4, GPT 5.2-Codex, Sonnet 4.6 | APPROVE (1/3) | 4 accepted: S-001 before-trigger ordering assertion in two-circuit test; S-002 cross-tab attach-to-running-match live verification; S-006 assert eventArgs.Observed + verify new async void handlers carry boundary try-catch. 0 rejected. |
+
+---
+
+## Delivery Status
+
+| Step | Description | Status | Commit |
+|------|-------------|--------|--------|
+| S-001 | Populate LoadedMatch in all flows | ✅ Done | Delivered |
+| S-002 | UI match hydration & ChangeMatch resilience | ✅ Done | Delivered |
+| S-003 | YouTube token resilience on startup | ✅ Done | Delivered |
+| S-004 | YouTube auth status display | ✅ Done | `b586dcf` |
+| S-005 | Serilog sink to debug panel | ✅ Done | Delivered |
+| S-006 | UnobservedTaskException + AppDomain handlers | ✅ Done | `159f527` |
+| S-007 | Reset Automation button | ✅ Done | `b7ad420` |
+
+**All success criteria (SC1–SC9) are covered. HLPS-018 is complete.**
