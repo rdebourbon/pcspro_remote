@@ -1,5 +1,9 @@
 @using Microsoft.Extensions.Options
+@using PcsRemote.Core
 @inject IOptions<DebugSectionOptions> Options
+@inject IPcsProAutomationService AutomationService
+@inject IYouTubeLiveStreamService StreamService
+@inject IConfirmDialogService ConfirmDialog
 
 <div class="debug-section">
     <button class="debug-section-toggle" @onclick="OnToggle">Debug</button>
@@ -24,6 +28,16 @@
     {
         <div class="debug-section-content">
             <AutomationLogDisplay />
+
+            <div class="debug-section-reset">
+                @if (!string.IsNullOrEmpty(_resetStatus))
+                {
+                    <span class="debug-section-reset-status @(_resetError ? "debug-section-reset-error" : "")">@_resetStatus</span>
+                }
+                <button class="debug-section-reset-btn"
+                        disabled="@_resetInProgress"
+                        @onclick="OnResetClickedAsync">Reset Automation</button>
+            </div>
         </div>
     }
 </div>
@@ -34,6 +48,9 @@
     private bool _showPinPrompt;
     private bool _pinError;
     private string _pinInput = string.Empty;
+    private bool _resetInProgress;
+    private string? _resetStatus;
+    private bool _resetError;
 
     private bool IsPinConfigured =>
         !string.IsNullOrEmpty(Options.Value.Pin);
@@ -76,6 +93,62 @@
         else
         {
             _pinError = true;
+        }
+    }
+
+    private async Task OnResetClickedAsync()
+    {
+        var confirmed = await ConfirmDialog.ConfirmAsync(
+            "This will stop any active stream, terminate PCS Pro, and relaunch automation from scratch. Continue?",
+            "Reset Automation");
+
+        if (confirmed != true)
+            return;
+
+        _resetInProgress = true;
+        _resetError = false;
+        _resetStatus = null;
+
+        try
+        {
+            // Step 1: Stop stream (best-effort)
+            var streamStatus = StreamService.CurrentStatus;
+            if (streamStatus is not LiveStreamStatus.Idle and not LiveStreamStatus.Error)
+            {
+                _resetStatus = "Stopping stream…";
+                StateHasChanged();
+                try
+                {
+                    await StreamService.StopStreamAsync();
+                }
+                catch (Exception ex)
+                {
+                    Serilog.Log.Warning(ex, "Reset: stream stop failed (continuing)");
+                }
+            }
+
+            // Step 2: Stop automation
+            _resetStatus = "Stopping PCS Pro…";
+            StateHasChanged();
+            await AutomationService.StopAsync();
+
+            // Step 3: Relaunch
+            _resetStatus = "Relaunching…";
+            StateHasChanged();
+            await AutomationService.LaunchAndLoginAsync();
+
+            _resetStatus = null;
+            _resetError = false;
+        }
+        catch (Exception ex)
+        {
+            _resetError = true;
+            _resetStatus = $"Reset failed at current step — {ex.Message} (State: {AutomationService.CurrentState})";
+            Serilog.Log.Error(ex, "Reset automation failed at state {State}", AutomationService.CurrentState);
+        }
+        finally
+        {
+            _resetInProgress = false;
         }
     }
 }

@@ -696,6 +696,44 @@ body {
     box-shadow: var(--pcs-shadow);
 }
 
+.debug-section-reset {
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.debug-section-reset-btn {
+    background: #c53030;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 0.35rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.debug-section-reset-btn:hover:not(:disabled) {
+    background: #9b2c2c;
+}
+
+.debug-section-reset-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.debug-section-reset-status {
+    font-size: 0.8rem;
+    color: var(--pcs-text-muted, #888);
+}
+
+.debug-section-reset-error {
+    color: #c53030;
+    font-weight: 600;
+}
+
 /* ---- Operation status banner (header bar) ---- */
 .operation-status-banner {
     background: rgba(200,168,75,.1);

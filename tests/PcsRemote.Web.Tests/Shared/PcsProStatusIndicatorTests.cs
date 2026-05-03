@@ -1,8 +1,10 @@
 using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Moq;
 using PcsRemote.Core;
+using PcsRemote.Web;
 using PcsRemote.Web.Hubs;
 using PcsRemote.Web.Shared;
 using Radzen;
@@ -123,6 +125,10 @@ public class PcsProStatusIndicatorTests
         var manualModeMock = new Mock<IManualModeService>();
         manualModeMock.Setup(s => s.IsManualModeActive).Returns(false);
         var coordinatorMock = new Mock<IOperationCoordinatorService>();
+        var logMock = new Mock<IAutomationLogService>();
+        logMock.Setup(s => s.GetRecentEntries()).Returns(Array.Empty<AutomationLogEntry>());
+        var streamMock = new Mock<IYouTubeLiveStreamService>();
+        var confirmMock = new Mock<IConfirmDialogService>();
 
         using var ctx = new BunitContext();
         ctx.Services.AddRadzenComponents();
@@ -130,6 +136,10 @@ public class PcsProStatusIndicatorTests
         ctx.Services.AddSingleton<IConnectionTracker>(trackerMock.Object);
         ctx.Services.AddSingleton(manualModeMock.Object);
         ctx.Services.AddSingleton(coordinatorMock.Object);
+        ctx.Services.AddSingleton(logMock.Object);
+        ctx.Services.AddSingleton(streamMock.Object);
+        ctx.Services.AddSingleton(confirmMock.Object);
+        ctx.Services.AddSingleton(Options.Create(new DebugSectionOptions()));
 
         var cut = ctx.Render<MainLayout>(p =>
             p.Add(l => l.Body, builder => { }));
