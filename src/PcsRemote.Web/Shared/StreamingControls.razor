@@ -8,6 +8,13 @@
 @inject ILogger<StreamingControls> Logger
 
 <div class="streaming-controls">
+    @if (_availability != YouTubeAvailability.Ready)
+    {
+        <div class="streaming-controls__auth-banner streaming-controls__auth-banner--@_availability.ToString().ToLowerInvariant()">
+            ⚠ @GetAvailabilityMessage()
+        </div>
+    }
+
     <div class="streaming-controls__header">
         <span class="streaming-controls__badge streaming-controls__badge--@_currentStatus.ToString().ToLowerInvariant()">
             @GetStatusText()
@@ -65,21 +72,24 @@
     private string? _errorMessage;
     private bool _operationInProgress;
     private bool _manualModeActive;
+    private YouTubeAvailability _availability;
     private bool _disposed;
     private CancellationTokenSource? _startCts;
 
-    private bool IsStartEnabled => _currentStatus == LiveStreamStatus.Idle && !_operationInProgress && !_manualModeActive;
+    private bool IsStartEnabled => _currentStatus == LiveStreamStatus.Idle && !_operationInProgress && !_manualModeActive && _availability == YouTubeAvailability.Ready;
     private bool IsStopEnabled => _currentStatus == LiveStreamStatus.Live && !_operationInProgress && !_manualModeActive;
 
     protected override void OnInitialized()
     {
         StreamService.StatusChanged += OnStatusChanged;
+        StreamService.AuthStatusChanged += OnAuthStatusChanged;
         CoordinatorService.OperationInProgressChanged += OnOperationInProgressChanged;
         ManualModeService.ManualModeChanged += OnManualModeChanged;
         _currentStatus = StreamService.CurrentStatus;
         _currentBroadcast = StreamService.CurrentBroadcast;
         _operationInProgress = CoordinatorService.IsOperationInProgress;
         _manualModeActive = ManualModeService.IsManualModeActive;
+        _availability = StreamService.Availability;
     }
 
     private async void OnStatusChanged(object? sender, StreamStateSnapshot snapshot)
@@ -92,6 +102,20 @@
                 _currentStatus = snapshot.Status;
                 _currentBroadcast = snapshot.CurrentBroadcast;
                 _errorMessage = snapshot.ErrorMessage;
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async void OnAuthStatusChanged(object? sender, YouTubeAuthStatusSnapshot snapshot)
+    {
+        if (_disposed) return;
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                _availability = snapshot.Availability;
                 StateHasChanged();
             });
         }
@@ -223,10 +247,20 @@
         _ => _currentStatus.ToString()
     };
 
+    private string GetAvailabilityMessage() => _availability switch
+    {
+        YouTubeAvailability.AuthFailed => "YouTube authentication failed. Re-authorise via the tray icon → YouTube Setup.",
+        YouTubeAvailability.ConfigError => "YouTube configuration error. Check LiveStreamId and credentials.",
+        YouTubeAvailability.TransientError => "YouTube API temporarily unavailable. Streaming may recover on next attempt.",
+        YouTubeAvailability.NotConfigured => "YouTube not configured. Run setup to authorise.",
+        _ => string.Empty,
+    };
+
     public void Dispose()
     {
         _disposed = true;
         StreamService.StatusChanged -= OnStatusChanged;
+        StreamService.AuthStatusChanged -= OnAuthStatusChanged;
         CoordinatorService.OperationInProgressChanged -= OnOperationInProgressChanged;
         ManualModeService.ManualModeChanged -= OnManualModeChanged;
         _startCts?.Dispose();

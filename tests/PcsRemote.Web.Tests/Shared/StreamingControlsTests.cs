@@ -23,11 +23,13 @@ public class StreamingControlsTests
         LiveStreamStatus initialStatus = LiveStreamStatus.Idle,
         LiveBroadcastInfo? broadcast = null,
         bool operationInProgress = false,
-        bool? confirmResult = true)
+        bool? confirmResult = true,
+        YouTubeAvailability availability = YouTubeAvailability.Ready)
     {
         var streamMock = new Mock<IYouTubeLiveStreamService>();
         streamMock.Setup(s => s.CurrentStatus).Returns(initialStatus);
         streamMock.Setup(s => s.CurrentBroadcast).Returns(broadcast);
+        streamMock.Setup(s => s.Availability).Returns(availability);
 
         var coordinatorMock = new Mock<IOperationCoordinatorService>();
         coordinatorMock.Setup(c => c.IsOperationInProgress).Returns(operationInProgress);
@@ -630,6 +632,147 @@ public class StreamingControlsTests
                 coordinatorMock.Verify(c => c.BeginOperation(It.IsAny<string?>()), Times.Once);
                 coordinatorMock.Verify(c => c.MarkComplete(), Times.Once);
             });
+        }
+    }
+
+    // ── S-004: YouTube Auth Status Display ────────────────────────────────────
+
+    // TC-1: AuthFailed → banner with tray instructions, Start disabled
+    [TestMethod]
+    public void AuthFailed_ShowsBannerAndDisablesStart()
+    {
+        var (cut, _, _, _, ctx) = Build(availability: YouTubeAvailability.AuthFailed);
+        using (ctx)
+        {
+            var banner = cut.Find(".streaming-controls__auth-banner");
+            banner.TextContent.Should().Contain("tray icon");
+            banner.TextContent.Should().Contain("YouTube Setup");
+            cut.Find(".streaming-controls__btn--start").HasAttribute("disabled").Should().BeTrue();
+        }
+    }
+
+    // TC-2: ConfigError → config error banner, Start disabled
+    [TestMethod]
+    public void ConfigError_ShowsBannerAndDisablesStart()
+    {
+        var (cut, _, _, _, ctx) = Build(availability: YouTubeAvailability.ConfigError);
+        using (ctx)
+        {
+            var banner = cut.Find(".streaming-controls__auth-banner");
+            banner.TextContent.Should().Contain("configuration error");
+            cut.Find(".streaming-controls__btn--start").HasAttribute("disabled").Should().BeTrue();
+        }
+    }
+
+    // TC-3: TransientError → transient error banner, Start disabled
+    [TestMethod]
+    public void TransientError_ShowsBannerAndDisablesStart()
+    {
+        var (cut, _, _, _, ctx) = Build(availability: YouTubeAvailability.TransientError);
+        using (ctx)
+        {
+            var banner = cut.Find(".streaming-controls__auth-banner");
+            banner.TextContent.Should().Contain("temporarily unavailable");
+            cut.Find(".streaming-controls__btn--start").HasAttribute("disabled").Should().BeTrue();
+        }
+    }
+
+    // TC-4: NotConfigured → not configured banner, Start disabled
+    [TestMethod]
+    public void NotConfigured_ShowsBannerAndDisablesStart()
+    {
+        var (cut, _, _, _, ctx) = Build(availability: YouTubeAvailability.NotConfigured);
+        using (ctx)
+        {
+            var banner = cut.Find(".streaming-controls__auth-banner");
+            banner.TextContent.Should().Contain("not configured");
+            cut.Find(".streaming-controls__btn--start").HasAttribute("disabled").Should().BeTrue();
+        }
+    }
+
+    // TC-5: Ready → no banner, Start enabled
+    [TestMethod]
+    public void Ready_NoBannerAndStartEnabled()
+    {
+        var (cut, _, _, _, ctx) = Build(availability: YouTubeAvailability.Ready);
+        using (ctx)
+        {
+            cut.FindAll(".streaming-controls__auth-banner").Should().BeEmpty();
+            cut.Find(".streaming-controls__btn--start").HasAttribute("disabled").Should().BeFalse();
+        }
+    }
+
+    // TC-6: AuthFailed → AuthStatusChanged(Ready) → banner removed, Start enabled
+    [TestMethod]
+    public void AuthStatusChanged_Ready_RemovesBannerAndEnablesStart()
+    {
+        var (cut, streamMock, _, _, ctx) = Build(availability: YouTubeAvailability.AuthFailed);
+        using (ctx)
+        {
+            cut.FindAll(".streaming-controls__auth-banner").Should().HaveCount(1);
+
+            streamMock.Raise(
+                s => s.AuthStatusChanged += null,
+                streamMock.Object,
+                new YouTubeAuthStatusSnapshot(YouTubeAvailability.Ready, null));
+
+            cut.WaitForAssertion(() =>
+            {
+                cut.FindAll(".streaming-controls__auth-banner").Should().BeEmpty();
+                cut.Find(".streaming-controls__btn--start").HasAttribute("disabled").Should().BeFalse();
+            });
+        }
+    }
+
+    // TC-7: AuthStatusChanged fires AuthFailed → banner appears, Start disabled
+    [TestMethod]
+    public void AuthStatusChanged_AuthFailed_ShowsBannerAndDisablesStart()
+    {
+        var (cut, streamMock, _, _, ctx) = Build(availability: YouTubeAvailability.Ready);
+        using (ctx)
+        {
+            cut.FindAll(".streaming-controls__auth-banner").Should().BeEmpty();
+
+            streamMock.Raise(
+                s => s.AuthStatusChanged += null,
+                streamMock.Object,
+                new YouTubeAuthStatusSnapshot(YouTubeAvailability.AuthFailed,
+                    "Token expired"));
+
+            cut.WaitForAssertion(() =>
+            {
+                cut.FindAll(".streaming-controls__auth-banner").Should().HaveCount(1);
+                cut.Find(".streaming-controls__btn--start").HasAttribute("disabled").Should().BeTrue();
+            });
+        }
+    }
+
+    // TC-8: Dispose unsubscribes from AuthStatusChanged
+    [TestMethod]
+    public void Dispose_UnsubscribesFromAuthStatusChanged()
+    {
+        var (cut, streamMock, _, _, ctx) = Build(availability: YouTubeAvailability.Ready);
+        using (ctx)
+        {
+            cut.Instance.Dispose();
+
+            streamMock.VerifyRemove(
+                s => s.AuthStatusChanged -= It.IsAny<EventHandler<YouTubeAuthStatusSnapshot>>(),
+                Times.Once);
+        }
+    }
+
+    // TC-9: Availability not Ready but stream is Live → Stop button remains enabled
+    [TestMethod]
+    public void AuthFailed_WhenLive_StopButtonRemainsEnabled()
+    {
+        var (cut, _, _, _, ctx) = Build(
+            initialStatus: LiveStreamStatus.Live,
+            broadcast: TestBroadcast,
+            availability: YouTubeAvailability.AuthFailed);
+        using (ctx)
+        {
+            cut.Find(".streaming-controls__btn--stop").HasAttribute("disabled").Should().BeFalse();
         }
     }
 }
