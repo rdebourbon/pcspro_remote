@@ -7,5 +7,6 @@ public enum AutomationLogOutcome
 {
     Info,
     Success,
+    Warning,
     Failure
 }

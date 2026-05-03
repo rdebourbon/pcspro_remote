@@ -757,5 +757,6 @@ body {
 }
 
 .automation-log-outcome-success { background: rgba(82,192,122,.15); color: var(--pcs-green); }
+.automation-log-outcome-warning { background: rgba(230,180,50,.15); color: #d4a017; }
 .automation-log-outcome-failure { background: rgba(224,82,82,.15); color: var(--pcs-red); }
 .automation-log-outcome-skipped { background: rgba(122,154,130,.15); color: var(--pcs-grey); }

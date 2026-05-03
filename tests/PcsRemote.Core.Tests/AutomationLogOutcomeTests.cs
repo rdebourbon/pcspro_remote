@@ -20,7 +20,7 @@ public sealed class AutomationLogOutcomeTests
         _sut.Assembly.GetName().Name.Should().Be("PcsRemote.Core");
 
         var names = Enum.GetNames(_sut);
-        names.Should().HaveCount(3);
-        names.Should().ContainInConsecutiveOrder("Info", "Success", "Failure");
+        names.Should().HaveCount(4);
+        names.Should().ContainInConsecutiveOrder("Info", "Success", "Warning", "Failure");
     }
 }
