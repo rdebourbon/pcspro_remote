@@ -15,6 +15,7 @@
 | HLPS-013 (Team Names & Club Branding) | ✅ COMPLETE |
 | HLPS-014 (WiX MSI Installer) | ✅ COMPLETE |
 | HLPS-016 (Operator Mode & Resilience) | ✅ COMPLETE |
+| HLPS-019 (Date Selection Override) | ✅ COMPLETE (all S-001 – S-006 delivered) |
 
 ## HLPS-016 Delivery Summary
 
@@ -35,6 +36,8 @@ All 9 steps delivered and merged to `master`:
 ## Key Files
 | File | Purpose |
 |---|---|
+| `docs/PCS-Remote/HLPS-019-Date-Selection-Override/HLPS-019-Date-Selection-Override.md` | HLPS document (APPROVED) |
+| `docs/PCS-Remote/HLPS-019-Date-Selection-Override/IS-019-Date-Selection-Override.md` | Implementation Sequence (APPROVED) |
 | `docs/PCS-Remote/HLPS-016-Operator-Mode-And-Resilience/HLPS-016-Operator-Mode-And-Resilience.md` | HLPS document (APPROVED) |
 | `docs/PCS-Remote/HLPS-016-Operator-Mode-And-Resilience/IS-016-Operator-Mode-And-Resilience.md` | Implementation Sequence (APPROVED) |
 | `docs/PCS-Remote/HLPS-016-Operator-Mode-And-Resilience/SPEC-S-003-Dialog-Detection-Hardening.md` | S-003 SPEC (APPROVED v0.5) |
