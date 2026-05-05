@@ -5,6 +5,7 @@
 @inject IPcsProAutomationService AutomationService
 @inject IManualModeService ManualModeService
 @inject IOperationCoordinatorService CoordinatorService
+@inject IDateSelectionService DateSelectionService
 @inject IYouTubeLiveStreamService StreamService
 @inject ILogger<Index> Logger
 @inject NotificationService NotificationService
@@ -38,6 +39,13 @@ else if (_currentState == PcsProState.MatchSelection || _currentState == PcsProS
             <button class="use-current-match-button" disabled="@(_operationInProgress || _manualModeActive)" @onclick="UseCurrentMatchAsync">
                 Use Current Match
             </button>
+            @if (_dateSelectionEnabled)
+            {
+                <input type="date" class="date-selection-picker" value="@_selectedDate.ToString("yyyy-MM-dd")" @onchange="OnDatePickerChanged" />
+                <button class="load-matches-date-button" disabled="@(_operationInProgress || _manualModeActive)" @onclick="FetchMatchesForDateAsync">
+                    Load Matches for Date
+                </button>
+            }
         </div>
     }
 }
@@ -102,6 +110,8 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
     private bool _fetchInProgress;
     private bool _manualModeActive;
     private bool _operationInProgress;
+    private bool _dateSelectionEnabled;
+    private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Today);
 
     protected override async Task OnInitializedAsync()
     {
@@ -110,10 +120,22 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
         AutomationService.StateChanged += OnStateChanged;
         ManualModeService.ManualModeChanged += OnManualModeChanged;
         CoordinatorService.OperationInProgressChanged += OnOperationInProgressChanged;
+        DateSelectionService.DateSelectionEnabledChanged += OnDateSelectionEnabledChanged;
         _currentState = AutomationService.CurrentState;
         _loadedMatch = AutomationService.LoadedMatch;
         _manualModeActive = ManualModeService.IsManualModeActive;
         _operationInProgress = CoordinatorService.IsOperationInProgress;
+        _dateSelectionEnabled = DateSelectionService.IsDateSelectionEnabled;
+
+        // Stale-state guard: if a prior circuit enabled the toggle and disconnected
+        // before auto-reset fired, disable it now to prevent inheriting stale state.
+        if (_dateSelectionEnabled
+            && (_currentState == PcsProState.MatchSelection || _currentState == PcsProState.MatchSelectionReady))
+        {
+            DateSelectionService.Disable();
+            _dateSelectionEnabled = false;
+            _selectedDate = DateOnly.FromDateTime(DateTime.Today);
+        }
 
         Logger.LogInformation(
             "Index.OnInitializedAsync — State={State} ManualMode={ManualMode} OpInProgress={OpInProgress}",
@@ -149,6 +171,10 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
                 // Clear stale cards so the "Load Matches" button appears on re-entry.
                 _matches = null;
                 _loadedMatch = null;
+                // S-005 R6: Auto-reset date selection on any MatchSelection entry.
+                DateSelectionService.Disable();
+                _dateSelectionEnabled = false;
+                _selectedDate = DateOnly.FromDateTime(DateTime.Today);
                 StateHasChanged();
             }
             else if (newState == PcsProState.NotRunning)
@@ -160,6 +186,10 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
             }
             else if (newState == PcsProState.MatchSelectionReady)
             {
+                // S-005 R6: Auto-reset date selection on MatchSelectionReady entry.
+                DateSelectionService.Disable();
+                _dateSelectionEnabled = false;
+                _selectedDate = DateOnly.FromDateTime(DateTime.Today);
                 // Brief intermediate state — LoadMatchAsync will immediately advance to MatchLoaded.
                 StateHasChanged();
             }
@@ -226,6 +256,52 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
             _operationInProgress = CoordinatorService.IsOperationInProgress;
             StateHasChanged();
         }
+    }
+
+    private async Task FetchMatchesForDateAsync()
+    {
+        Logger.LogInformation(
+            "Index.FetchMatchesForDateAsync — Date={SearchDate} State={State}",
+            _selectedDate, _currentState);
+
+        _fetchInProgress = true;
+        _operationInProgress = true;
+        _matches = null;
+        StateHasChanged();
+
+        try
+        {
+            var results = await AutomationService.GetMatchesForDateAsync(_selectedDate);
+            _matches = results;
+            Logger.LogInformation("Index.FetchMatchesForDateAsync — got {MatchCount} matches", results.Count);
+
+            // SC-8: auto-select the only match
+            if ((_currentState == PcsProState.MatchSelection || _currentState == PcsProState.MatchSelectionReady)
+                && _matches?.Count == 1)
+            {
+                var match = _matches[0];
+                _loadedMatch = match;
+                _matches = null;
+                Logger.LogInformation("Index.FetchMatchesForDateAsync — auto-selecting single match {MatchId}", match.MatchId);
+                await AutomationService.LoadMatchAsync(match);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogError(ex, "Index.FetchMatchesForDateAsync — failed");
+        }
+        finally
+        {
+            _fetchInProgress = false;
+            _operationInProgress = CoordinatorService.IsOperationInProgress;
+            StateHasChanged();
+        }
+    }
+
+    private void OnDatePickerChanged(ChangeEventArgs e)
+    {
+        if (DateOnly.TryParse(e.Value?.ToString(), out var parsed))
+            _selectedDate = parsed;
     }
 
     private async Task SelectMatchAsync(MatchInfo match)
@@ -343,10 +419,18 @@ else if (_currentState is PcsProState.Launching or PcsProState.LoginScreen)
         catch (ObjectDisposedException) { }
     }
 
+    private async void OnDateSelectionEnabledChanged(object? sender, bool isEnabled)
+    {
+        _dateSelectionEnabled = isEnabled;
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
     public void Dispose()
     {
         AutomationService.StateChanged -= OnStateChanged;
         ManualModeService.ManualModeChanged -= OnManualModeChanged;
         CoordinatorService.OperationInProgressChanged -= OnOperationInProgressChanged;
+        DateSelectionService.DateSelectionEnabledChanged -= OnDateSelectionEnabledChanged;
     }
 }

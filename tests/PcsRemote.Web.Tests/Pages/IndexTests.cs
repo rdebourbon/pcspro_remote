@@ -688,7 +688,8 @@ public class IndexTests
         Mock<IScoreboardService>? scoreMock = null,
         Mock<IManualModeService>? manualModeMock = null,
         Mock<IOperationCoordinatorService>? coordinatorMock = null,
-        NotificationService? notificationService = null)
+        NotificationService? notificationService = null,
+        Mock<IDateSelectionService>? dateSelectionMock = null)
     {
         var mmMock = manualModeMock ?? new Mock<IManualModeService>();
         if (manualModeMock is null)
@@ -698,11 +699,16 @@ public class IndexTests
         if (coordinatorMock is null)
             coordMock.Setup(s => s.IsOperationInProgress).Returns(false);
 
+        var dsMock = dateSelectionMock ?? new Mock<IDateSelectionService>();
+        if (dateSelectionMock is null)
+            dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(false);
+
         var ctx = new BunitContext();
         ctx.Services.AddSingleton(autoMock.Object);
         ctx.Services.AddSingleton((scoreMock ?? new Mock<IScoreboardService>()).Object);
         ctx.Services.AddSingleton(mmMock.Object);
         ctx.Services.AddSingleton(coordMock.Object);
+        ctx.Services.AddSingleton(dsMock.Object);
         ctx.Services.AddSingleton(notificationService ?? new NotificationService());
         ctx.Services.AddSingleton<ILogger<RefreshScoreboardButton>>(
             NullLogger<RefreshScoreboardButton>.Instance);
@@ -903,6 +909,8 @@ public class IndexTests
         mmMock.Setup(s => s.IsManualModeActive).Returns(false);
         var coordMock = new Mock<IOperationCoordinatorService>();
         coordMock.Setup(s => s.IsOperationInProgress).Returns(false);
+        var dsMock = new Mock<IDateSelectionService>();
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(false);
 
         var ctx = new BunitContext();
         ctx.Services.AddSingleton(autoMock.Object);
@@ -910,6 +918,7 @@ public class IndexTests
         ctx.Services.AddSingleton(new Mock<IScoreboardService>().Object);
         ctx.Services.AddSingleton(mmMock.Object);
         ctx.Services.AddSingleton(coordMock.Object);
+        ctx.Services.AddSingleton(dsMock.Object);
         ctx.Services.AddSingleton(new NotificationService());
         ctx.Services.AddSingleton<ILogger<RefreshScoreboardButton>>(NullLogger<RefreshScoreboardButton>.Instance);
         ctx.Services.AddSingleton(new Mock<IConfirmDialogService>().Object);
@@ -995,6 +1004,7 @@ public class IndexTests
         ctx.Services.AddSingleton(new Mock<IScoreboardService>().Object);
         ctx.Services.AddSingleton(mmMock.Object);
         ctx.Services.AddSingleton(coordMock.Object);
+        ctx.Services.AddSingleton(new Mock<IDateSelectionService>().Object);
         ctx.Services.AddSingleton(new NotificationService());
         ctx.Services.AddSingleton<ILogger<RefreshScoreboardButton>>(NullLogger<RefreshScoreboardButton>.Instance);
         ctx.Services.AddSingleton(new Mock<IConfirmDialogService>().Object);
@@ -1100,6 +1110,217 @@ public class IndexTests
             cut.FindAll(".match-loaded__home").Should().BeEmpty();
             cut.FindAll(".match-loaded__fallback").Should().BeEmpty();
         });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // S-005: Date Picker UI and Auto-Reset
+    // ══════════════════════════════════════════════════════════════════════════
+
+    // ── TC-1: Date picker hidden when toggle disabled ──────────────────────
+
+    [TestMethod]
+    public void DatePicker_ToggleDisabled_NotVisible()
+    {
+        var autoMock = BuildMock(PcsProState.MatchSelection);
+        var dsMock = new Mock<IDateSelectionService>();
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(false);
+
+        using var ctx = BuildCtx(autoMock, dateSelectionMock: dsMock);
+        var cut = ctx.Render<IndexPage>();
+
+        cut.WaitForAssertion(() => cut.Find(".load-matches-button"));
+        cut.FindAll(".date-selection-picker").Should().BeEmpty();
+        cut.FindAll(".load-matches-date-button").Should().BeEmpty();
+    }
+
+    // ── TC-2: Date picker visible when toggle enabled + MatchSelection ─────
+
+    [TestMethod]
+    public void DatePicker_ToggleEnabled_MatchSelection_Visible()
+    {
+        var autoMock = BuildMock(PcsProState.MatchSelection);
+        var dsMock = new Mock<IDateSelectionService>();
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(false);
+
+        using var ctx = BuildCtx(autoMock, dateSelectionMock: dsMock);
+        var cut = ctx.Render<IndexPage>();
+
+        // Simulate toggle enabled via event (real flow: user enables from debug panel)
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(true);
+        dsMock.Raise(s => s.DateSelectionEnabledChanged += null, dsMock.Object, true);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".date-selection-picker").Should().NotBeNull();
+            cut.Find(".load-matches-date-button").Should().NotBeNull();
+        });
+    }
+
+    // ── TC-2b: Date picker visible when toggle enabled + MatchSelectionReady
+
+    [TestMethod]
+    public void DatePicker_ToggleEnabled_MatchSelectionReady_ViaStateChange_Visible()
+    {
+        var autoMock = BuildMock(PcsProState.NotRunning);
+        var dsMock = new Mock<IDateSelectionService>();
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(false);
+
+        using var ctx = BuildCtx(autoMock, dateSelectionMock: dsMock);
+        var cut = ctx.Render<IndexPage>();
+
+        // Drive to MatchSelectionReady (auto-reset fires, but toggle is already disabled)
+        autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchSelectionReady);
+
+        // Now enable the toggle while in MatchSelectionReady
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(true);
+        dsMock.Raise(s => s.DateSelectionEnabledChanged += null, dsMock.Object, true);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".date-selection-picker").Should().NotBeNull();
+            cut.Find(".load-matches-date-button").Should().NotBeNull();
+        });
+    }
+
+    // ── TC-3: Date picker defaults to today ────────────────────────────────
+
+    [TestMethod]
+    public void DatePicker_DefaultsToToday()
+    {
+        var autoMock = BuildMock(PcsProState.MatchSelection);
+        var dsMock = new Mock<IDateSelectionService>();
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(false);
+
+        using var ctx = BuildCtx(autoMock, dateSelectionMock: dsMock);
+        var cut = ctx.Render<IndexPage>();
+
+        // Enable toggle via event
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(true);
+        dsMock.Raise(s => s.DateSelectionEnabledChanged += null, dsMock.Object, true);
+
+        cut.WaitForAssertion(() => cut.Find(".date-selection-picker"));
+        var picker = cut.Find(".date-selection-picker");
+        picker.GetAttribute("value").Should().Be(DateTime.Today.ToString("yyyy-MM-dd"));
+    }
+
+    // ── TC-4a: Auto-reset on MatchSelection entry ──────────────────────────
+
+    [TestMethod]
+    public void AutoReset_MatchSelectionEntry_DisablesToggle()
+    {
+        var autoMock = BuildMock(PcsProState.MatchLoaded);
+        var dsMock = new Mock<IDateSelectionService>();
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(false);
+
+        using var ctx = BuildCtx(autoMock, dateSelectionMock: dsMock);
+        var cut = ctx.Render<IndexPage>();
+
+        autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchSelection);
+
+        cut.WaitForAssertion(() =>
+            dsMock.Verify(s => s.Disable(), Times.Once));
+    }
+
+    // ── TC-4b: Auto-reset on MatchSelectionReady entry ─────────────────────
+
+    [TestMethod]
+    public void AutoReset_MatchSelectionReadyEntry_DisablesToggle()
+    {
+        var autoMock = BuildMock(PcsProState.MatchLoaded);
+        var dsMock = new Mock<IDateSelectionService>();
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(false);
+
+        using var ctx = BuildCtx(autoMock, dateSelectionMock: dsMock);
+        var cut = ctx.Render<IndexPage>();
+
+        autoMock.Raise(s => s.StateChanged += null, autoMock.Object, PcsProState.MatchSelectionReady);
+
+        cut.WaitForAssertion(() =>
+            dsMock.Verify(s => s.Disable(), Times.Once));
+    }
+
+    // ── TC-5: Date picker visible regardless of debug panel state (C-2b) ───
+
+    [TestMethod]
+    public void DatePicker_VisibleRegardlessOfDebugPanelState()
+    {
+        // The date picker checks only _dateSelectionEnabled and state — no debug panel coupling.
+        var autoMock = BuildMock(PcsProState.MatchSelection);
+        var dsMock = new Mock<IDateSelectionService>();
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(false);
+
+        using var ctx = BuildCtx(autoMock, dateSelectionMock: dsMock);
+        var cut = ctx.Render<IndexPage>();
+
+        // Enable toggle via event (simulates debug panel toggle)
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(true);
+        dsMock.Raise(s => s.DateSelectionEnabledChanged += null, dsMock.Object, true);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".date-selection-picker").Should().NotBeNull();
+            cut.Find(".load-matches-date-button").Should().NotBeNull();
+        });
+        // No DebugSection reference exists in Index.razor's date picker visibility logic
+    }
+
+    // ── TC-6: Single-match auto-select for date-based retrieval (SC-8) ─────
+
+    [TestMethod]
+    public void FetchMatchesForDate_SingleMatch_AutoSelects()
+    {
+        var singleMatch = TestMatch(1);
+        var autoMock = BuildMock(PcsProState.MatchSelection);
+        autoMock.Setup(s => s.GetMatchesForDateAsync(It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { singleMatch });
+        var dsMock = new Mock<IDateSelectionService>();
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(false);
+
+        using var ctx = BuildCtx(autoMock, dateSelectionMock: dsMock);
+        var cut = ctx.Render<IndexPage>();
+
+        // Enable toggle
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(true);
+        dsMock.Raise(s => s.DateSelectionEnabledChanged += null, dsMock.Object, true);
+
+        cut.WaitForAssertion(() => cut.Find(".load-matches-date-button"));
+        cut.Find(".load-matches-date-button").Click();
+
+        cut.WaitForAssertion(() =>
+            autoMock.Verify(
+                s => s.LoadMatchAsync(It.Is<MatchInfo>(m => m == singleMatch), It.IsAny<CancellationToken>()),
+                Times.Once));
+    }
+
+    // ── TC-7: Selected date forwarded to GetMatchesForDateAsync (SC-3) ─────
+
+    [TestMethod]
+    public void FetchMatchesForDate_ForwardsSelectedDate()
+    {
+        var autoMock = BuildMock(PcsProState.MatchSelection);
+        autoMock.Setup(s => s.GetMatchesForDateAsync(It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MatchInfo> { TestMatch(1), TestMatch(2) });
+        var dsMock = new Mock<IDateSelectionService>();
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(false);
+
+        using var ctx = BuildCtx(autoMock, dateSelectionMock: dsMock);
+        var cut = ctx.Render<IndexPage>();
+
+        // Enable toggle
+        dsMock.Setup(s => s.IsDateSelectionEnabled).Returns(true);
+        dsMock.Raise(s => s.DateSelectionEnabledChanged += null, dsMock.Object, true);
+
+        cut.WaitForAssertion(() => cut.Find(".date-selection-picker"));
+
+        // Change the date picker to a specific date
+        var testDate = new DateOnly(2025, 3, 15);
+        cut.Find(".date-selection-picker").Change(testDate.ToString("yyyy-MM-dd"));
+        cut.Find(".load-matches-date-button").Click();
+
+        cut.WaitForAssertion(() =>
+            autoMock.Verify(
+                s => s.GetMatchesForDateAsync(testDate, It.IsAny<CancellationToken>()),
+                Times.Once));
     }
 }
 
