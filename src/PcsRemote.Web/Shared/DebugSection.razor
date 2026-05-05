@@ -4,6 +4,8 @@
 @inject IPcsProAutomationService AutomationService
 @inject IYouTubeLiveStreamService StreamService
 @inject IConfirmDialogService ConfirmDialog
+@inject IDateSelectionService DateSelectionService
+@implements IDisposable
 
 <div class="debug-section">
     <button class="debug-section-toggle" @onclick="OnToggle">Debug</button>
@@ -38,6 +40,13 @@
                         disabled="@_resetInProgress"
                         @onclick="OnResetClickedAsync">Reset Automation</button>
             </div>
+
+            <div class="debug-section-date-toggle-container">
+                <button class="debug-section-date-toggle @(DateSelectionService.IsDateSelectionEnabled ? "active" : "")"
+                        @onclick="OnDateSelectionToggle">
+                    Allow Date Selection: @(DateSelectionService.IsDateSelectionEnabled ? "On" : "Off")
+                </button>
+            </div>
         </div>
     }
 </div>
@@ -58,6 +67,26 @@
     protected override void OnInitialized()
     {
         _unlocked = !IsPinConfigured;
+        DateSelectionService.DateSelectionEnabledChanged += OnDateSelectionChanged;
+    }
+
+    private async void OnDateSelectionChanged(object? sender, bool enabled)
+    {
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void OnDateSelectionToggle()
+    {
+        if (DateSelectionService.IsDateSelectionEnabled)
+            DateSelectionService.Disable();
+        else
+            DateSelectionService.Enable();
+    }
+
+    public void Dispose()
+    {
+        DateSelectionService.DateSelectionEnabledChanged -= OnDateSelectionChanged;
     }
 
     private void OnToggle()

@@ -31,6 +31,7 @@ public static class WebApplicationBuilderExtensions
             builder.Services.AddPcsProAutomation(builder.Configuration);
         builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
         builder.Services.AddSingleton<IManualModeService, ManualModeService>();
+        builder.Services.AddSingleton<IDateSelectionService, DateSelectionService>();
         builder.Services.AddSingleton<IOperationCoordinatorService, OperationCoordinatorService>();
         builder.Services.AddSingleton<IAutomationLogService, AutomationLogService>();
         builder.Services.Configure<DebugSectionOptions>(

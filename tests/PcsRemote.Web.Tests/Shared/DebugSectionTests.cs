@@ -21,12 +21,14 @@ public sealed class DebugSectionTests
         Mock<IPcsProAutomationService> AutomationMock,
         Mock<IYouTubeLiveStreamService> StreamMock,
         Mock<IConfirmDialogService> ConfirmMock,
-        BunitContext Ctx)
+        BunitContext Ctx,
+        IDateSelectionService DateSelectionService)
     Render(
         string? pin = null,
         Mock<IAutomationLogService>? logMock = null,
         LiveStreamStatus streamStatus = LiveStreamStatus.Idle,
-        PcsProState automationState = PcsProState.NotRunning)
+        PcsProState automationState = PcsProState.NotRunning,
+        IDateSelectionService? dateSelectionService = null)
     {
         var ctx = new BunitContext();
         var options = Options.Create(new DebugSectionOptions { Pin = pin });
@@ -47,8 +49,11 @@ public sealed class DebugSectionTests
         var confirmMock = new Mock<IConfirmDialogService>();
         ctx.Services.AddSingleton(confirmMock.Object);
 
+        dateSelectionService ??= new DateSelectionService();
+        ctx.Services.AddSingleton(dateSelectionService);
+
         var cut = ctx.Render<DebugSection>();
-        return (cut, automationMock, streamMock, confirmMock, ctx);
+        return (cut, automationMock, streamMock, confirmMock, ctx, dateSelectionService);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -58,7 +63,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void DefaultState_CollapsedNoContentVisible()
     {
-        var (cut, _, _, _, ctx) = Render();
+        var (cut, _, _, _, ctx, _) = Render();
         using (ctx)
         {
             cut.Find(".debug-section-toggle").TextContent.Should().Contain("Debug");
@@ -74,7 +79,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void NoPinConfigured_ToggleExpandsFreely()
     {
-        var (cut, _, _, _, ctx) = Render(pin: null);
+        var (cut, _, _, _, ctx, _) = Render(pin: null);
         using (ctx)
         {
             cut.Find(".debug-section-toggle").Click();
@@ -91,7 +96,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void PinConfigured_ToggleShowsPinPrompt()
     {
-        var (cut, _, _, _, ctx) = Render(pin: "1234");
+        var (cut, _, _, _, ctx, _) = Render(pin: "1234");
         using (ctx)
         {
             cut.Find(".debug-section-toggle").Click();
@@ -108,7 +113,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void CorrectPin_UnlocksAndExpands()
     {
-        var (cut, _, _, _, ctx) = Render(pin: "1234");
+        var (cut, _, _, _, ctx, _) = Render(pin: "1234");
         using (ctx)
         {
             cut.Find(".debug-section-toggle").Click();
@@ -128,7 +133,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void IncorrectPin_ShowsError_StaysLocked()
     {
-        var (cut, _, _, _, ctx) = Render(pin: "1234");
+        var (cut, _, _, _, ctx, _) = Render(pin: "1234");
         using (ctx)
         {
             cut.Find(".debug-section-toggle").Click();
@@ -147,7 +152,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void UnlockPersistsAcrossReRenders()
     {
-        var (cut, _, _, _, ctx) = Render(pin: "1234");
+        var (cut, _, _, _, ctx, _) = Render(pin: "1234");
         using (ctx)
         {
             cut.Find(".debug-section-toggle").Click();
@@ -168,7 +173,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void CollapseAndReExpand_DoesNotRePromptForPin()
     {
-        var (cut, _, _, _, ctx) = Render(pin: "1234");
+        var (cut, _, _, _, ctx, _) = Render(pin: "1234");
         using (ctx)
         {
             // Unlock
@@ -195,7 +200,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void ResetButton_WhenExpandedAndUnlocked_IsVisible()
     {
-        var (cut, _, _, _, ctx) = Render();
+        var (cut, _, _, _, ctx, _) = Render();
         using (ctx)
         {
             cut.Find(".debug-section-toggle").Click();
@@ -207,7 +212,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void ResetButton_WhenCollapsed_IsNotVisible()
     {
-        var (cut, _, _, _, ctx) = Render();
+        var (cut, _, _, _, ctx, _) = Render();
         using (ctx)
         {
             cut.FindAll(".debug-section-reset-btn").Should().BeEmpty();
@@ -218,7 +223,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void ResetButton_WhenCancelled_NoActionTaken()
     {
-        var (cut, automationMock, streamMock, confirmMock, ctx) = Render();
+        var (cut, automationMock, streamMock, confirmMock, ctx, _) = Render();
         using (ctx)
         {
             confirmMock.Setup(c => c.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -242,7 +247,7 @@ public sealed class DebugSectionTests
     public void ResetButton_WhenConfirmed_ExecutesFullSequence()
     {
         var callOrder = new List<string>();
-        var (cut, automationMock, streamMock, confirmMock, ctx) = Render(streamStatus: LiveStreamStatus.Live);
+        var (cut, automationMock, streamMock, confirmMock, ctx, _) = Render(streamStatus: LiveStreamStatus.Live);
         using (ctx)
         {
             confirmMock.Setup(c => c.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -272,7 +277,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void ResetButton_StreamStopFails_ContinuesReset()
     {
-        var (cut, automationMock, streamMock, confirmMock, ctx) = Render(streamStatus: LiveStreamStatus.Live);
+        var (cut, automationMock, streamMock, confirmMock, ctx, _) = Render(streamStatus: LiveStreamStatus.Live);
         using (ctx)
         {
             confirmMock.Setup(c => c.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -300,7 +305,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void ResetButton_StopAsyncFails_ShowsErrorWithState()
     {
-        var (cut, automationMock, _, confirmMock, ctx) = Render(
+        var (cut, automationMock, _, confirmMock, ctx, _) = Render(
             automationState: PcsProState.MatchLoaded);
         using (ctx)
         {
@@ -328,7 +333,7 @@ public sealed class DebugSectionTests
     public void ResetButton_DuringReset_IsDisabled()
     {
         var tcs = new TaskCompletionSource();
-        var (cut, automationMock, _, confirmMock, ctx) = Render();
+        var (cut, automationMock, _, confirmMock, ctx, _) = Render();
         using (ctx)
         {
             confirmMock.Setup(c => c.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -350,7 +355,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void ResetButton_WhenIdle_SkipsStreamStop()
     {
-        var (cut, automationMock, streamMock, confirmMock, ctx) = Render(streamStatus: LiveStreamStatus.Idle);
+        var (cut, automationMock, streamMock, confirmMock, ctx, _) = Render(streamStatus: LiveStreamStatus.Idle);
         using (ctx)
         {
             confirmMock.Setup(c => c.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -376,7 +381,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void ResetButton_WhenStreamError_SkipsStreamStop()
     {
-        var (cut, automationMock, streamMock, confirmMock, ctx) = Render(streamStatus: LiveStreamStatus.Error);
+        var (cut, automationMock, streamMock, confirmMock, ctx, _) = Render(streamStatus: LiveStreamStatus.Error);
         using (ctx)
         {
             confirmMock.Setup(c => c.ConfirmAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -401,7 +406,7 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void ResetButton_LaunchFails_ShowsErrorWithState()
     {
-        var (cut, automationMock, _, confirmMock, ctx) = Render(
+        var (cut, automationMock, _, confirmMock, ctx, _) = Render(
             automationState: PcsProState.NotRunning);
         using (ctx)
         {
@@ -430,13 +435,90 @@ public sealed class DebugSectionTests
     [TestMethod]
     public void ResetButton_WhenPinLocked_IsNotVisible()
     {
-        var (cut, _, _, _, ctx) = Render(pin: "1234");
+        var (cut, _, _, _, ctx, _) = Render(pin: "1234");
         using (ctx)
         {
             cut.Find(".debug-section-toggle").Click();
             // PIN prompt visible, but not unlocked
             cut.FindAll(".debug-section-pin-prompt").Should().ContainSingle();
             cut.FindAll(".debug-section-reset-btn").Should().BeEmpty();
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-004 (HLPS-019) TC-1 — Toggle button renders when expanded and unlocked
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void DateSelectionToggle_WhenExpandedAndUnlocked_Renders()
+    {
+        var (cut, _, _, _, ctx, _) = Render(pin: null);
+        using (ctx)
+        {
+            cut.Find(".debug-section-toggle").Click();
+
+            cut.FindAll(".debug-section-date-toggle").Should().ContainSingle();
+            cut.Find(".debug-section-date-toggle").TextContent.Should().Contain("Allow Date Selection: Off");
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-004 (HLPS-019) TC-2 — Clicking toggle enables/disables service
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void DateSelectionToggle_Click_TogglesServiceState()
+    {
+        var (cut, _, _, _, ctx, dateSelectionService) = Render(pin: null);
+        using (ctx)
+        {
+            cut.Find(".debug-section-toggle").Click();
+
+            dateSelectionService.IsDateSelectionEnabled.Should().BeFalse();
+
+            cut.Find(".debug-section-date-toggle").Click();
+            dateSelectionService.IsDateSelectionEnabled.Should().BeTrue();
+            cut.Find(".debug-section-date-toggle").TextContent.Should().Contain("Allow Date Selection: On");
+
+            cut.Find(".debug-section-date-toggle").Click();
+            dateSelectionService.IsDateSelectionEnabled.Should().BeFalse();
+            cut.Find(".debug-section-date-toggle").TextContent.Should().Contain("Allow Date Selection: Off");
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-004 (HLPS-019) TC-3 — Button label reflects current state
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void DateSelectionToggle_LabelReflectsServiceState()
+    {
+        var dateSelectionService = new DateSelectionService();
+        dateSelectionService.Enable();
+        var (cut, _, _, _, ctx, _) = Render(pin: null, dateSelectionService: dateSelectionService);
+        using (ctx)
+        {
+            cut.Find(".debug-section-toggle").Click();
+
+            cut.Find(".debug-section-date-toggle").TextContent.Should().Contain("Allow Date Selection: On");
+            cut.Find(".debug-section-date-toggle").ClassList.Should().Contain("active");
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-004 (HLPS-019) TC-4 — Toggle not rendered when locked (C-2a)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void DateSelectionToggle_WhenPinLocked_IsNotVisible()
+    {
+        var (cut, _, _, _, ctx, _) = Render(pin: "1234");
+        using (ctx)
+        {
+            cut.Find(".debug-section-toggle").Click();
+            // PIN prompt visible, but not unlocked
+            cut.FindAll(".debug-section-pin-prompt").Should().ContainSingle();
+            cut.FindAll(".debug-section-date-toggle").Should().BeEmpty();
         }
     }
 }

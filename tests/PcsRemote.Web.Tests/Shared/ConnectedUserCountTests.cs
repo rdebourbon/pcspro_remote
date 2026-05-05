@@ -186,6 +186,7 @@ public class ConnectedUserCountTests
         ctx.Services.AddSingleton(streamMock.Object);
         ctx.Services.AddSingleton(confirmMock.Object);
         ctx.Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new DebugSectionOptions()));
+        ctx.Services.AddSingleton<IDateSelectionService>(new DateSelectionService());
 
         var cut = ctx.Render<MainLayout>(p =>
             p.Add(l => l.Body, builder => { }));
