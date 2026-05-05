@@ -3069,7 +3069,6 @@ internal sealed class SpinnerDropsAfterNCallsFake : IMatchSelectionAutomation
     public SpinnerDropsAfterNCallsFake(int dropsAfterCalls) =>
         _dropsAfterCalls = dropsAfterCalls;
 
-    public void OpenMatchDialogAndSearch() { }
     public void OpenMatchDialogAndSearch(DateOnly searchDate) { }
     public bool IsSpinnerVisible() => ++_callCount <= _dropsAfterCalls;
     public bool IsUnexpectedDialogPresent(DialogProbeContext? probeContext = null) => false;
@@ -3086,7 +3085,6 @@ internal sealed class SpinnerDropsAfterNCallsFake : IMatchSelectionAutomation
 /// </summary>
 internal sealed class ReadDataGridThrowsFake : IMatchSelectionAutomation
 {
-    public void OpenMatchDialogAndSearch() { }
     public void OpenMatchDialogAndSearch(DateOnly searchDate) { }
     public bool IsSpinnerVisible() => false;
     public bool IsUnexpectedDialogPresent(DialogProbeContext? probeContext = null) => false;

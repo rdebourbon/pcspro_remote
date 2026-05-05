@@ -65,12 +65,6 @@ internal sealed class FakeMatchSelectionAutomation : IMatchSelectionAutomation
     // ---- Interface implementation -------------------------------------------
 
     /// <inheritdoc/>
-    public void OpenMatchDialogAndSearch()
-    {
-        OpenMatchDialogAndSearch(DateOnly.FromDateTime(DateTime.Today));
-    }
-
-    /// <inheritdoc/>
     public void OpenMatchDialogAndSearch(DateOnly searchDate)
     {
         if (ThrowOnInteraction)

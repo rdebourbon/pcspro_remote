@@ -23,25 +23,14 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
     private readonly PcsProWindowLocator _locator;
     private readonly ILogger<FlaUiMatchSelectionAutomation> _logger;
     private readonly PcsProOptions _options;
-    private readonly TimeProvider _timeProvider;
-
     public FlaUiMatchSelectionAutomation(
         PcsProWindowLocator locator,
         ILogger<FlaUiMatchSelectionAutomation> logger,
-        IOptions<PcsProOptions> options,
-        TimeProvider timeProvider)
+        IOptions<PcsProOptions> options)
     {
         _locator = locator;
         _logger = logger;
         _options = options.Value;
-        _timeProvider = timeProvider;
-    }
-
-    /// <inheritdoc/>
-    public void OpenMatchDialogAndSearch()
-    {
-        var today = DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
-        OpenMatchDialogAndSearch(today);
     }
 
     /// <inheritdoc/>
