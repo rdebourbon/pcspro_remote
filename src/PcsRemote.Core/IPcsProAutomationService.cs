@@ -47,9 +47,17 @@ public interface IPcsProAutomationService
 
     /// <summary>
     /// Reads and returns the list of today's available match fixtures from PCS Pro.
+    /// Convenience method that derives today's date from local time and delegates to
+    /// <see cref="GetMatchesForDateAsync"/>.
     /// Accepts an optional <paramref name="ct"/> to cancel the operation.
     /// </summary>
     Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Reads and returns the list of available match fixtures from PCS Pro for the specified date.
+    /// Accepts an optional <paramref name="ct"/> to cancel the operation.
+    /// </summary>
+    Task<IReadOnlyList<MatchInfo>> GetMatchesForDateAsync(DateOnly searchDate, CancellationToken ct = default);
 
     /// <summary>
     /// Selects and loads the specified match, advancing the lifecycle state to MatchLoaded.

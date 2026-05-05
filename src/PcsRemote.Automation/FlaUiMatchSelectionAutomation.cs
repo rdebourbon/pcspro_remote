@@ -40,6 +40,13 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
     /// <inheritdoc/>
     public void OpenMatchDialogAndSearch()
     {
+        var today = DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
+        OpenMatchDialogAndSearch(today);
+    }
+
+    /// <inheritdoc/>
+    public void OpenMatchDialogAndSearch(DateOnly searchDate)
+    {
         var window = _locator.FindMainWindow()
             ?? throw new InvalidOperationException("PCS Pro main window not found.");
 
@@ -68,10 +75,10 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
             WaitForSpinnerIdle(dialog, cf, "site selection");
         }
 
-        SetDateFilter(dialog, cf, isDateFrom: true);
+        SetDateFilter(dialog, cf, isDateFrom: true, searchDate);
         WaitForSpinnerIdle(dialog, cf, "Date From");
 
-        SetDateFilter(dialog, cf, isDateFrom: false);
+        SetDateFilter(dialog, cf, isDateFrom: false, searchDate);
     }
 
     /// <inheritdoc/>
@@ -366,7 +373,8 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
     private void SetDateFilter(
         AutomationElement dialog,
         FlaUI.Core.Conditions.ConditionFactory cf,
-        bool isDateFrom)
+        bool isDateFrom,
+        DateOnly searchDate)
     {
         var datePickers = UIAutomationHelpers.FindAllDescendants(
             dialog,
@@ -393,7 +401,7 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
         UIAutomationHelpers.BringToForeground(dialog, _logger);
 
         Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_A);
-        string dateText = DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime).ToString("dd/MM/yyyy");
+        string dateText = searchDate.ToString("dd/MM/yyyy");
         Keyboard.Type(dateText);
         Thread.Sleep(KeyboardPauseMs);
 

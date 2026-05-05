@@ -59,15 +59,25 @@ internal sealed class FakeMatchSelectionAutomation : IMatchSelectionAutomation
     /// <summary><see langword="true"/> after <see cref="TryCloseUnexpectedDialog"/> has been called.</summary>
     public bool CloseDialogAttempted { get; private set; }
 
+    /// <summary>The <see cref="DateOnly"/> most recently passed to <see cref="OpenMatchDialogAndSearch(DateOnly)"/>.</summary>
+    public DateOnly? LastSearchDate { get; private set; }
+
     // ---- Interface implementation -------------------------------------------
 
     /// <inheritdoc/>
     public void OpenMatchDialogAndSearch()
     {
+        OpenMatchDialogAndSearch(DateOnly.FromDateTime(DateTime.Today));
+    }
+
+    /// <inheritdoc/>
+    public void OpenMatchDialogAndSearch(DateOnly searchDate)
+    {
         if (ThrowOnInteraction)
             throw new InvalidOperationException(
                 "FakeMatchSelectionAutomation: element not found (ThrowOnInteraction = true)");
         SearchTriggered = true;
+        LastSearchDate = searchDate;
     }
 
     /// <inheritdoc/>

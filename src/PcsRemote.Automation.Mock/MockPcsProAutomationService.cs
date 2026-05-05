@@ -379,13 +379,18 @@ public class MockPcsProAutomationService : IPcsProAutomationService
     public Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
+        return GetMatchesForDateAsync(today, ct);
+    }
+
+    public Task<IReadOnlyList<MatchInfo>> GetMatchesForDateAsync(DateOnly searchDate, CancellationToken ct = default)
+    {
         var matches = Enumerable.Range(1, _options.FakeMatchCount)
             .Select(i => new MatchInfo(
                 MatchId: $"match-{i}",
                 HomeTeam: FakeTeams[(i * 2 - 2) % FakeTeams.Length],
                 AwayTeam: FakeTeams[(i * 2 - 1) % FakeTeams.Length],
                 MatchType: FakeMatchTypes[(i - 1) % FakeMatchTypes.Length],
-                MatchDate: today))
+                MatchDate: searchDate))
             .ToList();
         return Task.FromResult<IReadOnlyList<MatchInfo>>(matches);
     }

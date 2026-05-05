@@ -1000,23 +1000,31 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     // ---- S-004: Match selection automation ----------------------------------
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default)
+    public Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default)
+    {
+        var today = DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
+        return GetMatchesForDateAsync(today, ct);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<MatchInfo>> GetMatchesForDateAsync(DateOnly searchDate, CancellationToken ct = default)
     {
         if (_manualModeService.IsManualModeActive)
         {
             _logger.LogDebug("{Operation} skipped — manual mode active, state={State}",
-                nameof(GetTodaysMatchesAsync), _stateMachine.CurrentState);
+                nameof(GetMatchesForDateAsync), _stateMachine.CurrentState);
             return [];
         }
 
-        _logger.LogInformation("GetTodaysMatchesAsync starting; current state {State}", CurrentState);
+        _logger.LogInformation("GetMatchesForDateAsync starting for {SearchDate}; current state {State}",
+            searchDate, CurrentState);
 
         if (Interlocked.CompareExchange(ref _isMatchSelectionOperationInProgress, 1, 0) != 0)
             throw new InvalidOperationException("A lifecycle operation is already in progress.");
 
         try
         {
-            return await GetTodaysMatchesCoreAsync(ct).ConfigureAwait(false);
+            return await GetMatchesCoreAsync(searchDate, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -1024,17 +1032,17 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
     }
 
-    private async Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesCoreAsync(CancellationToken ct)
+    private async Task<IReadOnlyList<MatchInfo>> GetMatchesCoreAsync(DateOnly searchDate, CancellationToken ct)
     {
         var startTimestamp = _timeProvider.GetTimestamp();
 
         try
         {
-            _matchSelectionAutomation.OpenMatchDialogAndSearch();
+            _matchSelectionAutomation.OpenMatchDialogAndSearch(searchDate);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "GetTodaysMatchesAsync: interaction error opening match dialog");
+            _logger.LogError(ex, "GetMatchesForDateAsync: interaction error opening match dialog");
             await FireErrorUnderLockAsync(
                 PcsProTrigger.Timeout,
                 "Match selection interaction failed").ConfigureAwait(false);
@@ -1061,10 +1069,11 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
 
         // Poll until spinner clears, timeout, cancellation, or terminal state.
-        return await PollForSpinnerAndParseAsync(startTimestamp, ct).ConfigureAwait(false);
+        return await PollForSpinnerAndParseAsync(searchDate, startTimestamp, ct).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<MatchInfo>> PollForSpinnerAndParseAsync(
+        DateOnly searchDate,
         long startTimestamp,
         CancellationToken ct)
     {
@@ -1079,14 +1088,14 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
 
             if (!dialogWarned && _matchSelectionAutomation.IsUnexpectedDialogPresent(dialogProbe))
             {
-                _logger.LogWarning("Unexpected dialog detected during {Operation}, continuing without interaction", "GetTodaysMatchesAsync");
+                _logger.LogWarning("Unexpected dialog detected during {Operation}, continuing without interaction", "GetMatchesForDateAsync");
                 dialogWarned = true;
             }
 
             if (!_matchSelectionAutomation.IsSpinnerVisible())
             {
-                _logger.LogDebug("GetTodaysMatchesAsync: spinner cleared — reading DataGrid");
-                return await ParseAndFilterMatchesAsync(startTimestamp, ct).ConfigureAwait(false);
+                _logger.LogDebug("GetMatchesForDateAsync: spinner cleared — reading DataGrid");
+                return await ParseAndFilterMatchesAsync(searchDate, startTimestamp, ct).ConfigureAwait(false);
             }
 
             if (_timeProvider.GetElapsedTime(startTimestamp).TotalSeconds
@@ -1095,7 +1104,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
                 var reason =
                     $"Match search did not complete within " +
                     $"{PcsProStateMachine.MatchSelectionSearchingTimeoutSeconds} seconds";
-                _logger.LogWarning("GetTodaysMatchesAsync: timeout — {Reason}", reason);
+                _logger.LogWarning("GetMatchesForDateAsync: timeout — {Reason}", reason);
                 await FireErrorUnderLockAsync(PcsProTrigger.Timeout, reason).ConfigureAwait(false);
                 return [];
             }
@@ -1115,6 +1124,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
     }
 
     private async Task<IReadOnlyList<MatchInfo>> ParseAndFilterMatchesAsync(
+        DateOnly searchDate,
         long startTimestamp,
         CancellationToken ct)
     {
@@ -1131,7 +1141,7 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "GetTodaysMatchesAsync: interaction error reading DataGrid");
+            _logger.LogError(ex, "GetMatchesForDateAsync: interaction error reading DataGrid");
             await FireErrorUnderLockAsync(
                 PcsProTrigger.Timeout,
                 "Match selection interaction failed").ConfigureAwait(false);
@@ -1144,22 +1154,22 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
             if (MatchRowParser.TryParse(rowText, out var match))
                 parsed.Add(match! /* non-null when TryParse returns true — out parameter contract */);
             else
-                _logger.LogWarning("GetTodaysMatchesAsync: could not parse row text {RowText}", rowText);
+                _logger.LogWarning("GetMatchesForDateAsync: could not parse row text {RowText}", rowText);
         }
 
-        var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().DateTime);
-        var filtered = MatchRowParser.FilterToday(parsed, today);
+        var filtered = MatchRowParser.FilterToday(parsed, searchDate);
 
         if (filtered.Count == 0)
         {
-            const string NoMatchesReason = "No matches found for today";
-            _logger.LogWarning("GetTodaysMatchesAsync: {Reason}", NoMatchesReason);
-            await FireErrorUnderLockAsync(PcsProTrigger.Timeout, NoMatchesReason).ConfigureAwait(false);
+            var noMatchesReason = $"No matches found for {searchDate:yyyy-MM-dd}";
+            _logger.LogWarning("GetMatchesForDateAsync: {Reason}", noMatchesReason);
+            await FireErrorUnderLockAsync(PcsProTrigger.Timeout, noMatchesReason).ConfigureAwait(false);
             return [];
         }
 
         _logger.LogInformation(
-            "GetTodaysMatchesAsync complete — {MatchCount} match(es) found", filtered.Count);
+            "GetMatchesForDateAsync complete for {SearchDate} — {MatchCount} match(es) found",
+            searchDate, filtered.Count);
         return filtered;
     }
 

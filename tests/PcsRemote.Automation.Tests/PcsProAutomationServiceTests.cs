@@ -929,7 +929,7 @@ public sealed class PcsProAutomationServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // AC-11 — Zero rows after FilterToday → Error with "No matches found for today"
+    // AC-11 — Zero rows after FilterToday → Error with date in message
     // -----------------------------------------------------------------------
 
     [TestMethod]
@@ -943,7 +943,7 @@ public sealed class PcsProAutomationServiceTests
 
         result.Should().BeEmpty();
         svc.CurrentState.Should().Be(PcsProState.Error);
-        svc.LastErrorReason.Should().Be("No matches found for today");
+        svc.LastErrorReason.Should().StartWith("No matches found for ");
     }
 
     // -----------------------------------------------------------------------
@@ -1028,6 +1028,61 @@ public sealed class PcsProAutomationServiceTests
 
         cts.Cancel();
         await firstTask.IgnoreErrorAsync();
+    }
+
+    // =======================================================================
+    // S-002 (HLPS-019): GetMatchesForDateAsync — date-parameterised match retrieval
+    // =======================================================================
+
+    // -----------------------------------------------------------------------
+    // TC-1 — Date forwarded to internal search automation
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetMatchesForDateAsync_ForwardsDateToMatchSelectionAutomation()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { SpinnerVisible = false };
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(matchSelectionAutomation: fakeMatchSel);
+        var searchDate = new DateOnly(2025, 3, 15);
+
+        await svc.GetMatchesForDateAsync(searchDate);
+
+        fakeMatchSel.SearchTriggered.Should().BeTrue();
+        fakeMatchSel.LastSearchDate.Should().Be(searchDate);
+    }
+
+    // -----------------------------------------------------------------------
+    // TC-2 — Filtering uses searchDate, not today
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetMatchesForDateAsync_WhenZeroMatchesAfterFilter_ErrorIncludesSearchDate()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { SpinnerVisible = false, RowTexts = [] };
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(matchSelectionAutomation: fakeMatchSel);
+        var searchDate = new DateOnly(2025, 6, 1);
+
+        var result = await svc.GetMatchesForDateAsync(searchDate);
+
+        result.Should().BeEmpty();
+        svc.CurrentState.Should().Be(PcsProState.Error);
+        svc.LastErrorReason.Should().Be("No matches found for 2025-06-01");
+    }
+
+    // -----------------------------------------------------------------------
+    // TC-3 — GetTodaysMatchesAsync delegates to GetMatchesForDateAsync with local date
+    // -----------------------------------------------------------------------
+
+    [TestMethod]
+    public async Task GetTodaysMatchesAsync_DelegatesToGetMatchesForDateAsync_WithLocalDate()
+    {
+        var fakeMatchSel = new FakeMatchSelectionAutomation { SpinnerVisible = false };
+        var (svc, _) = await CreateServiceAtMatchSelectionAsync(matchSelectionAutomation: fakeMatchSel);
+
+        await svc.GetTodaysMatchesAsync();
+
+        // FakeTimeProvider defaults to 2000-01-01 — local time derivation
+        fakeMatchSel.LastSearchDate.Should().Be(new DateOnly(2000, 1, 1));
     }
 
     // =======================================================================
@@ -3015,6 +3070,7 @@ internal sealed class SpinnerDropsAfterNCallsFake : IMatchSelectionAutomation
         _dropsAfterCalls = dropsAfterCalls;
 
     public void OpenMatchDialogAndSearch() { }
+    public void OpenMatchDialogAndSearch(DateOnly searchDate) { }
     public bool IsSpinnerVisible() => ++_callCount <= _dropsAfterCalls;
     public bool IsUnexpectedDialogPresent(DialogProbeContext? probeContext = null) => false;
     public void TryCloseUnexpectedDialog() { }
@@ -3031,6 +3087,7 @@ internal sealed class SpinnerDropsAfterNCallsFake : IMatchSelectionAutomation
 internal sealed class ReadDataGridThrowsFake : IMatchSelectionAutomation
 {
     public void OpenMatchDialogAndSearch() { }
+    public void OpenMatchDialogAndSearch(DateOnly searchDate) { }
     public bool IsSpinnerVisible() => false;
     public bool IsUnexpectedDialogPresent(DialogProbeContext? probeContext = null) => false;
     public void TryCloseUnexpectedDialog() { }

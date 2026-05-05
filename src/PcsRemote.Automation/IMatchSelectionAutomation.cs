@@ -15,10 +15,18 @@ internal interface IMatchSelectionAutomation
 {
     /// <summary>
     /// Opens the match selection dialog in PCS Pro and triggers a search for today's matches.
+    /// Derives today's date from the time provider and delegates to
+    /// <see cref="OpenMatchDialogAndSearch(DateOnly)"/>.
     /// AutomationId placeholders must be replaced during garage PC development (I-U-5).
     /// </summary>
     /// <remarks><b>Interaction method — may throw.</b></remarks>
     void OpenMatchDialogAndSearch();
+
+    /// <summary>
+    /// Opens the match selection dialog in PCS Pro and triggers a search for matches on the specified date.
+    /// </summary>
+    /// <remarks><b>Interaction method — may throw.</b></remarks>
+    void OpenMatchDialogAndSearch(DateOnly searchDate);
 
     /// <summary>
     /// Returns <see langword="true"/> when the search-in-progress spinner element is visible.
