@@ -55,6 +55,13 @@ try
         sp.GetRequiredService<IConfiguration>()));
     builder.Services.AddHostedService<WinFormsHostedService>();
 
+    // Register the background refresh scheduler only when using the real YouTube service;
+    // the mock does not support proactive refresh.
+    if (!builder.Configuration.GetValue<bool>("YouTube:UseMock"))
+    {
+        builder.Services.AddHostedService<YouTubeTokenRefreshService>();
+    }
+
     var app = builder.Build();
 
     Log.Information("PCS Remote (TrayHost) starting...");

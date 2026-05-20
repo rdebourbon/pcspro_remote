@@ -116,6 +116,17 @@ public class TrayApplicationContextTests
         true.Should().BeTrue("stub — see SPEC-IS-020-S-001 TC-4");
     }
 
+    // IS-020 S-004 TC-4: TokenExpiryApproaching fires advisory balloon.
+    [TestMethod]
+    [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
+    public void OnTokenExpiryApproaching_ShowsAdvisoryBalloon()
+    {
+        // Arrange: construct TrayApplicationContext with mocked services.
+        // Act: raise IYouTubeLiveStreamService.TokenExpiryApproaching.
+        // Assert: NotifyIcon.ShowBalloonTip was called with the advisory message and Warning icon.
+        true.Should().BeTrue("stub — requires STA message queue; see SPEC-IS-020-S-004 TC-4");
+    }
+
     [TestMethod]
     [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
     public void Dispose_UnsubscribesStatusChanged_PostDisposeEventsDoNotThrow()

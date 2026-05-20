@@ -88,6 +88,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         // the event would be missed and the UI would be permanently stale.
         _manualModeService.ManualModeChanged += OnManualModeChanged;
         _youTubeService.StatusChanged += OnStreamStatusChanged;
+        _youTubeService.TokenExpiryApproaching += OnTokenExpiryApproaching;
         UpdateToggleState(_manualModeService.IsManualModeActive);
         UpdateYouTubeSetupEnabled();
         _notifyIcon.Visible = true;
@@ -191,6 +192,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _invoker.BeginInvoke(UpdateYouTubeSetupEnabled);
     }
 
+    private void OnTokenExpiryApproaching(object? sender, EventArgs e)
+    {
+        ShowBalloon(
+            "YouTube Token",
+            "YouTube token is approaching expiry. Run YouTube Setup to re-authorise before the token expires.",
+            ToolTipIcon.Warning);
+    }
+
     private void UpdateYouTubeSetupEnabled()
     {
         _youTubeSetupItem.Enabled = !_setupInProgress;
@@ -276,6 +285,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             // → dispose ContextMenuStrip → dispose invoker.
             _manualModeService.ManualModeChanged -= OnManualModeChanged;
             _youTubeService.StatusChanged -= OnStreamStatusChanged;
+            _youTubeService.TokenExpiryApproaching -= OnTokenExpiryApproaching;
             _hotkeyWindow.Dispose();
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
