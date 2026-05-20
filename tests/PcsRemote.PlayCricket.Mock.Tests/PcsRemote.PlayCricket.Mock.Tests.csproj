@@ -16,6 +16,7 @@
   <ItemGroup>
     <PackageReference Include="MSTest" />
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
 
 </Project>
