@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | IS-021-PlayCricket-Auto-Watch.md |
 | **Status** | APPROVED |
-| **Version** | 1.0 |
+| **Version** | 1.1 |
 | **Date** | 2026-05-21 |
 | **Governing HLPS** | HLPS-021-PlayCricket-Auto-Watch.md (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` |
@@ -137,7 +137,7 @@ Steps use stable IDs S-001 through S-010. IDs are never renumbered; deferred ste
 
 ---
 
-### S-009 — Web UI — auto-watch toggle and countdown banner
+### S-009 — Web UI — auto-watch toggle and countdown banner ✅ DELIVERED
 
 **What:** An auto-watch enabled/disabled toggle added to the debug panel, following the existing debug toggle pattern (HLPS-019). Wired to the watcher service enable/disable; reflects live enabled state. A countdown banner added to the main UI, visible when a countdown is active, showing remaining time updated in real time via a component-level periodic timer. Includes a cancel button. Both controls start in the disabled/hidden state on mount per SC-7.
 
