@@ -4,8 +4,8 @@
 |---|---|
 | **Document** | IS-021-PlayCricket-Auto-Watch.md |
 | **Status** | APPROVED |
-| **Version** | 0.9 |
-| **Date** | 2026-05-20 |
+| **Version** | 1.0 |
+| **Date** | 2026-05-21 |
 | **Governing HLPS** | HLPS-021-PlayCricket-Auto-Watch.md (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` |
 | **Prerequisites** | HLPS-001 (foundation), HLPS-006 (FlaUI), HLPS-010 (automation hardening), HLPS-016 (operator mode) — all delivered. |
@@ -125,7 +125,7 @@ Steps use stable IDs S-001 through S-010. IDs are never renumbered; deferred ste
 
 ---
 
-### S-008 — Midnight reset
+### S-008 — Midnight reset ✅ DELIVERED
 
 **What:** A separate midnight reset hosted service added to `PcsRemote.Web`. Calculates and delays to local midnight; on wake, calls the automation service to return to match selection if the system is in a loaded state and manual mode is off, then unconditionally clears the auto-load suppression record in the watcher service. Re-arms for the following midnight. Exceptions from the match-return call are caught and logged; suppression is always cleared regardless.
 
