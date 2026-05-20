@@ -22,6 +22,13 @@ public interface IYouTubeLiveStreamService
     event EventHandler<YouTubeAuthStatusSnapshot> AuthStatusChanged;
 
     /// <summary>
+    /// Raised when the OAuth refresh token is approaching expiry and the operator should
+    /// run YouTube Setup to re-authorise before the next match. This event is advisory only —
+    /// no availability state change occurs when it fires.
+    /// </summary>
+    event EventHandler? TokenExpiryApproaching;
+
+    /// <summary>
     /// Gets the current lifecycle status of the live stream.
     /// </summary>
     LiveStreamStatus CurrentStatus { get; }

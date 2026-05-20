@@ -376,4 +376,38 @@ public class MockYouTubeLiveStreamServiceTests
         snapshots.Should().ContainSingle()
             .Which.Availability.Should().Be(YouTubeAvailability.Ready);
     }
+
+    // IS-020 S-002 TC-1: TokenExpiryApproaching never fires during full init → start → stop lifecycle;
+    // Availability remains Ready throughout.
+    [TestMethod]
+    public async Task TokenExpiryApproaching_DuringFullLifecycle_NeverFires()
+    {
+        var fired = false;
+        _sut.TokenExpiryApproaching += (_, _) => fired = true;
+
+        _sut.Availability.Should().Be(YouTubeAvailability.Ready);
+
+        await _sut.InitializeAsync();
+        _sut.Availability.Should().Be(YouTubeAvailability.Ready);
+
+        await _sut.StartStreamAsync();
+        _sut.Availability.Should().Be(YouTubeAvailability.Ready);
+
+        await _sut.StopStreamAsync();
+        _sut.Availability.Should().Be(YouTubeAvailability.Ready);
+
+        fired.Should().BeFalse("mock tokens do not expire; TokenExpiryApproaching must never fire");
+    }
+
+    // IS-020 S-002 TC-2: TokenExpiryApproaching never fires when RunOAuthSetupAsync completes.
+    [TestMethod]
+    public async Task TokenExpiryApproaching_AfterRunOAuthSetupAsync_NeverFires()
+    {
+        var fired = false;
+        _sut.TokenExpiryApproaching += (_, _) => fired = true;
+
+        await _sut.RunOAuthSetupAsync();
+
+        fired.Should().BeFalse("mock tokens do not expire; TokenExpiryApproaching must never fire");
+    }
 }

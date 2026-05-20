@@ -54,6 +54,13 @@ public sealed class MockYouTubeLiveStreamService : IYouTubeLiveStreamService
     /// <inheritdoc/>
     public event EventHandler<YouTubeAuthStatusSnapshot>? AuthStatusChanged;
 
+    // CS0067 suppressed: event is an interface requirement; mock tokens never expire so the
+    // event is intentionally never raised. Firing logic lives in the real service (S-003).
+#pragma warning disable CS0067
+    /// <inheritdoc/>
+    public event EventHandler? TokenExpiryApproaching;
+#pragma warning restore CS0067
+
     /// <inheritdoc/>
     public async Task InitializeAsync(CancellationToken ct = default)
     {

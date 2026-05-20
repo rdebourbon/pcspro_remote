@@ -76,6 +76,13 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
     /// <inheritdoc/>
     public event EventHandler<YouTubeAuthStatusSnapshot>? AuthStatusChanged;
 
+    // CS0067 suppressed: event is raised in S-003 (proactive refresh). Suppression is
+    // temporary and will be removed when firing logic is added.
+#pragma warning disable CS0067
+    /// <inheritdoc/>
+    public event EventHandler? TokenExpiryApproaching;
+#pragma warning restore CS0067
+
     /// <inheritdoc/>
     public async Task InitializeAsync(CancellationToken ct = default)
     {
