@@ -137,6 +137,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private async void OnYouTubeSetupClicked(object? sender, EventArgs e)
     {
+        if (_youTubeService.CurrentStatus is LiveStreamStatus.Live
+            or LiveStreamStatus.Starting
+            or LiveStreamStatus.Stopping)
+        {
+            ShowBalloon(
+                "YouTube Setup",
+                "YouTube Setup cannot run while streaming is active. Stop the stream first, then retry.",
+                ToolTipIcon.Warning);
+            return;
+        }
+
         _setupInProgress = true;
         UpdateYouTubeSetupEnabled();
         try

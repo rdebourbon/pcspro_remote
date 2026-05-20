@@ -84,7 +84,38 @@ public class TrayApplicationContextTests
         true.Should().BeTrue("stub — see SPEC-S-005 TC-8");
     }
 
-    // S-005 TC-9: Dispose unsubscribes StatusChanged — post-dispose events do not throw.
+    // IS-020 S-001 TC-1: Accurate balloon shown when Live; RunOAuthSetupAsync not called.
+    [TestMethod]
+    [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
+    public void OnYouTubeSetupClicked_WhenLive_ShowsAccurateBalloon()
+    {
+        true.Should().BeTrue("stub — see SPEC-IS-020-S-001 TC-1");
+    }
+
+    // IS-020 S-001 TC-2: Accurate balloon shown when Starting; RunOAuthSetupAsync not called.
+    [TestMethod]
+    [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
+    public void OnYouTubeSetupClicked_WhenStarting_ShowsAccurateBalloon()
+    {
+        true.Should().BeTrue("stub — see SPEC-IS-020-S-001 TC-2");
+    }
+
+    // IS-020 S-001 TC-3: Accurate balloon shown when Stopping; RunOAuthSetupAsync not called.
+    [TestMethod]
+    [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
+    public void OnYouTubeSetupClicked_WhenStopping_ShowsAccurateBalloon()
+    {
+        true.Should().BeTrue("stub — see SPEC-IS-020-S-001 TC-3");
+    }
+
+    // IS-020 S-001 TC-4: RunOAuthSetupAsync called when status is Error.
+    [TestMethod]
+    [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
+    public void OnYouTubeSetupClicked_WhenError_CallsRunOAuthSetupAsync()
+    {
+        true.Should().BeTrue("stub — see SPEC-IS-020-S-001 TC-4");
+    }
+
     [TestMethod]
     [Ignore("Requires STA Win32 message queue — cannot run in headless CI.")]
     public void Dispose_UnsubscribesStatusChanged_PostDisposeEventsDoNotThrow()

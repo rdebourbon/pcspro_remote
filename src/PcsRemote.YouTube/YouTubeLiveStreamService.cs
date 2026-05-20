@@ -286,10 +286,12 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (_status != LiveStreamStatus.Idle)
+            if (_status is LiveStreamStatus.Live
+                or LiveStreamStatus.Starting
+                or LiveStreamStatus.Stopping)
             {
                 _logger.LogWarning(
-                    "RunOAuthSetupAsync rejected — current status is {Status}, expected Idle",
+                    "RunOAuthSetupAsync rejected — current status is {Status}; only allowed from Idle or Error",
                     _status);
                 return false;
             }

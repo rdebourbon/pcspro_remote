@@ -283,6 +283,90 @@ public class YouTubeLiveStreamServiceTests
         sut.Availability.Should().Be(YouTubeAvailability.NotConfigured);
     }
 
+    // IS-020 S-001 TC-5: RunOAuthSetupAsync when Live returns false (state guard blocks active stream)
+    [TestMethod]
+    public async Task RunOAuthSetupAsync_WhenStatusIsLive_ReturnsFalse()
+    {
+        var sut = CreateService();
+        SetPrivateField(sut, "_status", LiveStreamStatus.Live);
+
+        var result = await sut.RunOAuthSetupAsync();
+
+        result.Should().BeFalse();
+        _dataStoreMock.Verify(
+            ds => ds.DeleteAsync<TokenResponse>(It.IsAny<string>()),
+            Times.Never());
+    }
+
+    // IS-020 S-001 TC-6: RunOAuthSetupAsync when Starting returns false
+    [TestMethod]
+    public async Task RunOAuthSetupAsync_WhenStatusIsStarting_ReturnsFalse()
+    {
+        var sut = CreateService();
+        SetPrivateField(sut, "_status", LiveStreamStatus.Starting);
+
+        var result = await sut.RunOAuthSetupAsync();
+
+        result.Should().BeFalse();
+        _dataStoreMock.Verify(
+            ds => ds.DeleteAsync<TokenResponse>(It.IsAny<string>()),
+            Times.Never());
+    }
+
+    // IS-020 S-001 TC-7: RunOAuthSetupAsync when Stopping returns false
+    [TestMethod]
+    public async Task RunOAuthSetupAsync_WhenStatusIsStopping_ReturnsFalse()
+    {
+        var sut = CreateService();
+        SetPrivateField(sut, "_status", LiveStreamStatus.Stopping);
+
+        var result = await sut.RunOAuthSetupAsync();
+
+        result.Should().BeFalse();
+        _dataStoreMock.Verify(
+            ds => ds.DeleteAsync<TokenResponse>(It.IsAny<string>()),
+            Times.Never());
+    }
+
+    // IS-020 S-001 TC-8: RunOAuthSetupAsync when Error proceeds past state guard into OAuth flow.
+    // Verified by confirming DeleteAsync is called (code beyond the state guard) and the call
+    // terminates via OperationCanceledException when the authorize step is reached.
+    [TestMethod]
+    public async Task RunOAuthSetupAsync_WhenStatusIsError_ProceedsToOAuthFlow()
+    {
+        var sut = CreateService();
+        SetPrivateField(sut, "_status", LiveStreamStatus.Error);
+
+        using var cts = new CancellationTokenSource();
+
+        _dataStoreMock
+            .Setup(ds => ds.DeleteAsync<TokenResponse>(It.IsAny<string>()))
+            .Returns(Task.CompletedTask);
+
+        // Cancel the token inside GetAsync (after DeleteAsync, before AuthorizeAsync)
+        // so the test terminates cleanly without making real HTTP calls.
+        _dataStoreMock
+            .Setup(ds => ds.GetAsync<TokenResponse>(It.IsAny<string>()))
+            .Returns(() =>
+            {
+                cts.Cancel();
+                return Task.FromResult<TokenResponse>(null!);
+            });
+
+        _dataStoreMock
+            .Setup(ds => ds.ClearAsync())
+            .Returns(Task.CompletedTask);
+
+        Func<Task> act = () => sut.RunOAuthSetupAsync(cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        // DeleteAsync called proves code passed the state guard (not returned false)
+        _dataStoreMock.Verify(
+            ds => ds.DeleteAsync<TokenResponse>(It.IsAny<string>()),
+            Times.Once());
+    }
+
     // Helper to verify a log level was called with optional message fragment
     private void VerifyLogLevel(LogLevel level, string? messageFragment = null)
     {

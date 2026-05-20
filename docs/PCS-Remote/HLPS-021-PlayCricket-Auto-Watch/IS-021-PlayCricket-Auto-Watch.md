@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | **Document** | IS-021-PlayCricket-Auto-Watch.md |
-| **Status** | IN REVIEW |
-| **Version** | 0.8 |
-| **Date** | 2026-05-19 |
+| **Status** | APPROVED |
+| **Version** | 0.9 |
+| **Date** | 2026-05-20 |
 | **Governing HLPS** | HLPS-021-PlayCricket-Auto-Watch.md (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` |
 | **Prerequisites** | HLPS-001 (foundation), HLPS-006 (FlaUI), HLPS-010 (automation hardening), HLPS-016 (operator mode) — all delivered. |
@@ -20,7 +20,7 @@ The feature has two independent runtime concerns: **auto-load** (FlaUI-based det
 
 Steps proceed in dependency order: Core contracts first, then implementations, then the two hosted-service polling loops, then peripheral concerns (midnight reset, UI, push notifications).
 
-> **Note on auto-load method:** `IPcsProAutomationService` already exposes `GetTodaysMatchesAsync()`, which drives a PCS Pro UI interaction and returns the list of converted matches for today. The JIT Spec for S-005 will confirm whether this existing method is sufficient (if it already includes a UI refresh step) or whether a dedicated new method is required. **Either outcome must satisfy the SC-1 constraint: the match list read must be preceded by a UI refresh (Clear Filters) to capture newly converted matches that appeared since the last poll.** The HLPS requirement for a "new method" (SC-1) is satisfied by either outcome.
+> **Note on auto-load method:** The automation service already exposes a method for retrieving today's converted match list. The JIT Spec for S-005 will confirm whether this existing method satisfies SC-1 (the match list read must be preceded by a UI refresh) or whether a new dedicated method is required. Either outcome satisfies SC-1 — the requirement is on the behaviour, not the method.
 
 Steps use stable IDs S-001 through S-010. IDs are never renumbered; deferred steps leave gaps.
 
@@ -41,210 +41,123 @@ Steps use stable IDs S-001 through S-010. IDs are never renumbered; deferred ste
 
 ## Steps
 
-### S-001 — Project scaffold + Core contracts + configuration
+### S-001 — Play-Cricket project scaffold, Core contracts, and configuration
 
-**What changes:**
+**What:** Two new class library projects for Play-Cricket integration (real and mock), both platform-neutral. An API client contract interface and a fixture record type added to `PcsRemote.Core`. A configuration options class added to the real project (following the existing options pattern), covering API credentials, site IDs, polling interval, countdown duration, and a mock flag. The Play-Cricket configuration section scaffolded in `appsettings.json`. Both projects added to the solution.
 
-- New `PcsRemote.PlayCricket` class library project (`net8.0`) referencing `PcsRemote.Core`.
-- New `PcsRemote.PlayCricket.Mock` class library project (`net8.0`) referencing `PcsRemote.Core`.
-- `IPlayCricketApiClient` interface added to `PcsRemote.Core`: a single method that queries fixtures for a given site ID and season, returning a list of `PlayCricketFixture` records.
-- `PlayCricketFixture` immutable record added to `PcsRemote.Core`: represents a single fixture returned by the Play-Cricket API (fixture ID, status string, match date, home/away team names, home/away club names).
-- `PlayCricketOptions` configuration POCO added to `PcsRemote.PlayCricket` (mirrors `YouTubeOptions` pattern): `ApiKey`, `SiteIds` (list of strings), `PollIntervalSeconds` (default 90, minimum 60), `AutoCloseCountdownSeconds` (default 300), `UseMock` flag.
-- `PlayCricket` configuration section scaffolded in `appsettings.json` with placeholder values and XML doc comments.
-- `PcsRemote.PlayCricket` and `PcsRemote.PlayCricket.Mock` added to the solution.
+**Why:** Foundation for all downstream steps. Placing the API client contract and fixture record in `PcsRemote.Core` maintains the zero-external-dependency architectural rule (C-1). Configuration must be scaffolded before any service can consume it.
 
-**Why:** All downstream steps depend on these types and projects existing. Placing `IPlayCricketApiClient` and `PlayCricketFixture` in `PcsRemote.Core` maintains the zero-external-dependency rule. The configuration section must exist before any service can read it.
+**Dependencies:** None.
 
-**Dependencies:** None — this is the first step.
-
-**Verification intent:** Solution builds with zero warnings. `PlayCricketFixture` is constructable. `PlayCricketOptions` binds from configuration with expected defaults. `IPlayCricketApiClient` is in the `PcsRemote.Core` namespace. Both new projects reference only `PcsRemote.Core` (no Windows-specific dependencies). All existing tests pass.
+**Verification:** Solution builds with zero warnings. Both new projects reference only `PcsRemote.Core` with no Windows-specific dependencies. Configuration binds with expected defaults. All existing tests pass.
 
 ---
 
-### S-002 — `PlayCricketApiClient` — real HTTP implementation
+### S-002 — Real Play-Cricket API client
 
-**What changes:**
+**What:** A real HTTP implementation of the API client contract, added to the Play-Cricket project. Uses the factory-based HTTP client pattern consistent with the existing codebase. Maps the JSON response to fixture records; returns an empty list on HTTP error or deserialisation failure (warning logged). Registered in DI via the mock flag.
 
-- `PlayCricketApiClient` class added to `PcsRemote.PlayCricket`, implementing `IPlayCricketApiClient`.
-- Uses `IHttpClientFactory` to make HTTP GET requests to the Play-Cricket `matches.json` endpoint with `site_id`, `season`, and `api_token` query parameters.
-- Deserialises the JSON response and maps it to `IReadOnlyList<PlayCricketFixture>`. Internal JSON DTOs are private to this project.
-- Returns an empty list (with a warning log) on HTTP error or deserialization failure rather than throwing; callers treat an empty list as "no data available".
-- Registered in DI in `PcsRemote.Web` via `PlayCricketOptions.UseMock` flag (real implementation when `false`).
-
-**Why:** The auto-close loop and fixture ID resolution both depend on a working API client. Building and testing the real client independently ensures the HTTP and mapping concerns are verified before they are composed with polling logic.
+**Why:** The auto-close polling loop (S-007) and fixture ID resolution (S-006) both depend on a working API client. Building and testing the HTTP layer in isolation ensures mapping and error-handling concerns are verified before being composed with polling logic.
 
 **Dependencies:** S-001.
 
-**Verification intent:** Unit tests covering: successful response deserialised to correct `PlayCricketFixture` records; HTTP error returns empty list + warning log; malformed JSON returns empty list + warning log; `CancellationToken` propagated to HTTP call. Build and all existing tests pass.
+**Verification:** Unit tests cover: successful response maps to correct fixture records; HTTP error returns empty list with warning; malformed JSON returns empty list with warning; cancellation propagates to the HTTP call. All existing tests pass.
 
 ---
 
-### S-003 — `MockPlayCricketApiClient`
+### S-003 — Mock Play-Cricket API client
 
-**What changes:**
+**What:** An in-memory mock implementation of the API client contract, added to the mock project. Returns configurable fixture lists per configured site; makes no network calls. Registered in DI when mock mode is enabled.
 
-- `MockPlayCricketApiClient` class added to `PcsRemote.PlayCricket.Mock`, implementing `IPlayCricketApiClient`.
-- Returns configurable in-memory fixture lists; never makes network calls.
-- Supports multiple `SiteId` → fixture list mappings to simulate multi-site scenarios.
-- Registered in DI when `PlayCricketOptions.UseMock` is `true`.
-
-**Why:** All development and local testing uses mock mode. The mock must be complete before the fixture ID resolution (S-006) and auto-close polling (S-007) steps can be developed and tested without network access. Also serves as the contract reference for the real implementation.
+**Why:** All development and local testing uses mock mode. The mock must be complete before fixture ID resolution (S-006) and auto-close polling (S-007) can be developed without network access. Serves as the reference contract implementation.
 
 **Dependencies:** S-001.
 
-**Verification intent:** Unit tests verifying: returns configured fixtures for a given site ID; returns empty list for an unconfigured site ID; never throws on any input. Implements `IPlayCricketApiClient` contract identically to the real client. Build and all existing tests pass.
+**Verification:** Unit tests cover: returns configured fixtures for a known site; returns empty list for an unknown site; never throws on any input. All existing tests pass.
 
 ---
 
-### S-004 — `IPlayCricketWatcherService` + service state implementation
+### S-004 — Auto-watch watcher service — interface and state
 
-**What changes:**
+**What:** A watcher service interface added to `PcsRemote.Core`, exposing: observable state (enabled flag, resolved fixture ID, active countdown remaining time), lifecycle methods (enable/disable, start/cancel countdown, per-tick countdown advance), auto-load duplicate-suppression methods, auto-close dismiss methods, and events for all significant state transitions with immutable snapshot payloads. The implementation added to `PcsRemote.Web` owns all domain state for this feature. The hosted service (S-005/S-007) is fully stateless — it reads and writes exclusively through this interface. The implementation subscribes to the existing automation service state change event to reset the fixture ID when the system is no longer in a loaded state. Enabling auto-watch clears any previously dismissed fixture (operator intent to resume). Disabling auto-watch delegates to countdown cancellation as a single code path. Thread safety is an implementation concern addressed in the JIT Spec. Registered as a singleton.
 
-- `IPlayCricketWatcherService` interface added to `PcsRemote.Core`:
-  - Properties: `bool IsAutoWatchEnabled`, `string? CurrentFixtureId`, `TimeSpan? AutoCloseRemainingTime`.
-  - Methods: `EnableAutoWatch()`, `DisableAutoWatch()`, `StartCountdown(string fixtureId, TimeSpan duration)`, `bool? TickCountdown()`, `CancelCountdown()`, `ClearAutoLoadSuppression()`, `void RecordAutoLoadSuppressed(string matchId)`, `bool IsAutoLoadSuppressed(string matchId)`, `void DismissAutoClose(string fixtureId)`, `bool IsAutoCloseDismissed(string fixtureId)`.
-  - Events (following the project `EventHandler<TSnapshot>` pattern): `AutoLoadTriggered`, `AutoCloseCountdownStarted`, `AutoCloseT60Warning`, `AutoCloseCountdownCancelled`, `AutoCloseFired`.
-  - Corresponding immutable snapshot types for each event.
-- `PlayCricketWatcherService` implementation added to `PcsRemote.Web`: manages state (enabled/disabled, `CurrentFixtureId`, countdown state) and fires events. Contains no polling or timer logic — those belong to the hosted service.
-  - `EnableAutoWatch()` / `DisableAutoWatch()` toggle the enabled flag. `DisableAutoWatch()` delegates to `CancelCountdown()` if a countdown is active (single code path; no duplicate event firing).
-  - `StartCountdown(string fixtureId, TimeSpan duration)` records the fixture ID this countdown belongs to (`countdownFixtureId`) along with initial duration, sets `AutoCloseRemainingTime`, and fires `AutoCloseCountdownStarted`. Called by the hosted service when auto-close triggers.
-  - `bool? TickCountdown()` — called by the hosted service once per second. Return semantics: `null` when no countdown is active (`AutoCloseRemainingTime` is null — loop should exit); `false` when countdown is running and has time remaining — loop should continue; `true` when this tick caused expiry — loop should execute expiry sequence. Fires `AutoCloseT60Warning` when remaining time crosses below 60 seconds (suppressed if started ≤ 60 seconds). On expiry: clears `AutoCloseRemainingTime` and clears `countdownFixtureId` but does **not** fire `AutoCloseFired` — that event is fired by the hosted service after successful execution of the expiry sequence.
-  - `CancelCountdown()` clears `AutoCloseRemainingTime` and fires `AutoCloseCountdownCancelled`.
-  - `ClearAutoLoadSuppression()` — called exclusively by `MidnightResetHostedService` (S-008) as part of the midnight reset sequence. Clears the internal auto-load suppression set directly (same class ownership). This is the only mechanism to clear suppression (other than process restart). It does not affect countdown or dismissed state.
-  - `RecordAutoLoadSuppressed(string matchId)` — called by `PlayCricketWatcherHostedService` after a successful auto-load to register the match ID as suppressed. `IsAutoLoadSuppressed(string matchId)` — called by the hosted service before triggering an auto-load; returns `true` if the match ID has already been auto-loaded in this session.
-  - `DismissAutoClose(string fixtureId)` — called by `PlayCricketWatcherHostedService` when a countdown is cancelled or expires (prevents countdown restart). `IsAutoCloseDismissed(string fixtureId)` — called by the hosted service before starting a countdown; returns `true` if the fixture has been dismissed.
-  - **State ownership:** `PlayCricketWatcherService` owns ALL state: the enabled flag, `CurrentFixtureId`, countdown state, the suppression set, and the dismissed fixture ID. `PlayCricketWatcherHostedService` is entirely stateless with respect to domain state — it reads and writes only through the `IPlayCricketWatcherService` interface. This ensures that `ClearAutoLoadSuppression()` can clear the suppression set directly, and `EnableAutoWatch()` can clear the dismissed fixture ID directly, with no cross-service call paths.
-  - **Re-enable resets dismissed state (intentional):** Calling `EnableAutoWatch()` after `DisableAutoWatch()` signals operator intent to resume automation; `EnableAutoWatch()` clears the dismissed fixture ID directly (same class). This allows auto-close to restart for the still-loaded fixture if the operator re-enables.
-  - **Thread safety:** All state mutations are protected by an internal lock. Events are fired after releasing the lock.
-  - `CurrentFixtureId` resets to `null` whenever the system leaves `PcsProState.MatchLoaded` (subscribed to `IPcsProAutomationService.StateChanged`).
-- Registered in DI as singleton.
-- **Responsibility boundary:** `PlayCricketWatcherService` owns all observable state and events. `PlayCricketWatcherHostedService` (S-005 / S-007) owns all scheduling and timing logic (auto-load poll loop, second-resolution countdown loop, API poll loop) and calls into `PlayCricketWatcherService` via the interface to mutate state and raise events.
+**Why:** Separating state management from polling keeps the hosted service focused on scheduling and makes the watcher service independently testable. All UI components and the hosted service depend on the interface; no component touches domain state directly. Addresses G-4, G-5, SC-2, SC-4, SC-6, SC-7.
 
-**Why:** Separating state management from polling keeps the hosted service focused on scheduling concerns and makes the watcher service independently testable. All UI components and the hosted service depend on `IPlayCricketWatcherService`.
+**Dependencies:** S-001.
 
-**Dependencies:** S-001 (for snapshot types living in Core).
-
-**Verification intent:** Unit tests covering: `EnableAutoWatch` / `DisableAutoWatch` toggle; `EnableAutoWatch` clears dismissed fixture ID; `DisableAutoWatch` delegates to `CancelCountdown()` (single event); `StartCountdown(fixtureId, duration)` sets state + fires; `bool? TickCountdown()` returns null when inactive, false when running, true on expiry; `TickCountdown` fires `AutoCloseT60Warning` when crossing below 60s (suppressed if ≤60s start); `TickCountdown` clears state on expiry but does NOT fire `AutoCloseFired`; `CancelCountdown` fires `AutoCloseCountdownCancelled`; `ClearAutoLoadSuppression` clears suppression set (same object); `RecordAutoLoadSuppressed` + `IsAutoLoadSuppressed` round-trip; `DismissAutoClose` + `IsAutoCloseDismissed` round-trip; `CurrentFixtureId` resets on `StateChanged` away from `MatchLoaded`; concurrent calls do not corrupt state or miss events; event snapshots carry expected data. Build and all existing tests pass.
+**Verification:** Unit tests cover the full state surface: enable/disable toggle; enable clears dismissed fixture; disable delegates to countdown cancellation without duplicate events; countdown start, tick progression, and expiry; 60-second warning emission (suppressed when countdown starts at or below 60 seconds); countdown cancellation; auto-load suppression record and lookup; auto-close dismiss record and lookup; fixture ID reset on state exit; concurrent access does not corrupt state or lose events. All existing tests pass.
 
 ---
 
 ### S-005 — Auto-load polling loop
 
-**What changes:**
+**What:** The auto-watch hosted service added to `PcsRemote.Web` (auto-load half only). Polls at the configured interval; each iteration completes before the next begins (non-reentrant). When auto-watch is enabled, manual mode is inactive, and the state machine is in a match-selection state: calls the automation service to retrieve the current converted match list — the call must include a UI refresh per SC-1 (the JIT Spec confirms whether the existing method satisfies this or a new dedicated method is required). If exactly one match is returned and it is not already suppressed, a final pre-load re-check is performed before triggering match load; suppression is recorded on success. Zero results are a no-op; multiple results are a no-op logged per SC-10. Automation exceptions are caught and logged.
 
-- `PlayCricketWatcherHostedService` (`IHostedService`) added to `PcsRemote.Web`. This step implements the auto-load polling half only; S-007 adds the auto-close half.
-- Polling runs on `PlayCricketOptions.PollIntervalSeconds` interval (minimum 60 seconds enforced). The hosted service runs as a single, awaited loop — each iteration must complete before the next begins, preventing concurrent tick executions.
-- On each tick, when `IPlayCricketWatcherService.IsAutoWatchEnabled` is `true`, `IManualModeService.IsManualModeActive` is `false`, and `IPcsProAutomationService.CurrentState` is in `{MatchSelection, MatchSelectionSearching, MatchSelectionReady}`:
-  - Calls the appropriate method on `IPcsProAutomationService` to obtain today's converted match list. The method **must** include a UI refresh step (Clear Filters) before reading — this is a firm requirement. The JIT Spec confirms whether the existing `GetTodaysMatchesAsync()` satisfies this or whether a new dedicated method is required.
-  - Applies duplicate-suppression: if the result contains exactly one match and `IPlayCricketWatcherService.IsAutoLoadSuppressed(matchId)` returns `false`, performs a final re-check (`IsAutoWatchEnabled` still true, `IsManualModeActive` still false) immediately before calling `LoadMatchAsync`. If re-check fails, no action is taken. On successful load, calls `IPlayCricketWatcherService.RecordAutoLoadSuppressed(matchId)` and fires `IPlayCricketWatcherService.AutoLoadTriggered`. Suppression is recorded only on a successful load.
-  - The suppression set is owned by `PlayCricketWatcherService` (S-004). It is **not** cleared by state transitions — it persists for the process lifetime. The only mechanism to clear it is `IPlayCricketWatcherService.ClearAutoLoadSuppression()`, called exclusively by `MidnightResetHostedService` (S-008) as part of the midnight reset sequence (per SC-1). `PlayCricketWatcherHostedService` is stateless with respect to suppression — it only calls interface methods.
-  - If result count ≠ 1, takes no action (0 = wait; 2+ = log ambiguity per SC-10).
-- All exceptions from automation calls are caught, logged, and do not crash the hosted service.
-- Registered in DI.
+**Why:** Primary user-facing value — the scorer starts their match and the scoreboard follows automatically. Implementing and verifying the auto-load loop before the API integration allows it to be independently validated on match day. Addresses G-1, SC-1, SC-10, SC-11.
 
-**Why:** This is the primary user-facing value: the scorer starts their match and the scoreboard follows. Implementing the auto-load loop in isolation (before auto-close) allows it to be independently tested and verified on match day before the more complex Play-Cricket API integration is required.
+**Dependencies:** S-001, S-004.
 
-**Dependencies:** S-001, S-004. S-002/S-003 not required for this step (no API calls).
-
-**Verification intent:** Unit tests covering: auto-load fires when exactly one match returned; final re-check before `LoadMatchAsync` aborts when disabled/manual mid-tick; auto-load suppressed on repeat `MatchId`; suppression NOT cleared on StateChanged→MatchSelection; suppression cleared when `ClearAutoLoadSuppression()` called; auto-load suppressed when disabled/manual/wrong state; 2+ matches logs ambiguity; `AutoLoadTriggered` fires after successful load; exception does not crash service. Build and all existing tests pass.
+**Verification:** Unit tests cover: auto-load fires on a single unsuppressed match; pre-load re-check aborts when conditions change mid-tick; suppressed match is not re-loaded; multiple matches logs ambiguity and takes no action; automation exception does not crash the service. All existing tests pass.
 
 ---
 
 ### S-006 — Post-load fixture ID resolution
 
-**What changes:**
+**What:** The hosted service extended to subscribe to state machine transitions. On entry to the loaded state, a cancellable async resolution task queries all configured Play-Cricket sites in parallel, filtering to the loaded match's date (not today — ensures manually loaded non-today matches resolve correctly). A guard skips resolution if the loaded match date is unset. Team names are normalised and compared across all site results; a unique match sets the fixture ID in the watcher service. Zero or multiple matches leave it unresolved with a warning (auto-close polling skipped per SC-6). If a fixture ID is already set when a new unique match is found, the active countdown is cancelled before the ID is updated. In-flight tasks are cancelled on re-entry to the loaded state or on state exit. If any configured site query fails during a resolution cycle, the resolution outcome for that cycle is indeterminate — no fixture ID is set or updated, a warning is logged, and resolution retries on the next poll tick. The normalisation algorithm is resolved in the JIT Spec (OQ-3).
 
-- `PlayCricketWatcherHostedService` subscribes to `IPcsProAutomationService.StateChanged`.
-- On transition to `PcsProState.MatchLoaded`: cancels any in-flight identification task via `CancellationToken`, then starts a new async task that:
-  - Queries `IPlayCricketApiClient` for each configured `SiteId` **in parallel** using the new `CancellationToken`, collecting results independently. Per-site HTTP or parsing errors are caught and logged; other sites proceed normally.
-  - Client-side filters results to the loaded match's date (using `IPcsProAutomationService.LoadedMatch.MatchDate`) rather than today's date, ensuring fixture resolution works for manually loaded non-today matches. **Guard:** if `LoadedMatch.MatchDate` is `DateOnly.MinValue` (unset), skip resolution with a warning log — `CurrentFixtureId` remains null.
-  - **Partial site failure policy:** Since `IPlayCricketApiClient` converts HTTP errors to an empty list (S-002), a failing site is indistinguishable from a site with genuinely no fixtures at the client level. This is an accepted limitation per SC-9 (API outage suppresses auto-close). In practice, each site covers distinct fixtures, so false-positive uniqueness from a partial failure is low risk. The JIT Spec will evaluate whether a discriminated result type (empty-due-to-error vs. empty-due-to-no-fixtures) is warranted. Until then, an empty list from any site is treated as "no fixtures at that site."
-  - Applies team name normalisation (using the existing `TeamNameFormatter` as the primary candidate) to compare `PlayCricketFixture` team names against `IPcsProAutomationService.LoadedMatch` team names.
-  - If exactly one fixture across all site queries matches: performs a final state check (`CurrentState` still `MatchLoaded`); if a different `CurrentFixtureId` is already set (concurrent resolution for a prior load), calls `CancelCountdown()` before overwriting; then sets `CurrentFixtureId`.
-  - If zero or multiple matches: logs a warning and leaves `CurrentFixtureId` as `null` (auto-close polling is then skipped per SC-6).
-- The `CancellationToken` is also cancelled on any `StateChanged` transition away from `MatchLoaded`.
-- `CurrentFixtureId` is cleared automatically by `PlayCricketWatcherService` on any `StateChanged` away from `MatchLoaded` (S-004).
+**Why:** The resolved fixture ID is the bridge between the PCS Pro domain and the Play-Cricket API. Without it auto-close cannot function. Implementing resolution separately from polling keeps each concern independently testable. Addresses G-4, SC-6.
 
-**Why:** The fixture ID is the bridge between the PCS Pro domain and the Play-Cricket API. Without it, auto-close cannot function. Implementing resolution separately from auto-close polling keeps each concern focused and independently testable.
+**Dependencies:** S-002 (or S-003), S-004, S-005.
 
-**Dependencies:** S-002 (or S-003 for mock), S-004, S-005 (hosted service scaffold).
-
-**Verification intent:** Unit tests covering: unique match found → `CurrentFixtureId` set; filters by loaded match's `MatchDate` (not today); `MatchDate == MinValue` → skip resolution + warning; cancel-before-assign when existing `CurrentFixtureId` differs; multi-site overlap handling; zero → null + warning; multiple → null + warning; exception → null + warning; partial site failure (one site errors, one returns unique match) → uniqueness accepted + warning logged; task cancelled via token on state exit; task cancelled via token on new `MatchLoaded`; final state check prevents stale write; team name normalisation edge cases. Build and all existing tests pass.
+**Verification:** Unit tests cover: unique match found sets fixture ID; zero or multiple matches leaves it unresolved with warning; resolution uses loaded match date not today; unset match date skips resolution with warning; existing fixture ID is cancelled-then-replaced when a new unique match is found; task cancelled on re-entry; task cancelled on state exit. All existing tests pass.
 
 ---
 
-### S-007 — Auto-close polling + countdown
+### S-007 — Auto-close polling and countdown
 
-**What changes:**
+**What:** The hosted service extended with the auto-close polling half. On each poll tick, when a fixture ID is resolved and all pre-conditions are met (auto-watch enabled, manual mode off, state is loaded, fixture not dismissed), queries the fixture status. On confirmed completion (OQ-1, resolved in JIT Spec), performs a final re-check then starts the countdown via the watcher service. A second-resolution inner loop advances the countdown; on expiry, the fixture is dismissed immediately (preventing any retry regardless of subsequent outcome), a final pre-execution re-check is performed — confirming all pre-conditions still hold and that the resolved fixture identity has not changed since countdown started — then stop-streaming is called followed by return-to-match-selection, with the auto-close event fired on success. Cancellation is triggered by any of: user action via UI; auto-watch being disabled; manual mode becoming active (hosted service subscribes to the manual mode change event and cancels immediately, not deferred to next poll); state exit from loaded; or fixture ID change. All cancellation paths also dismiss the fixture. Expiry sequence exceptions are caught and logged; the fixture remains dismissed so the operator must intervene manually (accepted risk per SC-9).
 
-- `PlayCricketWatcherHostedService` extended with the auto-close polling half:
-  - On each API poll tick (same `PollIntervalSeconds` interval), when `IPlayCricketWatcherService.CurrentFixtureId` is not null, no countdown is already active, **`IPlayCricketWatcherService.IsAutoWatchEnabled` is `true`**, **`IManualModeService.IsManualModeActive` is `false`**, and **`IPcsProAutomationService.CurrentState` is `MatchLoaded`**:
-    - Queries `IPlayCricketApiClient` for the fixture matching `CurrentFixtureId` (re-uses the multi-site query pattern from S-006, or a targeted single-fixture query if the API supports it — JIT Spec decides).
-    - Performs a final state re-check (same conditions above) immediately before calling `StartCountdown`.
-    - If status equals the confirmed "completed" status string (OQ-1 — resolved in JIT Spec) and re-check passes: calls `IPlayCricketWatcherService.StartCountdown(CurrentFixtureId, TimeSpan.FromSeconds(AutoCloseCountdownSeconds))`.
-  - Active countdown: a second-resolution loop calls `IPlayCricketWatcherService.TickCountdown()` once per second. Return semantics: `null` = no countdown active (exit loop); `false` = running (continue); `true` = expired (execute expiry sequence). When expired (`true`): **immediately calls `IPlayCricketWatcherService.DismissAutoClose(countdownFixtureId)`** (preventing any retry regardless of subsequent outcome), then perform a final re-check (`IsAutoWatchEnabled`, `!IsManualModeActive`, `CurrentState == MatchLoaded`, `CurrentFixtureId == countdownFixtureId`). If re-check fails: log and abort. If all pass: calls `IPcsProAutomationService.StopStreamingAsync()` then `ChangeMatchAsync()` in sequence; on success fires `IPlayCricketWatcherService.AutoCloseFired` (the event is raised here, not inside `TickCountdown()`).
-  - **Per-fixture dismissed flag:** Owned entirely by `PlayCricketWatcherService` (S-004). The hosted service calls `DismissAutoClose(fixtureId)` and `IsAutoCloseDismissed(fixtureId)` via the interface. The dismissed state is set: (a) via `DismissAutoClose()` called immediately when `TickCountdown()` returns `true` (before re-check); (b) via `DismissAutoClose()` called on any cancellation via cancel triggers (a–e). The API poll/start-countdown path calls `IsAutoCloseDismissed(CurrentFixtureId)` before proceeding, preventing countdown restart. Dismissed state is cleared by `EnableAutoWatch()` on the service (S-004).
-  - **Expiry exception handling:** Exceptions from `StopStreamingAsync` or `ChangeMatchAsync` are caught and logged. A failure leaves the system in `MatchLoaded` state; the fixture is already dismissed, so the operator must intervene manually.
-  - The countdown is cancelled by calling `PlayCricketWatcherService.CancelCountdown()` in any of the following situations: (a) `CancelCountdown()` called directly by the user via the UI; (b) `DisableAutoWatch()` called — `PlayCricketWatcherService` delegates to `CancelCountdown()` internally per S-004; (c) `IManualModeService.IsManualModeActive` becomes `true` — `PlayCricketWatcherHostedService` subscribes to `IManualModeService.ManualModeChanged` and immediately calls `CancelCountdown()` when the new value is `true`; (d) `IPcsProAutomationService.StateChanged` fires a transition away from `PcsProState.MatchLoaded` — hosted service detects and calls `CancelCountdown()`; (e) `CurrentFixtureId` changes while `MatchLoaded` — hosted service detects and calls `CancelCountdown()` before recording the new fixture. All cancellations call `DismissAutoClose(fixtureId)` via the interface.
-
-**Why:** This is the second half of the hosted service and the mechanism that makes the scoreboard self-managing at match end. Implementing it after S-006 ensures the fixture ID resolution is solid before the close logic depends on it.
+**Why:** The mechanism that makes the scoreboard self-managing at match end. Implementing after S-006 ensures fixture resolution is solid before close logic depends on it. Addresses G-2, G-3, SC-2, SC-3, SC-4, SC-9, SC-11.
 
 **Dependencies:** S-002 (or S-003), S-004, S-005, S-006.
 
-**Verification intent:** Unit tests covering: completed status triggers countdown when all pre-conditions met; `IsAutoCloseDismissed` checked before `StartCountdown`; `StartCountdown` called with correct fixtureId and duration; start-countdown suppressed when disabled/manual/wrong state/dismissed; dismissed state cleared on re-enable (not on fixture change); final re-check before `StartCountdown` prevents race; second-resolution loop: null exits, false continues, true triggers expiry; `DismissAutoClose` called immediately on `TickCountdown()=true` before re-check; expiry re-check validates fixtureId match; expiry re-check aborts on failed conditions; expiry calls `StopStreamingAsync` then `ChangeMatchAsync` then fires `AutoCloseFired` on success; `AutoCloseFired` NOT fired on expiry re-check failure; expiry exception caught + logged (no `AutoCloseFired`); cancel trigger (c) fires immediately on `ManualModeChanged=true` (not delayed to next poll); all cancel triggers (a–e) call `DismissAutoClose`; API exception does not crash service. Build and all existing tests pass.
+**Verification:** Unit tests cover: completed status triggers countdown when all pre-conditions met; dismissed fixture prevents countdown restart; countdown advances to expiry; dismiss called immediately on expiry before re-check; auto-close event fires only on successful sequence completion; final re-check aborts sequence on failed conditions or fixture identity mismatch; all five cancellation triggers also dismiss; manual-mode cancellation fires immediately not deferred; expiry exceptions caught without crashing the service. All existing tests pass.
 
 ---
 
-### S-008 — Midnight reset hosted service
+### S-008 — Midnight reset
 
-**What changes:**
+**What:** A separate midnight reset hosted service added to `PcsRemote.Web`. Calculates and delays to local midnight; on wake, calls the automation service to return to match selection if the system is in a loaded state and manual mode is off, then unconditionally clears the auto-load suppression record in the watcher service. Re-arms for the following midnight. Exceptions from the match-return call are caught and logged; suppression is always cleared regardless.
 
-- `MidnightResetHostedService` (`IHostedService`) added to `PcsRemote.Web`.
-- Calculates the time until the next 00:00:00 local time and uses `Task.Delay` to wait; wakes at midnight and re-arms for the following midnight.
-- On wake: if `IPcsProAutomationService.CurrentState == PcsProState.MatchLoaded` and `IManualModeService.IsManualModeActive == false`, calls `ChangeMatchAsync()`. All other states are a no-op for `ChangeMatchAsync`.
-- After `ChangeMatchAsync` (or if state was not `MatchLoaded`): always calls `IPlayCricketWatcherService.ClearAutoLoadSuppression()` as part of the midnight reset sequence regardless of automation state (per SC-1 and SC-8 — suppression resets at midnight unconditionally).
-- Exceptions from `ChangeMatchAsync` are caught and logged; the service continues to the next midnight cycle. `ClearAutoLoadSuppression()` is still called even if `ChangeMatchAsync` throws.
-- Registered in DI.
+**Why:** An independent safety net decoupled from auto-watch toggle state. Ensures suppression records do not persist across match days and stale loaded matches are resolved at day boundary. Carries no Play-Cricket API dependency. Addresses SC-1, SC-8.
 
-**Why:** An independent safety net that is completely decoupled from auto-watch state. This is a well-scoped, self-contained step that can be delivered and tested independently of the polling logic.
+**Dependencies:** None beyond the existing automation and manual mode services.
 
-**Dependencies:** None beyond the existing `IPcsProAutomationService` and `IManualModeService` — no Play-Cricket dependencies.
-
-**Verification intent:** Unit tests covering: fires `ChangeMatchAsync` at midnight when `MatchLoaded` and manual mode off; no `ChangeMatchAsync` when state ≠ `MatchLoaded`; no `ChangeMatchAsync` when manual mode active; `ClearAutoLoadSuppression()` called in all wake paths (MatchLoaded, non-MatchLoaded, manual active); `ClearAutoLoadSuppression()` called even when `ChangeMatchAsync` throws; exception during `ChangeMatchAsync` is caught and logged; service re-arms for the next midnight after firing. Build and all existing tests pass.
+**Verification:** Unit tests cover: match-return fires at midnight when in loaded state and manual mode off; match-return not called in other states or when manual mode active; suppression cleared in all wake paths; suppression cleared even when match-return throws; service re-arms for the next midnight. All existing tests pass.
 
 ---
 
-### S-009 — Web UI — auto-watch toggle + countdown banner
+### S-009 — Web UI — auto-watch toggle and countdown banner
 
-**What changes:**
+**What:** An auto-watch enabled/disabled toggle added to the debug panel, following the existing debug toggle pattern (HLPS-019). Wired to the watcher service enable/disable; reflects live enabled state. A countdown banner added to the main UI, visible when a countdown is active, showing remaining time updated in real time via a component-level periodic timer. Includes a cancel button. Both controls start in the disabled/hidden state on mount per SC-7.
 
-- **Debug panel toggle**: Auto-watch enabled/disabled toggle added to the debug panel, following the date override toggle pattern from HLPS-019. Bound to `IPlayCricketWatcherService.EnableAutoWatch()` / `DisableAutoWatch()`. Renders the current state of `IPlayCricketWatcherService.IsAutoWatchEnabled`. Since the service never persists its enabled state (SC-7, C-4), this will be `false` on every fresh application start; the toggle correctly reflects live service state within a running session.
-- **Countdown banner**: A banner component appears in the main web UI when `IPlayCricketWatcherService.AutoCloseRemainingTime` is not null. Displays remaining time, updating in real time using a component-level `PeriodicTimer` at a 1-second interval that reads `AutoCloseRemainingTime` and calls `StateHasChanged()` — no additional service event is required for tick-by-tick updates. The banner subscribes to `AutoCloseCountdownStarted` to begin showing and to `AutoCloseCountdownCancelled` / `AutoCloseFired` to dismiss. Includes a "Cancel" button that calls `IPlayCricketWatcherService.CancelCountdown()`.
+**Why:** Operator visibility and control over the auto-watch feature. UI is isolated from service logic and implemented late to avoid churn while service contracts settle. Addresses G-3, G-5, SC-2, SC-4, SC-7.
 
-**Why:** The UI changes are isolated from the service logic and can be developed and tested independently once the service interfaces are stable. Keeping UI as a late step avoids UI churn while the service contracts settle.
+**Dependencies:** S-004.
 
-**Dependencies:** S-004 (for `IPlayCricketWatcherService` interface).
-
-**Verification intent:** bUnit tests covering: toggle renders `false` on mount (service starts disabled per SC-7); toggle calls `EnableAutoWatch`/`DisableAutoWatch`; toggle reflects live `IsAutoWatchEnabled` state on re-render; countdown banner hidden when `AutoCloseRemainingTime` is null; countdown banner visible with correct time display when active; banner updates on `PeriodicTimer` tick (reads `AutoCloseRemainingTime` + `StateHasChanged`); banner disappears on `AutoCloseCountdownCancelled` or `AutoCloseFired` events; cancel button calls `CancelCountdown`. Build and all existing tests pass.
+**Verification:** bUnit tests cover: toggle renders disabled on mount; toggle wires to enable/disable; countdown banner hidden when no countdown active; banner appears with correct time and updates; banner dismisses on countdown end (cancelled or fired); cancel button triggers cancellation. All existing tests pass.
 
 ---
 
 ### S-010 — Browser push notifications
 
-**What changes:**
+**What:** A lazy-loaded JavaScript interop module added to `PcsRemote.Web` managing the browser notification permission and notification dispatch. Permission is requested on first auto-watch enable. Notifications are fired when the auto-close countdown starts and at the 60-second remaining warning (suppressed if the total countdown is 60 seconds or less per C-3a — the service handles this by not raising the warning event in that case). Degrades gracefully on permission denial with no crash or error state. Does not affect page load time.
 
-- JavaScript interop module added to `PcsRemote.Web` to manage the browser `Notification` API:
-  - On first `EnableAutoWatch()` call: requests `Notification` permission via `Notification.requestPermission()`. Gracefully handles denied permission — no crash, no error state.
-  - On `AutoCloseCountdownStarted` event: fires a browser push notification via JS interop with a descriptive message.
-  - On `AutoCloseT60Warning` event from `IPlayCricketWatcherService`: fires a second push notification (suppressed if countdown started at ≤ 60 seconds, per C-3a — note: `PlayCricketWatcherService` handles suppression internally via `TickCountdown`; this event simply will not fire in that case).
-- If the browser has denied notification permission, the JS calls are no-ops. The web UI countdown banner (S-009) remains the sole feedback channel in that case.
-- The JS module is lazy-loaded; it does not affect page load when auto-watch has never been enabled.
+**Why:** Optional enhancement layered on after all other functionality is operational. Highest-risk step due to JS interop and browser permission model — delivering last minimises blast radius. Addresses G-3, SC-5, C-3a, C-7.
 
-**Why:** Push notifications are the last isolated concern and the highest-risk step (JS interop, browser permission model). Delivering them last means all other functionality is operational before this optional enhancement is layered on.
+**Dependencies:** S-004, S-009.
 
-**Dependencies:** S-004 (events), S-009 (UI integration point).
-
-**Verification intent:** bUnit / JS interop tests covering: permission request fires on first `EnableAutoWatch`; notification fires on `AutoCloseCountdownStarted`; T-60 notification fires on `AutoCloseT60Warning` event; T-60 notification not fired when countdown started at ≤ 60 seconds (event not raised by service); no exception when permission denied; no notification fires when permission not yet granted. Build and all existing tests pass.
+**Verification:** Tests cover: permission requested on first enable; countdown-start notification fires; 60-second warning notification fires; warning suppressed when countdown started at 60 seconds or less; no exception when permission denied. All existing tests pass.
 
 ---
 
@@ -252,16 +165,47 @@ Steps use stable IDs S-001 through S-010. IDs are never renumbered; deferred ste
 
 ```
 S-001 (scaffold + contracts)
-  └── S-002 (real API client)
-  └── S-003 (mock API client)
+  ├── S-002 (real API client)
+  ├── S-003 (mock API client)
   └── S-004 (watcher service state)
         └── S-005 (auto-load polling)
               └── S-006 (fixture ID resolution) ← also needs S-002/S-003
                     └── S-007 (auto-close + countdown)
 S-008 (midnight reset) — independent, no Play-Cricket dependency
-S-009 (UI) ← depends on S-004
-  └── S-010 (push notifications) ← also depends on S-004 (events)
+S-009 (UI toggle + banner) ← depends on S-004
+  └── S-010 (push notifications) ← also depends on S-004
 ```
+
+| Step | Depends on |
+|---|---|
+| S-001 | — |
+| S-002 | S-001 |
+| S-003 | S-001 |
+| S-004 | S-001 |
+| S-005 | S-001, S-004 |
+| S-006 | S-002 (or S-003), S-004, S-005 |
+| S-007 | S-002 (or S-003), S-004, S-005, S-006 |
+| S-008 | — (no Play-Cricket dependency) |
+| S-009 | S-004 |
+| S-010 | S-004, S-009 |
+
+---
+
+## SC Coverage Matrix
+
+| SC | Addressed by |
+|---|---|
+| SC-1 | S-005, S-008 |
+| SC-2 | S-004, S-007, S-009 |
+| SC-3 | S-007 |
+| SC-4 | S-004, S-007, S-009 |
+| SC-5 | S-010 |
+| SC-6 | S-006 |
+| SC-7 | S-004, S-009 |
+| SC-8 | S-008 |
+| SC-9 | S-002, S-005, S-006, S-007 |
+| SC-10 | S-005 |
+| SC-11 | S-005, S-007, S-008 |
 
 ---
 
@@ -277,3 +221,5 @@ S-009 (UI) ← depends on S-004
 | R5 | 3 | claude-opus-4.5, gpt-5.4 | Opus: 1×MEDIUM, 2×LOW. GPT: 2×HIGH, 1×MEDIUM | All 6 accepted | REVISION REQUIRED | bool? TickCountdown() (null=inactive, false=running, true=expired); StartCountdown is fixture-scoped (fixtureId param); expiry re-check validates fixtureId; CurrentFixtureId change as explicit cancel trigger (e); pre-LoadMatchAsync re-check; CancellationToken for S-006; dismiss-on-retoggle noted intentional |
 | R6 | 3 | claude-opus-4.5, gpt-5.4 | Opus: 2×LOW, 1×INFO. GPT: 2×HIGH, 1×MEDIUM | All 6 accepted | REVISION REQUIRED (GPT) / APPROVED (Opus) | ClearAutoLoadSuppression() added to interface; suppression cleared only by S-008 (not StateChanged); DisableAutoWatch() delegates to CancelCountdown(); TickCountdown() does NOT fire AutoCloseFired; AutoCloseFired fired in S-007 after successful expiry; _dismissedFixtureId set immediately on TickCountdown()=true; S-006 filters by loaded match MatchDate (not today); S-006 cancel-before-assign on stale CurrentFixtureId |
 | R7 | 3 | claude-opus-4.5, gpt-5.4 | Opus: 1×MEDIUM, 2×LOW. GPT: 2×HIGH, 2×MEDIUM (1 rejected) | Accepted: Opus-F1+GPT-F1(HIGH, same finding), GPT-F2(MEDIUM→partial failure policy), GPT-F3(LOW→MatchDate guard), GPT-F4(MEDIUM→banner update mechanism), Opus-F2(LOW→ManualModeChanged sub). Rejected: GPT-F5 (SC-5 not in HLPS; single-user system) | REVISION REQUIRED | Suppression+dismissed ownership moved to PlayCricketWatcherService; 4 interface methods added (RecordAutoLoadSuppressed/IsAutoLoadSuppressed/DismissAutoClose/IsAutoCloseDismissed); hosted service is fully stateless; MatchDate==MinValue guard in S-006; partial failure policy documented; ManualModeChanged subscription explicit in S-007; banner uses PeriodicTimer for real-time updates |
+| R8 | 0 | Self-Cert | — | — | SELF-CERTIFIED | Abstraction-level editorial pass per IS guidance. All steps rewritten to comply with IS Abstraction Level rules (no method signatures, property names, config keys, or compile-correctness-sensitive identifiers). SC Coverage Matrix and canonical dependency table added. No functional requirement added, removed, or changed. All architectural decisions from R1–R7 preserved in behavioural language. |
+| R10 | 3 | claude-opus-4.5, gpt-5.4 | 0 findings | All fixes verified adequate | APPROVED | F1 fix (S-007 fixture-identity re-check), F2 fix (S-006 partial-site-failure policy), F3 fix (SC-9 matrix) all confirmed correct and internally consistent. No regressions introduced. Unanimous approval. |
