@@ -74,4 +74,12 @@ public interface IYouTubeLiveStreamService
     /// validation fails), or <see langword="false"/> if client credentials are not configured.
     /// </summary>
     Task<bool> RunOAuthSetupAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Requests a proactive Google credential refresh when the service is in the ready state.
+    /// When not ready, this method is a no-op. On token failure, transitions to AuthFailed
+    /// and fires <see cref="AuthStatusChanged"/>. This method is the entry point for the
+    /// background refresh scheduler (S-004).
+    /// </summary>
+    Task RunProactiveRefreshAsync(CancellationToken ct = default);
 }

@@ -65,6 +65,7 @@ public static class WebApplicationBuilderExtensions
                 var logger = sp.GetRequiredService<ILogger<DpapiFileDataStore>>();
                 return new DpapiFileDataStore(opts.GetEffectiveTokenStorePath(), logger);
             });
+            builder.Services.AddSingleton<IStalenessPersistence, FileStalenessPersistence>();
             builder.Services.AddSingleton<IYouTubeLiveStreamService, YouTubeLiveStreamService>();
             builder.Services.AddHostedService<YouTubeInitializerHostedService>();
         }

@@ -22,6 +22,7 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
     private readonly BroadcastTitleRenderer _titleRenderer;
     private readonly ILogger<YouTubeLiveStreamService> _logger;
     private readonly IDataStore _dataStore;
+    private readonly IStalenessPersistence _stalenessPersistence;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly object _stateLock = new();
 
@@ -31,25 +32,29 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
     private bool _tokenAvailable;
     private YouTubeAvailability _availability = YouTubeAvailability.NotConfigured;
     private CancellationTokenSource? _startCts;
+    private ICredentialRefresher? _credentialRefresher;
 
     public YouTubeLiveStreamService(
         IOptions<YouTubeOptions> options,
         IPcsProAutomationService automationService,
         BroadcastTitleRenderer titleRenderer,
         ILogger<YouTubeLiveStreamService> logger,
-        IDataStore dataStore)
+        IDataStore dataStore,
+        IStalenessPersistence stalenessPersistence)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(automationService);
         ArgumentNullException.ThrowIfNull(titleRenderer);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(dataStore);
+        ArgumentNullException.ThrowIfNull(stalenessPersistence);
 
         _options = options.Value;
         _automationService = automationService;
         _titleRenderer = titleRenderer;
         _logger = logger;
         _dataStore = dataStore;
+        _stalenessPersistence = stalenessPersistence;
     }
 
     /// <inheritdoc/>
@@ -76,15 +81,17 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
     /// <inheritdoc/>
     public event EventHandler<YouTubeAuthStatusSnapshot>? AuthStatusChanged;
 
-    // CS0067 suppressed: event is raised in S-003 (proactive refresh). Suppression is
-    // temporary and will be removed when firing logic is added.
-#pragma warning disable CS0067
     /// <inheritdoc/>
     public event EventHandler? TokenExpiryApproaching;
-#pragma warning restore CS0067
 
     /// <inheritdoc/>
     public async Task InitializeAsync(CancellationToken ct = default)
+    {
+        await InitializeCoreAsync(ct).ConfigureAwait(false);
+        await RunStalenessCheckAsync(CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private async Task InitializeCoreAsync(CancellationToken ct)
     {
         try
         {
@@ -111,6 +118,7 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
         }
 
         var credential = BuildCredentialFromStoredToken(tokenResponse);
+        _credentialRefresher = new UserCredentialRefresher(credential);
         _youTubeService = new YouTubeService(new BaseClientService.Initializer
         {
             HttpClientInitializer = credential,
@@ -336,6 +344,9 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
             _gate.Release();
         }
 
+        await _stalenessPersistence.SetLastConsentAtAsync(DateTimeOffset.UtcNow).ConfigureAwait(false);
+        _logger.LogInformation("Staleness marker updated after re-consent");
+
         // Re-initialise outside the gate — InitializeAsync does not use the gate
         // and may make YouTube API calls that should not block other callers.
         // InitializeAsync now handles its own errors and fires AuthStatusChanged.
@@ -351,6 +362,87 @@ public sealed class YouTubeLiveStreamService : IYouTubeLiveStreamService, IAsync
         _youTubeService?.Dispose();
         _gate.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public async Task RunProactiveRefreshAsync(CancellationToken ct = default)
+    {
+        if (Availability != YouTubeAvailability.Ready)
+        {
+            return;
+        }
+
+        var refresher = _credentialRefresher;
+        if (refresher is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var tokenBefore = refresher.GetRefreshToken();
+            await refresher.RefreshAsync(ct).ConfigureAwait(false);
+            var tokenAfter = refresher.GetRefreshToken();
+
+            if (tokenBefore != tokenAfter && tokenAfter is not null)
+            {
+                await _stalenessPersistence.SetLastConsentAtAsync(DateTimeOffset.UtcNow)
+                    .ConfigureAwait(false);
+                _logger.LogInformation("Proactive refresh detected token rotation — staleness marker updated");
+            }
+        }
+        catch (TokenResponseException ex)
+        {
+            _logger.LogError(ex,
+                "Proactive token refresh failed ({Error}) — transitioning to AuthFailed",
+                ex.Error?.Error ?? "unknown");
+            _tokenAvailable = false;
+            _credentialRefresher = null;
+            _youTubeService = null;
+            await DeleteTokenSafelyAsync().ConfigureAwait(false);
+            SetAvailability(YouTubeAvailability.AuthFailed,
+                "YouTube token failed to refresh. Re-authorise via tray icon → YouTube Setup.");
+            return;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Proactive token refresh failed — availability unchanged");
+            return;
+        }
+
+        if (Availability == YouTubeAvailability.Ready)
+        {
+            await RunStalenessCheckAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RunStalenessCheckAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var lastConsent = await _stalenessPersistence.GetLastConsentAtAsync()
+                .ConfigureAwait(false);
+
+            if (lastConsent is null)
+            {
+                return;
+            }
+
+            var age = DateTimeOffset.UtcNow - lastConsent.Value;
+            var threshold = TimeSpan.FromDays(_options.StalenessThresholdDays);
+
+            if (age > threshold)
+            {
+                _logger.LogWarning(
+                    "YouTube token staleness threshold exceeded ({AgeDays:F1} days > {ThresholdDays} days) — raising TokenExpiryApproaching",
+                    age.TotalDays, _options.StalenessThresholdDays);
+                TokenExpiryApproaching?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Staleness check failed — skipping");
+        }
     }
 
     // ─── StartStreamAsync helpers ────────────────────────────────────────

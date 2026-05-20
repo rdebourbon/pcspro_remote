@@ -51,6 +51,18 @@ public sealed class YouTubeOptions
     public bool UseMock { get; set; }
 
     /// <summary>
+    /// Number of days after the last re-consent before the staleness warning fires.
+    /// Defaults to 5.
+    /// </summary>
+    public int StalenessThresholdDays { get; set; } = 5;
+
+    /// <summary>
+    /// Interval in hours between proactive token refresh calls from the background
+    /// scheduler (S-004). Defaults to 6.
+    /// </summary>
+    public int ProactiveRefreshIntervalHours { get; set; } = 6;
+
+    /// <summary>
     /// Returns the effective token store path, falling back to the AppData default.
     /// </summary>
     public string GetEffectiveTokenStorePath() =>

@@ -271,6 +271,13 @@ public sealed class MockYouTubeLiveStreamService : IYouTubeLiveStreamService
         return Task.FromResult(true);
     }
 
+    /// <inheritdoc/>
+    public Task RunProactiveRefreshAsync(CancellationToken ct = default)
+    {
+        _logger.LogDebug("MockYouTubeLiveStreamService: proactive refresh no-op");
+        return Task.CompletedTask;
+    }
+
     private void SetStatus(LiveStreamStatus newStatus, string? errorMessage = null)
     {
         _status = newStatus;
