@@ -75,6 +75,7 @@ public static class WebApplicationBuilderExtensions
             builder.Services.AddMockPlayCricketApiClient(builder.Configuration);
         else
             builder.Services.AddPlayCricketApiClient(builder.Configuration);
+        builder.Services.AddSingleton<IPlayCricketWatcherService, PlayCricketWatcherService>();
         return builder;
     }
 
