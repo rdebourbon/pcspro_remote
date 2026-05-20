@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using PcsRemote.Automation;
 using PcsRemote.Automation.Mock;
 using PcsRemote.Core;
+using PcsRemote.PlayCricket;
 using PcsRemote.Web.Hubs;
 using PcsRemote.Web.Services;
 using PcsRemote.YouTube;
@@ -69,6 +70,8 @@ public static class WebApplicationBuilderExtensions
             builder.Services.AddSingleton<IYouTubeLiveStreamService, YouTubeLiveStreamService>();
             builder.Services.AddHostedService<YouTubeInitializerHostedService>();
         }
+        if (!builder.Configuration.GetValue<bool>("PlayCricket:UseMock"))
+            builder.Services.AddPlayCricketApiClient(builder.Configuration);
         return builder;
     }
 
