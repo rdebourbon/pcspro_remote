@@ -113,7 +113,7 @@ Steps use stable IDs S-001 through S-010. IDs are never renumbered; deferred ste
 
 ---
 
-### S-007 — Auto-close polling and countdown
+### S-007 — Auto-close polling and countdown ✅ DELIVERED
 
 **What:** The hosted service extended with the auto-close polling half. On each poll tick, when a fixture ID is resolved and all pre-conditions are met (auto-watch enabled, manual mode off, state is loaded, fixture not dismissed), queries the fixture status. On confirmed completion (OQ-1, resolved in JIT Spec), performs a final re-check then starts the countdown via the watcher service. A second-resolution inner loop advances the countdown; on expiry, the fixture is dismissed immediately (preventing any retry regardless of subsequent outcome), a final pre-execution re-check is performed — confirming all pre-conditions still hold and that the resolved fixture identity has not changed since countdown started — then stop-streaming is called followed by return-to-match-selection, with the auto-close event fired on success. Cancellation is triggered by any of: user action via UI; auto-watch being disabled; manual mode becoming active (hosted service subscribes to the manual mode change event and cancels immediately, not deferred to next poll); state exit from loaded; or fixture ID change. All cancellation paths also dismiss the fixture. Expiry sequence exceptions are caught and logged; the fixture remains dismissed so the operator must intervene manually (accepted risk per SC-9).
 
