@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | **Document** | IS-021-PlayCricket-Auto-Watch.md |
-| **Status** | APPROVED |
-| **Version** | 1.1 |
+| **Status** | DELIVERED |
+| **Version** | 1.2 |
 | **Date** | 2026-05-21 |
 | **Governing HLPS** | HLPS-021-PlayCricket-Auto-Watch.md (APPROVED) |
 | **Context** | `docs/PCS-Remote/PROJECT-CONTEXT.md` |
@@ -149,7 +149,7 @@ Steps use stable IDs S-001 through S-010. IDs are never renumbered; deferred ste
 
 ---
 
-### S-010 — Browser push notifications
+### S-010 — Browser push notifications ✅ DELIVERED
 
 **What:** A lazy-loaded JavaScript interop module added to `PcsRemote.Web` managing the browser notification permission and notification dispatch. Permission is requested on first auto-watch enable. Notifications are fired when the auto-close countdown starts and at the 60-second remaining warning (suppressed if the total countdown is 60 seconds or less per C-3a — the service handles this by not raising the warning event in that case). Degrades gracefully on permission denial with no crash or error state. Does not affect page load time.
 
@@ -157,7 +157,7 @@ Steps use stable IDs S-001 through S-010. IDs are never renumbered; deferred ste
 
 **Dependencies:** S-004, S-009.
 
-**Verification:** Tests cover: permission requested on first enable; countdown-start notification fires; 60-second warning notification fires; warning suppressed when countdown started at 60 seconds or less; no exception when permission denied. All existing tests pass.
+**Verification:** Tests cover: permission requested on first enable; permission not re-requested on second enable; countdown-start notification fires with duration; 60-second warning notification fires; no exception on permission denial; JSDisconnectedException caught silently; no JS calls after disposal; late-join circuit requests permission at mount; component renders no HTML. All existing tests pass.
 
 ---
 
