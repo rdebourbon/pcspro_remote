@@ -136,4 +136,19 @@ public interface IPlayCricketWatcherService
     /// Not raised on no-op calls (same-value assignments).
     /// </summary>
     event EventHandler<FixtureIdChangedSnapshot> FixtureIdChanged;
+
+    /// <summary>
+    /// Raised when the auto-close expiry sequence completes successfully.
+    /// Fired by the hosted service via <see cref="RaiseAutoCloseFired"/> after
+    /// <c>StopStreamingAsync</c> and <c>ChangeMatchAsync</c> both succeed.
+    /// </summary>
+    event EventHandler<AutoCloseFiredSnapshot> AutoCloseFired;
+
+    /// <summary>
+    /// Fires <see cref="AutoCloseFired"/> on all subscribers. Called by the hosted service
+    /// after a successful auto-close expiry sequence (IS-021 S-007 R-5).
+    /// The event can only be raised from within the declaring class, so this method
+    /// delegates to the implementation, which invokes the handler directly.
+    /// </summary>
+    void RaiseAutoCloseFired(AutoCloseFiredSnapshot snapshot);
 }

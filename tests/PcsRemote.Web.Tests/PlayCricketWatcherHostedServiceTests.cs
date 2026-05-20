@@ -6,6 +6,7 @@ using Moq;
 using PcsRemote.Core;
 using PcsRemote.PlayCricket;
 using PcsRemote.Web;
+using PcsRemote.Web.Services;
 
 namespace PcsRemote.Web.Tests;
 
@@ -1189,6 +1190,806 @@ public sealed class PlayCricketWatcherHostedServiceTests
         // SetCurrentFixtureId must NOT be called — pre-existing ID 10 is preserved
         watcherMock.Verify(w => w.SetCurrentFixtureId(It.IsAny<int?>()), Times.Never);
         logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("0"));
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 helpers ─────────────────────────────────────────────────────────
+
+    private sealed class FakeAutoClosePcsProService : IPcsProAutomationService
+    {
+        public PcsProState CurrentState { get; set; } = PcsProState.MatchLoaded;
+        public string? LastErrorReason => null;
+        public MatchInfo? LoadedMatch { get; set; }
+
+        public event EventHandler<PcsProState>? StateChanged;
+#pragma warning disable CS0067
+        public event EventHandler<HealthAlertEventArgs>? HealthAlert;
+#pragma warning restore CS0067
+
+        public Func<CancellationToken, Task> StopStreamingHandler { get; set; } = _ => Task.CompletedTask;
+        public Func<CancellationToken, Task> ChangeMatchHandler { get; set; } = _ => Task.CompletedTask;
+        public bool StopStreamingWasCalled { get; private set; }
+
+        public void RaiseStateChanged(PcsProState newState)
+        {
+            CurrentState = newState;
+            StateChanged?.Invoke(this, newState);
+        }
+
+        public Task<IReadOnlyList<MatchInfo>> GetSelectableMatchesAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<MatchInfo>>(Array.Empty<MatchInfo>());
+        public Task LoadMatchAsync(MatchInfo match, CancellationToken ct = default) => Task.CompletedTask;
+        public Task StopStreamingAsync(CancellationToken ct = default)
+        {
+            StopStreamingWasCalled = true;
+            return StopStreamingHandler(ct);
+        }
+        public Task ChangeMatchAsync(CancellationToken ct = default) => ChangeMatchHandler(ct);
+        public Task LaunchAndLoginAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<MatchInfo>> GetTodaysMatchesAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<MatchInfo>> GetMatchesForDateAsync(DateOnly d, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<MatchTeams> GetTeamNamesAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task RefreshScoreboardAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<byte[]> CaptureScoreboardImageAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task StopAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task RetryAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task StartStreamingAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<MatchTeams> UseCurrentMatchAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task DismissAsync(CancellationToken ct = default) => throw new NotSupportedException();
+    }
+
+    private sealed class FakeManualModeService : IManualModeService
+    {
+        public bool IsManualModeActive { get; private set; }
+        public event EventHandler<bool>? ManualModeChanged;
+
+        public void Enable()
+        {
+            if (IsManualModeActive) return;
+            IsManualModeActive = true;
+            ManualModeChanged?.Invoke(this, true);
+        }
+
+        public void Disable()
+        {
+            if (!IsManualModeActive) return;
+            IsManualModeActive = false;
+            ManualModeChanged?.Invoke(this, false);
+        }
+
+        public void Toggle()
+        {
+            if (IsManualModeActive) Disable(); else Enable();
+        }
+    }
+
+    private const int AutoCloseFixtureId = 42;
+    private static readonly PlayCricketFixture ResultFixture =
+        new(AutoCloseFixtureId, "Home XI", "Away XI", "Result");
+
+    private static (
+        PlayCricketWatcherHostedService Svc,
+        FakeAutoClosePcsProService AutoFake,
+        PlayCricketWatcherService WatcherSvc,
+        FakeManualModeService ManualFake,
+        Mock<IPlayCricketApiClient> ApiClientMock,
+        ChannelReader<FakePeriodicTimer> Timers,
+        CapturingLogger<PlayCricketWatcherHostedService> Logger)
+    BuildFakeForAutoClose(
+        bool isEnabled = true,
+        bool isManualModeActive = false,
+        bool isDismissed = false,
+        bool nullFixtureId = false,
+        TimeSpan countdownDuration = default,
+        TimeSpan countdownTickInterval = default)
+    {
+        var autoFake = new FakeAutoClosePcsProService();
+        var watcherSvc = new PlayCricketWatcherService(autoFake);
+        var manualFake = new FakeManualModeService();
+
+        if (isManualModeActive) manualFake.Enable();
+        if (isEnabled) watcherSvc.Enable();
+        if (!nullFixtureId) watcherSvc.SetCurrentFixtureId(AutoCloseFixtureId);
+        if (isDismissed) watcherSvc.DismissFixture(AutoCloseFixtureId);
+
+        var apiClientMock = new Mock<IPlayCricketApiClient>();
+        apiClientMock.Setup(a => a.GetFixturesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)[]);
+
+        var timerChannel = Channel.CreateUnbounded<FakePeriodicTimer>(
+            new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+        var logger = new CapturingLogger<PlayCricketWatcherHostedService>();
+
+        var svc = new PlayCricketWatcherHostedService(
+            autoFake,
+            watcherSvc,
+            manualFake,
+            apiClientMock.Object,
+            () =>
+            {
+                var t = new FakePeriodicTimer();
+                timerChannel.Writer.TryWrite(t);
+                return t;
+            },
+            logger,
+            siteIds: [1],
+            countdownDuration: countdownDuration == default ? TimeSpan.FromSeconds(2) : countdownDuration,
+            countdownTickInterval: countdownTickInterval == default ? TimeSpan.FromMilliseconds(1) : countdownTickInterval);
+
+        return (svc, autoFake, watcherSvc, manualFake, apiClientMock, timerChannel.Reader, logger);
+    }
+
+    private static async Task AwaitCountdownAsync(PlayCricketWatcherHostedService svc, TimeSpan timeout = default)
+    {
+        if (timeout == default) timeout = TimeSpan.FromSeconds(5);
+        var task = svc.CountdownTask;
+        if (task is not null)
+            await task.WaitAsync(timeout);
+    }
+
+    // Overload accepting a pre-captured task snapshot — use when the cancellation trigger will
+    // null out svc.CountdownTask before AwaitCountdownAsync can read it.
+    private static async Task AwaitCountdownAsync(Task? countdownSnapshot, TimeSpan timeout = default)
+    {
+        if (timeout == default) timeout = TimeSpan.FromSeconds(5);
+        if (countdownSnapshot is not null)
+            await countdownSnapshot.WaitAsync(timeout);
+    }
+
+    // ── S-007 TC-1: "Result" status triggers StartCountdown ───────────────────
+
+    [TestMethod]
+    public async Task AutoCloseTick_ResultStatus_CallsStartCountdown()
+    {
+        var (svc, _, _, _, apiClientMock, timers, _) = BuildFakeForAutoClose();
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)[ResultFixture]);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        // StartCountdown was called — countdown task should have started
+        svc.CountdownTask.Should().NotBeNull();
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-2: "Abandoned" status triggers StartCountdown ────────────────
+
+    [TestMethod]
+    public async Task AutoCloseTick_AbandonedStatus_CallsStartCountdown()
+    {
+        var (svc, _, _, _, apiClientMock, timers, _) = BuildFakeForAutoClose();
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)
+            [new PlayCricketFixture(AutoCloseFixtureId, Status: "Abandoned")]);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        svc.CountdownTask.Should().NotBeNull();
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-3: "No Result" status triggers StartCountdown ────────────────
+
+    [TestMethod]
+    public async Task AutoCloseTick_NoResultStatus_CallsStartCountdown()
+    {
+        var (svc, _, _, _, apiClientMock, timers, _) = BuildFakeForAutoClose();
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)
+            [new PlayCricketFixture(AutoCloseFixtureId, Status: "No Result")]);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        svc.CountdownTask.Should().NotBeNull();
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-4: "Playing" status — no countdown ───────────────────────────
+
+    [TestMethod]
+    public async Task AutoCloseTick_PlayingStatus_DoesNotStartCountdown()
+    {
+        var (svc, _, _, _, apiClientMock, timers, _) = BuildFakeForAutoClose();
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)
+            [new PlayCricketFixture(AutoCloseFixtureId, Status: "Playing")]);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        svc.CountdownTask.Should().BeNull();
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-5: "Fixture" status — no countdown ───────────────────────────
+
+    [TestMethod]
+    public async Task AutoCloseTick_FixtureStatus_DoesNotStartCountdown()
+    {
+        var (svc, _, _, _, apiClientMock, timers, _) = BuildFakeForAutoClose();
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)
+            [new PlayCricketFixture(AutoCloseFixtureId, Status: "Fixture")]);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        svc.CountdownTask.Should().BeNull();
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-6: Dismissed fixture — API not queried, no countdown ─────────
+
+    [TestMethod]
+    public async Task AutoCloseTick_FixtureDismissed_SkipsApiQueryAndCountdown()
+    {
+        var (svc, _, _, _, apiClientMock, timers, _) = BuildFakeForAutoClose(isDismissed: true);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        apiClientMock.Verify(
+            a => a.GetFixturesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "API must not be queried when fixture is dismissed");
+        svc.CountdownTask.Should().BeNull();
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-7: Auto-watch disabled — auto-close skipped ─────────────────
+
+    [TestMethod]
+    public async Task AutoCloseTick_AutoWatchDisabled_SkipsAutoClose()
+    {
+        var (svc, _, _, _, apiClientMock, timers, _) = BuildFakeForAutoClose(isEnabled: false);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        apiClientMock.Verify(
+            a => a.GetFixturesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        svc.CountdownTask.Should().BeNull();
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-8: Manual mode active — auto-close skipped ──────────────────
+
+    [TestMethod]
+    public async Task AutoCloseTick_ManualModeActive_SkipsAutoClose()
+    {
+        var (svc, _, _, _, apiClientMock, timers, _) = BuildFakeForAutoClose(isManualModeActive: true);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        apiClientMock.Verify(
+            a => a.GetFixturesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        svc.CountdownTask.Should().BeNull();
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-9: Null fixture ID — auto-close skipped ─────────────────────
+
+    [TestMethod]
+    public async Task AutoCloseTick_NullFixtureId_SkipsAutoClose()
+    {
+        var (svc, _, _, _, apiClientMock, timers, _) = BuildFakeForAutoClose(nullFixtureId: true);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        apiClientMock.Verify(
+            a => a.GetFixturesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        svc.CountdownTask.Should().BeNull();
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-10: Fixture not found in API response — no countdown ─────────
+
+    [TestMethod]
+    public async Task AutoCloseTick_FixtureNotFoundInApiResult_NoCountdownStarted()
+    {
+        var (svc, _, _, _, apiClientMock, timers, _) = BuildFakeForAutoClose();
+        // API returns fixtures with a DIFFERENT fixture ID
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)
+            [new PlayCricketFixture(99, Status: "Result")]);  // ID 99, not 42
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        svc.CountdownTask.Should().BeNull();
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-11: Countdown expires after N configured ticks → StopStreaming + ChangeMatch called
+
+    [TestMethod]
+    public async Task CountdownLoop_Expires_CallsStopStreamingAfterConfiguredTickCount()
+    {
+        // Use Moq watcher to count TickCountdown calls and verify the configured tick count
+        // is required before expiry fires — guards against regressions where expiry fires immediately.
+        const int countdownSeconds = 3;
+        var tickCount = 0;
+        var countdownStarted = false;
+        var remaining = TimeSpan.FromSeconds(countdownSeconds);
+
+        var autoFake = new FakeAutoClosePcsProService();
+        var watcherMock = new Mock<IPlayCricketWatcherService>();
+        var manualFake = new FakeManualModeService();
+        var apiClientMock = new Mock<IPlayCricketApiClient>();
+        var logger = new CapturingLogger<PlayCricketWatcherHostedService>();
+
+        watcherMock.SetupGet(w => w.IsEnabled).Returns(true);
+        watcherMock.SetupGet(w => w.CurrentFixtureId).Returns(() => (int?)AutoCloseFixtureId);
+        watcherMock.SetupGet(w => w.CountdownRemaining)
+            .Returns(() => countdownStarted && remaining > TimeSpan.Zero ? remaining : (TimeSpan?)null);
+        watcherMock.Setup(w => w.IsFixtureDismissed(It.IsAny<int>())).Returns(false);
+        watcherMock.Setup(w => w.IsAutoLoadSuppressed(It.IsAny<string>())).Returns(false);
+        watcherMock.Setup(w => w.StartCountdown(It.IsAny<TimeSpan>()))
+            .Callback<TimeSpan>(_ => countdownStarted = true);
+        watcherMock.Setup(w => w.DismissFixture(It.IsAny<int>()));
+        watcherMock.Setup(w => w.RaiseAutoCloseFired(It.IsAny<AutoCloseFiredSnapshot>()));
+        watcherMock.Setup(w => w.TickCountdown()).Returns(() =>
+        {
+            tickCount++;
+            remaining -= TimeSpan.FromSeconds(1);
+            return true; // countdown was active this tick
+        });
+
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)[ResultFixture]);
+
+        var timerChannel = Channel.CreateUnbounded<FakePeriodicTimer>(
+            new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+
+        using var svc = new PlayCricketWatcherHostedService(
+            autoFake, watcherMock.Object, manualFake, apiClientMock.Object,
+            () => { var t = new FakePeriodicTimer(); timerChannel.Writer.TryWrite(t); return t; },
+            logger, siteIds: [1],
+            countdownDuration: TimeSpan.FromSeconds(countdownSeconds),
+            countdownTickInterval: TimeSpan.FromMilliseconds(1));
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timerChannel.Reader);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+        await AwaitCountdownAsync(svc);
+
+        tickCount.Should().Be(countdownSeconds,
+            "TickCountdown must be called exactly {0} times for a {0}-second countdown", countdownSeconds);
+        autoFake.StopStreamingWasCalled.Should().BeTrue("StopStreamingAsync must be called after expiry");
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Error);
+
+        await svc.StopAsync(CancellationToken.None);
+    }
+
+    // ── S-007 TC-12: TickCountdown returns false → DismissFixture NOT called ──
+
+    [TestMethod]
+    public async Task CountdownLoop_TickCountdownReturnsFalse_NoDismissNoExpiry()
+    {
+        // Use Moq for watcher to control TickCountdown return value precisely
+        var autoFake = new FakeAutoClosePcsProService();
+        var watcherMock = new Mock<IPlayCricketWatcherService>();
+        var manualFake = new FakeManualModeService();
+        var apiClientMock = new Mock<IPlayCricketApiClient>();
+        var logger = new CapturingLogger<PlayCricketWatcherHostedService>();
+
+        watcherMock.SetupGet(w => w.IsEnabled).Returns(true);
+        watcherMock.SetupGet(w => w.CurrentFixtureId).Returns(AutoCloseFixtureId);
+        watcherMock.SetupGet(w => w.CountdownRemaining).Returns((TimeSpan?)null);
+        watcherMock.Setup(w => w.IsFixtureDismissed(It.IsAny<int>())).Returns(false);
+        watcherMock.Setup(w => w.IsAutoLoadSuppressed(It.IsAny<string>())).Returns(false);
+        watcherMock.Setup(w => w.TickCountdown()).Returns(false);
+        watcherMock.Setup(w => w.StartCountdown(It.IsAny<TimeSpan>()));
+
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)[ResultFixture]);
+
+        var timerChannel = Channel.CreateUnbounded<FakePeriodicTimer>(
+            new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+
+        using var svc = new PlayCricketWatcherHostedService(
+            autoFake, watcherMock.Object, manualFake, apiClientMock.Object,
+            () => { var t = new FakePeriodicTimer(); timerChannel.Writer.TryWrite(t); return t; },
+            logger, siteIds: [1],
+            countdownDuration: TimeSpan.FromSeconds(1),
+            countdownTickInterval: TimeSpan.FromMilliseconds(1));
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await timerChannel.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        await AwaitCountdownAsync(svc);
+
+        watcherMock.Verify(w => w.DismissFixture(It.IsAny<int>()), Times.Never,
+            "DismissFixture must not be called when TickCountdown returns false");
+        autoFake.StopStreamingWasCalled.Should().BeFalse("expiry sequence must not fire when TickCountdown returns false");
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Error);
+
+        await svc.StopAsync(CancellationToken.None);
+    }
+
+    // ── S-007 TC-13: DismissFixture called before expiry re-check ─────────────
+
+    [TestMethod]
+    public async Task CountdownLoop_ExpiryTick_DismissFixtureCalledBeforeStopStreaming()
+    {
+        var dismissedBeforeStop = false;
+
+        var (svc, autoFake, watcherSvc, _, apiClientMock, timers, _) = BuildFakeForAutoClose(
+            countdownDuration: TimeSpan.FromSeconds(1));
+        autoFake.StopStreamingHandler = _ =>
+        {
+            dismissedBeforeStop = watcherSvc.IsFixtureDismissed(AutoCloseFixtureId);
+            return Task.CompletedTask;
+        };
+
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)[ResultFixture]);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+        await AwaitCountdownAsync(svc);
+
+        dismissedBeforeStop.Should().BeTrue("DismissFixture must be called before StopStreamingAsync");
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-14: Expiry re-check fails — state not MatchLoaded ────────────
+
+    [TestMethod]
+    public async Task CountdownLoop_ExpiryReCheckFails_StateNotMatchLoaded_StopStreamingNotCalled()
+    {
+        var (svc, autoFake, _, _, apiClientMock, timers, logger) = BuildFakeForAutoClose(
+            countdownDuration: TimeSpan.FromSeconds(1));
+
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)[ResultFixture]);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        // Countdown is now running in the background. Change state without
+        // firing StateChanged so the hosted service's CTS is NOT cancelled —
+        // the countdown loop continues and expires naturally.
+        autoFake.CurrentState = PcsProState.MatchSelection;
+
+        await AwaitCountdownAsync(svc);
+
+        autoFake.StopStreamingWasCalled.Should().BeFalse(
+            "StopStreamingAsync must not be called when re-check fails due to state change");
+        logger.Entries.Should().Contain(e =>
+            e.Level == LogLevel.Warning && e.Message.Contains("re-check failed"),
+            "warning must be logged when expiry re-check fails");
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-15: Expiry re-check fails — fixture ID changed to mismatch ────
+
+    [TestMethod]
+    public async Task CountdownLoop_ExpiryReCheckFails_FixtureIdMismatch_StopStreamingNotCalled()
+    {
+        // Use Moq for watcher so we can simulate the fixture ID changing to a different value
+        // at expiry time (testing the currentId != capturedFixtureId branch in RunExpirySequenceAsync).
+        var autoFake = new FakeAutoClosePcsProService();
+        var manualFake = new FakeManualModeService();
+        var apiClientMock = new Mock<IPlayCricketApiClient>();
+        var logger = new CapturingLogger<PlayCricketWatcherHostedService>();
+        var watcherMock = new Mock<IPlayCricketWatcherService>();
+
+        // TickCountdown: changes CurrentFixtureId to a different value on first call,
+        // simulating a concurrent fixture ID change exactly at expiry time.
+        var fixtureIdValue = (int?)AutoCloseFixtureId; // 42
+        watcherMock.SetupGet(w => w.IsEnabled).Returns(true);
+        watcherMock.SetupGet(w => w.CurrentFixtureId).Returns(() => fixtureIdValue);
+        watcherMock.SetupGet(w => w.CountdownRemaining).Returns((TimeSpan?)null);
+        watcherMock.Setup(w => w.IsFixtureDismissed(It.IsAny<int>())).Returns(false);
+        watcherMock.Setup(w => w.IsAutoLoadSuppressed(It.IsAny<string>())).Returns(false);
+        watcherMock.Setup(w => w.StartCountdown(It.IsAny<TimeSpan>()));
+        watcherMock.Setup(w => w.DismissFixture(It.IsAny<int>()));
+        watcherMock.Setup(w => w.TickCountdown()).Returns(() =>
+        {
+            fixtureIdValue = 99; // mismatch with capturedFixtureId=42
+            return true;         // countdown was active and just expired
+        });
+
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)[ResultFixture]);
+
+        var timerChannel = Channel.CreateUnbounded<FakePeriodicTimer>(
+            new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+
+        using var svc = new PlayCricketWatcherHostedService(
+            autoFake, watcherMock.Object, manualFake, apiClientMock.Object,
+            () => { var t = new FakePeriodicTimer(); timerChannel.Writer.TryWrite(t); return t; },
+            logger, siteIds: [1],
+            countdownDuration: TimeSpan.FromSeconds(1),
+            countdownTickInterval: TimeSpan.FromMilliseconds(1));
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timerChannel.Reader);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+        await AwaitCountdownAsync(svc);
+
+        autoFake.StopStreamingWasCalled.Should().BeFalse(
+            "StopStreamingAsync must not be called when expiry re-check fails due to fixture ID mismatch");
+        logger.Entries.Should().Contain(e =>
+            e.Level == LogLevel.Warning && e.Message.Contains("re-check failed"),
+            "warning must be logged when currentId != capturedFixtureId at expiry");
+
+        await svc.StopAsync(CancellationToken.None);
+    }
+
+    // ── S-007 TC-16: Happy path — full expiry sequence executes ───────────────
+
+    [TestMethod]
+    public async Task CountdownLoop_HappyPath_FullExpirySequenceExecutesInOrder()
+    {
+        var order = new List<string>();
+        AutoCloseFiredSnapshot? firedSnapshot = null;
+
+        var (svc, autoFake, watcherSvc, _, apiClientMock, timers, logger) = BuildFakeForAutoClose(
+            countdownDuration: TimeSpan.FromSeconds(1));
+        autoFake.StopStreamingHandler = _ => { order.Add("stop"); return Task.CompletedTask; };
+        autoFake.ChangeMatchHandler = _ => { order.Add("change"); return Task.CompletedTask; };
+        watcherSvc.AutoCloseFired += (_, s) => { order.Add("fired"); firedSnapshot = s; };
+
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)[ResultFixture]);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+        await AwaitCountdownAsync(svc);
+
+        order.Should().Equal("stop", "change", "fired");
+        firedSnapshot.Should().NotBeNull();
+        firedSnapshot!.FixtureId.Should().Be(AutoCloseFixtureId);
+        logger.Entries.Should().Contain(e =>
+            e.Level == LogLevel.Information && e.Message.Contains("auto-close completed"));
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-17: StopStreamingAsync throws — exception caught, no RaiseAutoCloseFired
+
+    [TestMethod]
+    public async Task CountdownLoop_StopStreamingThrows_ExceptionCaughtAndRaiseAutoCloseFiredNotCalled()
+    {
+        var changeMatchCalled = false;
+        var autoCloseFiredCalled = false;
+
+        var (svc, autoFake, watcherSvc, _, apiClientMock, timers, logger) = BuildFakeForAutoClose(
+            countdownDuration: TimeSpan.FromSeconds(1));
+        autoFake.StopStreamingHandler = _ => throw new InvalidOperationException("streaming error");
+        autoFake.ChangeMatchHandler = _ => { changeMatchCalled = true; return Task.CompletedTask; };
+        watcherSvc.AutoCloseFired += (_, _) => autoCloseFiredCalled = true;
+
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)[ResultFixture]);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+        await AwaitCountdownAsync(svc);
+
+        changeMatchCalled.Should().BeFalse("ChangeMatchAsync must not be called when StopStreamingAsync throws");
+        autoCloseFiredCalled.Should().BeFalse("RaiseAutoCloseFired must not be called on exception");
+        watcherSvc.IsFixtureDismissed(AutoCloseFixtureId).Should().BeTrue("fixture must remain dismissed");
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Error && e.Message.Contains("expiry sequence failed"));
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-18: Manual mode activated mid-countdown — CancelCountdown + CTS cancelled
+
+    [TestMethod]
+    public async Task ManualModeActivated_MidCountdown_CancelsCountdownAndExitsLoop()
+    {
+        var stopCalled = false;
+
+        var (svc, autoFake, watcherSvc, manualFake, apiClientMock, timers, logger) = BuildFakeForAutoClose(
+            countdownDuration: TimeSpan.FromSeconds(30),
+            countdownTickInterval: TimeSpan.FromMilliseconds(5));
+        autoFake.StopStreamingHandler = _ => { stopCalled = true; return Task.CompletedTask; };
+
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)[ResultFixture]);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        // Capture task BEFORE triggering cancellation; CancelAndDisposeCountdownCts() will null it.
+        var countdownSnapshot = svc.CountdownTask;
+
+        // Activate manual mode — should immediately cancel countdown
+        manualFake.Enable();
+
+        await AwaitCountdownAsync(countdownSnapshot);
+
+        stopCalled.Should().BeFalse("expiry sequence must not fire when manual mode cancels the countdown");
+        watcherSvc.CountdownRemaining.Should().BeNull("countdown must be cleared");
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Error);
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-19: FixtureIdChanged mid-countdown — countdown cancelled ──────
+
+    [TestMethod]
+    public async Task FixtureIdChanged_MidCountdown_CancelsCountdownAndExitsLoop()
+    {
+        var stopCalled = false;
+
+        var (svc, autoFake, watcherSvc, _, apiClientMock, timers, logger) = BuildFakeForAutoClose(
+            countdownDuration: TimeSpan.FromSeconds(30),
+            countdownTickInterval: TimeSpan.FromMilliseconds(5));
+        autoFake.StopStreamingHandler = _ => { stopCalled = true; return Task.CompletedTask; };
+
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)[ResultFixture]);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        // Capture task BEFORE triggering cancellation; CancelAndDisposeCountdownCts() will null it.
+        var countdownSnapshot = svc.CountdownTask;
+
+        // Change fixture ID — triggers OnFixtureIdChanged which cancels countdown
+        watcherSvc.SetCurrentFixtureId(99);
+
+        await AwaitCountdownAsync(countdownSnapshot);
+
+        stopCalled.Should().BeFalse("expiry sequence must not fire when fixture ID changes");
+        watcherSvc.CountdownRemaining.Should().BeNull("countdown must be cleared");
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Error);
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-20: CountdownCancelled (UI cancel) — loop exits cleanly ──────
+
+    [TestMethod]
+    public async Task CountdownCancelled_ViaUiCancel_InnerLoopExitsCleanlyNoErrorLog()
+    {
+        var stopCalled = false;
+
+        var (svc, autoFake, watcherSvc, _, apiClientMock, timers, logger) = BuildFakeForAutoClose(
+            countdownDuration: TimeSpan.FromSeconds(30),
+            countdownTickInterval: TimeSpan.FromMilliseconds(5));
+        autoFake.StopStreamingHandler = _ => { stopCalled = true; return Task.CompletedTask; };
+
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)[ResultFixture]);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        // Capture task BEFORE triggering cancellation; CancelAndDisposeCountdownCts() will null it.
+        var countdownSnapshot = svc.CountdownTask;
+
+        // Simulate operator cancelling via UI — calls CancelCountdown directly
+        watcherSvc.CancelCountdown();
+
+        await AwaitCountdownAsync(countdownSnapshot);
+
+        stopCalled.Should().BeFalse("expiry sequence must not fire on UI cancel");
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Error,
+            "OCE from CTS cancellation must not be logged as an error");
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-21: Case-insensitive status "RESULT" triggers countdown ───────
+
+    [TestMethod]
+    public async Task AutoCloseTick_UpperCaseResultStatus_CallsStartCountdown()
+    {
+        var (svc, _, _, _, apiClientMock, timers, _) = BuildFakeForAutoClose();
+        apiClientMock.Setup(a => a.GetFixturesAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PlayCricketFixture>)
+            [new PlayCricketFixture(AutoCloseFixtureId, Status: "RESULT")]);
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        svc.CountdownTask.Should().NotBeNull("case-insensitive comparison must recognise 'RESULT'");
+
+        await svc.StopAsync(CancellationToken.None);
+        svc.Dispose();
+    }
+
+    // ── S-007 TC-22: API returns empty list — no countdown, no exception ───────
+
+    [TestMethod]
+    public async Task AutoCloseTick_ApiReturnsEmptyList_NoCountdownNoException()
+    {
+        var (svc, _, _, _, apiClientMock, timers, logger) = BuildFakeForAutoClose();
+        // Default: returns [] — no completed fixture
+
+        await svc.StartAsync(CancellationToken.None);
+        var timer = await ReadTimerAsync(timers);
+        await timer.WaitingForTickAsync();
+        await TriggerAndAwaitTickAsync(timer);
+
+        svc.CountdownTask.Should().BeNull("no countdown must start when API returns empty list");
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Error || e.Level == LogLevel.Warning,
+            "empty API result is a normal no-op, must not generate warning or error");
 
         await svc.StopAsync(CancellationToken.None);
         svc.Dispose();

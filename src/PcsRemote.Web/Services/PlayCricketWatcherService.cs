@@ -25,6 +25,7 @@ public sealed class PlayCricketWatcherService : IPlayCricketWatcherService, IDis
     public event EventHandler? CountdownExpired;
     public event EventHandler? CountdownCancelled;
     public event EventHandler<FixtureIdChangedSnapshot>? FixtureIdChanged;
+    public event EventHandler<AutoCloseFiredSnapshot>? AutoCloseFired;
 
     public PlayCricketWatcherService(IPcsProAutomationService automationService)
     {
@@ -205,6 +206,14 @@ public sealed class PlayCricketWatcherService : IPlayCricketWatcherService, IDis
     public bool IsFixtureDismissed(int fixtureId)
     {
         lock (_stateLock) return _dismissedFixtures.Contains(fixtureId);
+    }
+
+    /// <inheritdoc/>
+    public void RaiseAutoCloseFired(AutoCloseFiredSnapshot snapshot)
+    {
+        EventHandler<AutoCloseFiredSnapshot>? handler;
+        lock (_stateLock) handler = AutoCloseFired;
+        handler?.Invoke(this, snapshot);
     }
 
     /// <inheritdoc/>
