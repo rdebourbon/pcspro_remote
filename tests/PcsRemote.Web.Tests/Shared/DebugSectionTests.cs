@@ -28,7 +28,8 @@ public sealed class DebugSectionTests
         Mock<IAutomationLogService>? logMock = null,
         LiveStreamStatus streamStatus = LiveStreamStatus.Idle,
         PcsProState automationState = PcsProState.NotRunning,
-        IDateSelectionService? dateSelectionService = null)
+        IDateSelectionService? dateSelectionService = null,
+        Mock<IPlayCricketWatcherService>? watcherMock = null)
     {
         var ctx = new BunitContext();
         var options = Options.Create(new DebugSectionOptions { Pin = pin });
@@ -51,6 +52,9 @@ public sealed class DebugSectionTests
 
         dateSelectionService ??= new DateSelectionService();
         ctx.Services.AddSingleton(dateSelectionService);
+
+        watcherMock ??= BuildWatcherMock(false);
+        ctx.Services.AddSingleton(watcherMock.Object);
 
         var cut = ctx.Render<DebugSection>();
         return (cut, automationMock, streamMock, confirmMock, ctx, dateSelectionService);
@@ -442,6 +446,151 @@ public sealed class DebugSectionTests
             // PIN prompt visible, but not unlocked
             cut.FindAll(".debug-section-pin-prompt").Should().ContainSingle();
             cut.FindAll(".debug-section-reset-btn").Should().BeEmpty();
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // S-009: Auto-watch toggle tests  (TC-1 through TC-7)
+    // ──────────────────────────────────────────────────────────────────────
+
+    private static Mock<IPlayCricketWatcherService> BuildWatcherMock(bool isEnabled)
+    {
+        var mock = new Mock<IPlayCricketWatcherService>();
+        mock.Setup(w => w.IsEnabled).Returns(isEnabled);
+        return mock;
+    }
+
+    // TC-1 — Toggle renders in off/disabled state when IsEnabled = false
+    [TestMethod]
+    public void AutoWatchToggle_WhenDisabledOnMount_RendersOffState()
+    {
+        var watcherMock = BuildWatcherMock(false);
+        var (cut, _, _, _, ctx, _) = Render(watcherMock: watcherMock);
+        using (ctx)
+        {
+            cut.Find(".debug-section-toggle").Click();
+
+            var toggle = cut.Find(".debug-section-autowatch-toggle");
+            toggle.ClassList.Should().NotContain("active");
+            toggle.TextContent.Should().Contain("Off");
+        }
+    }
+
+    // TC-2 — Toggle renders in on/enabled state when IsEnabled = true
+    [TestMethod]
+    public void AutoWatchToggle_WhenEnabledOnMount_RendersOnState()
+    {
+        var watcherMock = BuildWatcherMock(true);
+        var (cut, _, _, _, ctx, _) = Render(watcherMock: watcherMock);
+        using (ctx)
+        {
+            cut.Find(".debug-section-toggle").Click();
+
+            var toggle = cut.Find(".debug-section-autowatch-toggle");
+            toggle.ClassList.Should().Contain("active");
+            toggle.TextContent.Should().Contain("On");
+        }
+    }
+
+    // TC-3 — Clicking the toggle when disabled calls Enable() exactly once
+    [TestMethod]
+    public void AutoWatchToggle_ClickWhenDisabled_CallsEnableOnce()
+    {
+        var watcherMock = BuildWatcherMock(false);
+        var (cut, _, _, _, ctx, _) = Render(watcherMock: watcherMock);
+        using (ctx)
+        {
+            cut.Find(".debug-section-toggle").Click();
+            cut.Find(".debug-section-autowatch-toggle").Click();
+
+            watcherMock.Verify(w => w.Enable(), Times.Once);
+            watcherMock.Verify(w => w.Disable(), Times.Never);
+        }
+    }
+
+    // TC-4 — Clicking the toggle when enabled calls Disable() exactly once
+    [TestMethod]
+    public void AutoWatchToggle_ClickWhenEnabled_CallsDisableOnce()
+    {
+        var watcherMock = BuildWatcherMock(true);
+        var (cut, _, _, _, ctx, _) = Render(watcherMock: watcherMock);
+        using (ctx)
+        {
+            cut.Find(".debug-section-toggle").Click();
+            cut.Find(".debug-section-autowatch-toggle").Click();
+
+            watcherMock.Verify(w => w.Disable(), Times.Once);
+            watcherMock.Verify(w => w.Enable(), Times.Never);
+        }
+    }
+
+    // TC-5 — AutoWatchEnabledChanged (true) updates toggle to on state without remount
+    [TestMethod]
+    public void AutoWatchToggle_EnabledChangedTrue_UpdatesToOnState()
+    {
+        var watcherMock = BuildWatcherMock(false);
+        var (cut, _, _, _, ctx, _) = Render(watcherMock: watcherMock);
+        using (ctx)
+        {
+            cut.Find(".debug-section-toggle").Click();
+
+            watcherMock.Raise(
+                w => w.AutoWatchEnabledChanged += null,
+                this,
+                new AutoWatchEnabledChangedSnapshot(true));
+
+            cut.WaitForAssertion(() =>
+            {
+                var toggle = cut.Find(".debug-section-autowatch-toggle");
+                toggle.ClassList.Should().Contain("active");
+                toggle.TextContent.Should().Contain("On");
+            });
+        }
+    }
+
+    // TC-6 — AutoWatchEnabledChanged (false) updates toggle to off state without remount
+    [TestMethod]
+    public void AutoWatchToggle_EnabledChangedFalse_UpdatesToOffState()
+    {
+        var watcherMock = BuildWatcherMock(true);
+        var (cut, _, _, _, ctx, _) = Render(watcherMock: watcherMock);
+        using (ctx)
+        {
+            cut.Find(".debug-section-toggle").Click();
+
+            watcherMock.Raise(
+                w => w.AutoWatchEnabledChanged += null,
+                this,
+                new AutoWatchEnabledChangedSnapshot(false));
+
+            cut.WaitForAssertion(() =>
+            {
+                var toggle = cut.Find(".debug-section-autowatch-toggle");
+                toggle.ClassList.Should().NotContain("active");
+                toggle.TextContent.Should().Contain("Off");
+            });
+        }
+    }
+
+    // TC-7 — Dispose unsubscribes from AutoWatchEnabledChanged; post-disposal event raises no exception
+    [TestMethod]
+    public void AutoWatchToggle_Dispose_UnsubscribesAndNoExceptionOnEvent()
+    {
+        var watcherMock = BuildWatcherMock(false);
+        var (cut, _, _, _, ctx, _) = Render(watcherMock: watcherMock);
+        using (ctx)
+        {
+            cut.Instance.Dispose();
+
+            watcherMock.VerifyRemove(
+                m => m.AutoWatchEnabledChanged -= It.IsAny<EventHandler<AutoWatchEnabledChangedSnapshot>>(),
+                Times.Once);
+
+            var act = () => watcherMock.Raise(
+                w => w.AutoWatchEnabledChanged += null,
+                this,
+                new AutoWatchEnabledChangedSnapshot(true));
+            act.Should().NotThrow();
         }
     }
 

@@ -5,6 +5,7 @@
 @inject IYouTubeLiveStreamService StreamService
 @inject IConfirmDialogService ConfirmDialog
 @inject IDateSelectionService DateSelectionService
+@inject IPlayCricketWatcherService WatcherService
 @implements IDisposable
 
 <div class="debug-section">
@@ -47,6 +48,13 @@
                     Allow Date Selection: @(DateSelectionService.IsDateSelectionEnabled ? "On" : "Off")
                 </button>
             </div>
+
+            <div class="debug-section-autowatch-toggle-container">
+                <button class="debug-section-autowatch-toggle @(_autoWatchEnabled ? "active" : "")"
+                        @onclick="OnAutoWatchToggle">
+                    Auto-Watch: @(_autoWatchEnabled ? "On" : "Off")
+                </button>
+            </div>
         </div>
     }
 </div>
@@ -60,6 +68,8 @@
     private bool _resetInProgress;
     private string? _resetStatus;
     private bool _resetError;
+    private bool _autoWatchEnabled;
+    private bool _disposed;
 
     private bool IsPinConfigured =>
         !string.IsNullOrEmpty(Options.Value.Pin);
@@ -68,12 +78,24 @@
     {
         _unlocked = !IsPinConfigured;
         DateSelectionService.DateSelectionEnabledChanged += OnDateSelectionChanged;
+        WatcherService.AutoWatchEnabledChanged += OnAutoWatchEnabledChanged;
+        _autoWatchEnabled = WatcherService.IsEnabled;
     }
 
     private async void OnDateSelectionChanged(object? sender, bool enabled)
     {
         try { await InvokeAsync(StateHasChanged); }
         catch (ObjectDisposedException) { }
+    }
+
+    private async void OnAutoWatchEnabledChanged(object? sender, AutoWatchEnabledChangedSnapshot e)
+    {
+        _autoWatchEnabled = e.IsEnabled;
+        if (!_disposed)
+        {
+            try { await InvokeAsync(StateHasChanged); }
+            catch (ObjectDisposedException) { }
+        }
     }
 
     private void OnDateSelectionToggle()
@@ -84,9 +106,19 @@
             DateSelectionService.Enable();
     }
 
+    private void OnAutoWatchToggle()
+    {
+        if (WatcherService.IsEnabled)
+            WatcherService.Disable();
+        else
+            WatcherService.Enable();
+    }
+
     public void Dispose()
     {
+        _disposed = true;
         DateSelectionService.DateSelectionEnabledChanged -= OnDateSelectionChanged;
+        WatcherService.AutoWatchEnabledChanged -= OnAutoWatchEnabledChanged;
     }
 
     private void OnToggle()

@@ -78,6 +78,7 @@ public static class WebApplicationBuilderExtensions
         else
             builder.Services.AddPlayCricketApiClient(builder.Configuration);
         builder.Services.AddSingleton<IPlayCricketWatcherService, PlayCricketWatcherService>();
+        builder.Services.AddSingleton<Func<IPeriodicTimer>>(_ => () => new RealPeriodicTimer(TimeSpan.FromSeconds(1)));
         return builder;
     }
 

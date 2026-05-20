@@ -1,0 +1,117 @@
+@using PcsRemote.Core
+@implements IDisposable
+@inject IPlayCricketWatcherService WatcherService
+@inject Func<IPeriodicTimer> TimerFactory
+
+@if (_isVisible)
+{
+    <div class="play-cricket-countdown-banner">
+        <span class="play-cricket-countdown-time">@_formattedTime</span>
+        <button class="play-cricket-countdown-cancel" @onclick="OnCancelClicked">Cancel</button>
+    </div>
+}
+
+@code {
+    private bool _isVisible;
+    private string _formattedTime = "00:00";
+    private bool _disposed;
+    private CancellationTokenSource? _timerCts;
+
+    protected override void OnInitialized()
+    {
+        // Subscribe before snapshot to eliminate the race window (established project pattern).
+        WatcherService.CountdownStarted += OnCountdownStarted;
+        WatcherService.CountdownCancelled += OnCountdownHidden;
+        WatcherService.CountdownExpired += OnCountdownHidden;
+
+        var remaining = WatcherService.CountdownRemaining;
+        if (remaining.HasValue)
+        {
+            _formattedTime = FormatTime(remaining.Value);
+            _isVisible = true;
+            StartTimer();
+        }
+    }
+
+    private async void OnCountdownStarted(object? sender, CountdownStartedSnapshot e)
+    {
+        if (_disposed) return;
+        var remaining = WatcherService.CountdownRemaining;
+        _isVisible = remaining.HasValue;
+        _formattedTime = remaining.HasValue ? FormatTime(remaining.Value) : "00:00";
+        if (remaining.HasValue)
+            StartTimer();
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async void OnCountdownHidden(object? sender, EventArgs e)
+    {
+        if (_disposed) return;
+        _isVisible = false;
+        StopTimer();
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void StartTimer()
+    {
+        StopTimer();
+        _timerCts = new CancellationTokenSource();
+        _ = RunTimerLoopAsync(TimerFactory(), _timerCts.Token);
+    }
+
+    private void StopTimer()
+    {
+        _timerCts?.Cancel();
+        _timerCts?.Dispose();
+        _timerCts = null;
+    }
+
+    private async Task RunTimerLoopAsync(IPeriodicTimer timer, CancellationToken ct)
+    {
+        await using (timer)
+        {
+            try
+            {
+                while (await timer.WaitForNextTickAsync(ct))
+                {
+                    if (_disposed) return;
+                    var remaining = WatcherService.CountdownRemaining;
+                    if (remaining == null)
+                    {
+                        _isVisible = false;
+                        try { await InvokeAsync(StateHasChanged); }
+                        catch (ObjectDisposedException) { }
+                        return;
+                    }
+                    _formattedTime = FormatTime(remaining.Value);
+                    try { await InvokeAsync(StateHasChanged); }
+                    catch (ObjectDisposedException) { }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Normal stop — ct was cancelled by StopTimer() or Dispose().
+            }
+        }
+    }
+
+    private void OnCancelClicked() => WatcherService.CancelCountdown();
+
+    private static string FormatTime(TimeSpan ts)
+    {
+        var totalSeconds = (int)ts.TotalSeconds;
+        if (totalSeconds < 0) totalSeconds = 0;
+        return $"{totalSeconds / 60:D2}:{totalSeconds % 60:D2}";
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        WatcherService.CountdownStarted -= OnCountdownStarted;
+        WatcherService.CountdownCancelled -= OnCountdownHidden;
+        WatcherService.CountdownExpired -= OnCountdownHidden;
+        StopTimer();
+    }
+}
