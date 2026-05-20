@@ -60,6 +60,20 @@ public interface IPcsProAutomationService
     Task<IReadOnlyList<MatchInfo>> GetMatchesForDateAsync(DateOnly searchDate, CancellationToken ct = default);
 
     /// <summary>
+    /// Refreshes the already-open PCS Pro match selection dialog by triggering a "Clear Filters"
+    /// interaction, then reads and returns the fixtures currently listed in the dialog.
+    /// Unlike <see cref="GetMatchesForDateAsync"/>, this method does not open a new date-scoped
+    /// search and does not drive state machine transitions — making it safe for background polling.
+    /// The caller is responsible for ensuring the system is in a match-selection state before
+    /// calling; the implementation may validate this precondition and throw
+    /// <see cref="InvalidOperationException"/> if not met.
+    /// Propagates <see cref="OperationCanceledException"/>. Returns an empty list on all other
+    /// failures without driving the state machine to Error.
+    /// Accepts an optional <paramref name="ct"/> to cancel the operation.
+    /// </summary>
+    Task<IReadOnlyList<MatchInfo>> GetSelectableMatchesAsync(CancellationToken ct = default);
+
+    /// <summary>
     /// Selects and loads the specified match, advancing the lifecycle state to MatchLoaded.
     /// Accepts an optional <paramref name="ct"/> to cancel the operation.
     /// </summary>

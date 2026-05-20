@@ -50,6 +50,14 @@ internal interface IMatchSelectionAutomation
     IReadOnlyList<string> ReadDataGridRowTexts();
 
     /// <summary>
+    /// Clicks the "Clear Filters" link on the already-open match selection dialog to trigger
+    /// a re-evaluation of listed fixtures, then reads and returns the DataGrid row texts.
+    /// Throws if the main window or match selection dialog cannot be found.
+    /// </summary>
+    /// <remarks><b>Interaction method — may throw.</b></remarks>
+    IReadOnlyList<string> ClearFiltersAndReadMatches();
+
+    /// <summary>
     /// Locates the DataGrid row whose team names and match type match the given
     /// <see cref="MatchInfo"/> and clicks "Open Read-Only."
     /// The row is matched by <see cref="MatchInfo.HomeTeam"/>, <see cref="MatchInfo.AwayTeam"/>,

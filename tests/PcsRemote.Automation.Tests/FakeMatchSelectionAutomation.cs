@@ -62,6 +62,9 @@ internal sealed class FakeMatchSelectionAutomation : IMatchSelectionAutomation
     /// <summary>The <see cref="DateOnly"/> most recently passed to <see cref="OpenMatchDialogAndSearch(DateOnly)"/>.</summary>
     public DateOnly? LastSearchDate { get; private set; }
 
+    /// <summary><see langword="true"/> after <see cref="ClearFiltersAndReadMatches"/> has been called.</summary>
+    public bool ClearFiltersCalled { get; private set; }
+
     // ---- Interface implementation -------------------------------------------
 
     /// <inheritdoc/>
@@ -106,4 +109,14 @@ internal sealed class FakeMatchSelectionAutomation : IMatchSelectionAutomation
 
     /// <inheritdoc/>
     public bool IsMainWindowPresent() => MainWindowPresent;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> ClearFiltersAndReadMatches()
+    {
+        if (ThrowOnInteraction)
+            throw new InvalidOperationException(
+                "FakeMatchSelectionAutomation: element not found (ThrowOnInteraction = true)");
+        ClearFiltersCalled = true;
+        return RowTexts;
+    }
 }

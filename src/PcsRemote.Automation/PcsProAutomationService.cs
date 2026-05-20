@@ -1032,6 +1032,49 @@ internal sealed class PcsProAutomationService : IPcsProAutomationService, IAsync
         }
     }
 
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<MatchInfo>> GetSelectableMatchesAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (Interlocked.CompareExchange(ref _isMatchSelectionOperationInProgress, 1, 0) != 0)
+                throw new InvalidOperationException("A match-selection lifecycle operation is already in progress.");
+
+            IReadOnlyList<string> rowTexts;
+            try
+            {
+                rowTexts = _matchSelectionAutomation.ClearFiltersAndReadMatches();
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _isMatchSelectionOperationInProgress, 0);
+            }
+
+            var parsed = new List<MatchInfo>();
+            foreach (var rowText in rowTexts)
+            {
+                if (MatchRowParser.TryParse(rowText, out var match))
+                    parsed.Add(match! /* non-null when TryParse returns true — out parameter contract */);
+                else
+                    _logger.LogDebug("GetSelectableMatchesAsync: could not parse row text {RowText}", rowText);
+            }
+
+            _logger.LogDebug("GetSelectableMatchesAsync: {MatchCount} match(es) found", parsed.Count);
+            return Task.FromResult<IReadOnlyList<MatchInfo>>(parsed);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "GetSelectableMatchesAsync: FlaUI interaction failed — returning empty list");
+            return Task.FromResult<IReadOnlyList<MatchInfo>>([]);
+        }
+    }
+
     private async Task<IReadOnlyList<MatchInfo>> GetMatchesCoreAsync(DateOnly searchDate, CancellationToken ct)
     {
         var startTimestamp = _timeProvider.GetTimestamp();

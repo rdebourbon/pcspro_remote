@@ -395,6 +395,23 @@ public class MockPcsProAutomationService : IPcsProAutomationService
         return Task.FromResult<IReadOnlyList<MatchInfo>>(matches);
     }
 
+    public Task<IReadOnlyList<MatchInfo>> GetSelectableMatchesAsync(CancellationToken ct = default)
+    {
+        if (_currentState is not (PcsProState.MatchSelection or PcsProState.MatchSelectionSearching or PcsProState.MatchSelectionReady))
+            return Task.FromResult<IReadOnlyList<MatchInfo>>([]);
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var matches = Enumerable.Range(1, _options.FakeMatchCount)
+            .Select(i => new MatchInfo(
+                MatchId: $"match-{i}",
+                HomeTeam: FakeTeams[(i * 2 - 2) % FakeTeams.Length],
+                AwayTeam: FakeTeams[(i * 2 - 1) % FakeTeams.Length],
+                MatchType: FakeMatchTypes[(i - 1) % FakeMatchTypes.Length],
+                MatchDate: today))
+            .ToList();
+        return Task.FromResult<IReadOnlyList<MatchInfo>>(matches);
+    }
+
     private static readonly string[] FakeTeams =
     [
         "Riverside CC", "Oakwood XI", "Hillcrest CC", "Valley Hawks",

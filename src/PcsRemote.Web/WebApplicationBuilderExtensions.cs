@@ -43,6 +43,7 @@ public static class WebApplicationBuilderExtensions
         builder.Services.AddSingleton<IScoreboardService, ScoreboardService>();
         builder.Services.AddHostedService<StaleDescriptionCleaner>();
         builder.Services.AddHostedService<ScoreboardPollingService>();
+        builder.Services.AddHostedService<PlayCricketWatcherHostedService>();
         builder.Services.AddHostedService<AutoLaunchService>();
         // AddApplicationPart ensures _Host.cshtml and Blazor components in PcsRemote.Web
         // are discoverable when a different assembly (e.g. TrayHost) is the entry point.

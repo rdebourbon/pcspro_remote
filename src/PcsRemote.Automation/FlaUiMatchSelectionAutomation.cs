@@ -258,6 +258,22 @@ internal sealed class FlaUiMatchSelectionAutomation : IMatchSelectionAutomation
         }
     }
 
+    /// <inheritdoc/>
+    public IReadOnlyList<string> ClearFiltersAndReadMatches()
+    {
+        var window = _locator.FindMainWindow()
+            ?? throw new InvalidOperationException("PCS Pro main window not found.");
+
+        var cf = _locator.Automation.ConditionFactory;
+        var dialog = UIAutomationHelpers.FindDescendant(
+            window,
+            cf.ByName(KnownElements.MatchSelectionDialogName))
+            ?? throw new InvalidOperationException("Open Match dialog not found.");
+
+        ClickClearFilters(dialog, cf);
+        return ReadDataGridRowTexts();
+    }
+
     // ── Private helpers ──────────────────────────────────────────────────
 
     private void NavigateToOpenMatchDialog(AutomationElement window, FlaUI.Core.Conditions.ConditionFactory cf)
