@@ -96,6 +96,37 @@ public static class TeamNameFormatter
         return !char.IsLetterOrDigit(nextChar);
     }
 
+    /// <summary>
+    /// Normalises a team name for fixture matching purposes (IS-021 R-3).
+    /// Strips the configured club-name prefix if present, trims leading/trailing separator
+    /// characters, and collapses internal whitespace runs to a single space.
+    /// Returns a canonical form suitable for case-insensitive comparison.
+    /// </summary>
+    /// <param name="teamName">Team name to normalise.</param>
+    /// <param name="clubName">Club-name prefix to strip. Null or empty disables stripping.</param>
+    public static string NormaliseForMatching(string teamName, string? clubName)
+    {
+        if (string.IsNullOrEmpty(teamName))
+            return teamName;
+
+        string result = teamName;
+
+        if (!string.IsNullOrEmpty(clubName) && MatchesClubPrefix(result, clubName))
+        {
+            string remainder = result[clubName.Length..].TrimStart(' ', '-', '\t');
+            if (!string.IsNullOrEmpty(remainder))
+                result = remainder;
+        }
+
+        result = result.Trim(' ', '-', '\t');
+
+        // Collapse internal whitespace runs to a single space.
+        string[] parts = result.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+        result = string.Join(" ", parts);
+
+        return result;
+    }
+
     private static string StripPrefix(string teamName, string clubName)
     {
         string remainder = teamName[clubName.Length..];

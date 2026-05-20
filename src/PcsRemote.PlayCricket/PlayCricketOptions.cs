@@ -28,6 +28,13 @@ public sealed class PlayCricketOptions
     public int CountdownDurationSeconds { get; set; } = 300;
 
     /// <summary>
+    /// Club name prefix used to normalise Play-Cricket team names for fixture ID resolution (IS-021 S-006).
+    /// When non-empty, the prefix is stripped from both Play-Cricket and PCS Pro team names before comparison,
+    /// matching the same club-name prefix logic used by <c>TeamNameFormatter</c>.
+    /// </summary>
+    public string ClubName { get; set; } = string.Empty;
+
+    /// <summary>
     /// When <see langword="true"/>, registers <c>MockPlayCricketApiClient</c>
     /// instead of the real HTTP implementation.
     /// </summary>
