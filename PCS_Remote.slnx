@@ -3,12 +3,16 @@
     <Project Path="src/PcsRemote.Automation.Mock/PcsRemote.Automation.Mock.csproj" />
     <Project Path="src/PcsRemote.Automation/PcsRemote.Automation.csproj" />
     <Project Path="src/PcsRemote.Core/PcsRemote.Core.csproj" />
+    <Project Path="src/PcsRemote.PlayCricket/PcsRemote.PlayCricket.csproj" />
+    <Project Path="src/PcsRemote.PlayCricket.Mock/PcsRemote.PlayCricket.Mock.csproj" />
     <Project Path="src/PcsRemote.TrayHost/PcsRemote.TrayHost.csproj" />
     <Project Path="src/PcsRemote.Web/PcsRemote.Web.csproj" />
     <Project Path="src/PcsRemote.YouTube/PcsRemote.YouTube.csproj" />
     <Project Path="src/PcsRemote.YouTube.Mock/PcsRemote.YouTube.Mock.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/PcsRemote.PlayCricket.Tests/PcsRemote.PlayCricket.Tests.csproj" />
+    <Project Path="tests/PcsRemote.PlayCricket.Mock.Tests/PcsRemote.PlayCricket.Mock.Tests.csproj" />
     <Project Path="tests/PcsRemote.Automation.Mock.Tests/PcsRemote.Automation.Mock.Tests.csproj" />
     <Project Path="tests/PcsRemote.Automation.Tests/PcsRemote.Automation.Tests.csproj" />
     <Project Path="tests/PcsRemote.Core.Tests/PcsRemote.Core.Tests.csproj" />
